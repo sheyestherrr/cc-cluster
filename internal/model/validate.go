@@ -314,7 +314,7 @@ func IsProxyEnv(k string) bool {
 func checkIPv4(s string) error {
 	a, err := netip.ParseAddr(s)
 	if err != nil {
-		return err
+		return fmt.Errorf("%q 不是合法的 IP 地址", s)
 	}
 	if !a.Is4() {
 		return errors.New("需要 IPv4 地址")
