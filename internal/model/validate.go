@@ -131,14 +131,14 @@ func (n Node) ServerIsDomain() bool {
 }
 
 // FirstHopIP 返回该节点作首跳时网关要直连的 IPv4 地址。
-// server 是域名时必须由用户给出 connect_ipv4，管理器不在宿主上替它解析。
+// server 是域名时取 connect_ipv4：它由用户指定，或由管理器在登记时解析一次后记下。
 func (n Node) FirstHopIP() (netip.Addr, error) {
 	if n.ConnectIPv4 != "" {
 		return netip.ParseAddr(n.ConnectIPv4)
 	}
 	a, err := netip.ParseAddr(n.Server())
 	if err != nil {
-		return netip.Addr{}, fmt.Errorf("节点 %s 的 server 是域名，作首跳时需要用 --connect-ipv4 指定它的地址", n.ID)
+		return netip.Addr{}, fmt.Errorf("节点 %s 的 server 是域名，作首跳时需要它的地址：执行 node resolve %s 解析，或用 --connect-ipv4 指定", n.ID, n.ID)
 	}
 	if !a.Is4() {
 		return netip.Addr{}, fmt.Errorf("节点 %s 的 server 不是 IPv4 地址；首版只支持 IPv4 首跳", n.ID)

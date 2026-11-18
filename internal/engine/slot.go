@@ -23,8 +23,8 @@ import (
 
 // ---- 登记期望配置 ----
 
-// AddNode 登记一个节点。
-func (e *Engine) AddNode(n model.Node) (err error) {
+// AddNode 登记一个节点。中转节点的 server 是域名且没有指定首跳地址时，在宿主上解析一次并记下。
+func (e *Engine) AddNode(ctx context.Context, n model.Node) (err error) {
 	unlock, err := e.st.Lock()
 	if err != nil {
 		return err
@@ -33,6 +33,11 @@ func (e *Engine) AddNode(n model.Node) (err error) {
 	defer func() { e.record("node.add", n.ID, err, n.Role) }()
 	if err := n.Validate(); err != nil {
 		return err
+	}
+	if n.Role == model.RoleTransit {
+		if err := resolveFirstHop(ctx, &n); err != nil {
+			return err
+		}
 	}
 	return e.st.SaveNode(n, true)
 }
@@ -101,7 +106,7 @@ type SlotOptions struct {
 
 // AddSlot 登记一个槽位：分配网段，首次创建时生成身份。
 // 返回补全后的槽位和需要提醒用户的事项。
-func (e *Engine) AddSlot(sl model.Slot, opt SlotOptions) (out model.Slot, warnings []string, err error) {
+func (e *Engine) AddSlot(ctx context.Context, sl model.Slot, opt SlotOptions) (out model.Slot, warnings []string, err error) {
 	unlock, err := e.st.Lock()
 	if err != nil {
 		return sl, nil, err
@@ -125,8 +130,14 @@ func (e *Engine) AddSlot(sl model.Slot, opt SlotOptions) (out model.Slot, warnin
 		return sl, nil, fmt.Errorf("节点 %s 的角色不是落地", landing.ID)
 	}
 	if gw.Transit == "" {
+		// 专用网关直连落地：落地就是首跳，同样需要事先知道它的地址。
 		if _, err := landing.FirstHopIP(); err != nil {
-			return sl, nil, err
+			if err := resolveFirstHop(ctx, &landing); err != nil {
+				return sl, nil, err
+			}
+			if err := e.st.SaveNode(landing, false); err != nil {
+				return sl, nil, err
+			}
 		}
 	}
 
@@ -750,6 +761,66 @@ func (e *Engine) SlotRemove(ctx context.Context, id string, purge bool) (err err
 		}
 	}
 	return nil
+}
+
+// SlotAddWorkspace 把宿主目录 dir 以相同的路径加进槽位的挂载。只改期望配置；
+// 运行中的 worker 要重建后才看得到它（Docker 不能给运行中的容器追加挂载）。
+func (e *Engine) SlotAddWorkspace(id, dir string) (err error) {
+	unlock, err := e.st.Lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	defer func() { e.record("slot.mount", id, err, dir) }()
+
+	sl, err := e.st.Slot(id)
+	if err != nil {
+		return err
+	}
+	ident, _, err := e.st.Identity(id)
+	if err != nil {
+		return err
+	}
+	dir = filepath.Clean(dir)
+	if fi, err := os.Stat(dir); err != nil {
+		return fmt.Errorf("目录 %s 不可用：%w", dir, err)
+	} else if !fi.IsDir() {
+		return fmt.Errorf("%s 不是目录", dir)
+	}
+	if err := model.CheckMountTarget(dir, ident.Home()); err != nil {
+		return err
+	}
+	sl.Mounts = model.AddWorkspace(sl.Mounts, dir)
+	if err := sl.Validate(); err != nil {
+		return err
+	}
+	return e.st.SaveSlot(sl, false)
+}
+
+// SlotRemoveMount 去掉槽位里目标路径为 target 的挂载。同样只改期望配置。
+func (e *Engine) SlotRemoveMount(id, target string) (err error) {
+	unlock, err := e.st.Lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	defer func() { e.record("slot.unmount", id, err, target) }()
+
+	sl, err := e.st.Slot(id)
+	if err != nil {
+		return err
+	}
+	kept := sl.Mounts[:0:0]
+	for _, m := range sl.Mounts {
+		if m.Target != target {
+			kept = append(kept, m)
+		}
+	}
+	if len(kept) == len(sl.Mounts) {
+		return fmt.Errorf("槽位 %s 没有挂载到 %s 的目录", id, target)
+	}
+	sl.Mounts = kept
+	return e.st.SaveSlot(sl, false)
 }
 
 // SlotExec 在槽位的 worker 里以项目用户身份执行命令（不接标准输入）。

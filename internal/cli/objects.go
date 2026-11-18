@@ -8,13 +8,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/sheyestherrr/cc-cluster/internal/engine"
 	"github.com/sheyestherrr/cc-cluster/internal/model"
+	"github.com/sheyestherrr/cc-cluster/internal/store"
 )
 
 func (a *app) subcommand(group, list string, args []string) (string, []string, error) {
@@ -31,7 +30,7 @@ func (a *app) subcommand(group, list string, args []string) (string, []string, e
 // ---- node ----
 
 func (a *app) cmdNode(args []string) error {
-	sub, rest, err := a.subcommand("node", "add|list|rm", args)
+	sub, rest, err := a.subcommand("node", "add|list|resolve|rm", args)
 	if err != nil {
 		return err
 	}
@@ -51,13 +50,28 @@ func (a *app) cmdNode(args []string) error {
 			return err
 		}
 		return eng.RemoveNode(id)
+	case "resolve":
+		id, err := parseWithID(a.newFlags("node resolve", "node resolve <节点>"), rest)
+		if err != nil {
+			return err
+		}
+		eng, _, err := a.open(context.Background(), false)
+		if err != nil {
+			return err
+		}
+		ip, err := eng.ResolveNode(context.Background(), id)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(a.out, "节点 %s 的首跳地址：%s；用到它的网关在下次 gateway up / slot up 时应用\n", id, ip)
+		return nil
 	}
 	fmt.Fprintf(a.errw, "未知的 node 子命令 %q\n", sub)
 	return errUsage
 }
 
 func (a *app) nodeAdd(args []string) error {
-	fs := a.newFlags("node add", "node add <节点> --role transit|landing (--file 片段.json | --type … --server … --port …)")
+	fs := a.newFlags("node add", "node add <节点> --role transit|landing (--sub 订阅 [--name 名称] | --file 片段.json | --type … --server … --port …)")
 	n := model.Node{}
 	fs.StringVar(&n.Role, "role", "", "角色：transit（中转）或 landing（落地）")
 	file := fs.String("file", "", "Mihomo 原生 proxy 片段（JSON 对象）；- 表示从标准输入读")
@@ -66,15 +80,38 @@ func (a *app) nodeAdd(args []string) error {
 	port := fs.Int("port", 0, "不用 --file 时：端口")
 	username := fs.String("username", "", "不用 --file 时：用户名")
 	passwordFile := fs.String("password-file", "", "不用 --file 时：存放口令的文件（口令不从命令行传，避免留在进程列表和 shell 历史里）")
-	fs.StringVar(&n.ConnectIPv4, "connect-ipv4", "", "server 是域名且该节点作首跳时必填：它的 IPv4 地址")
+	fs.StringVar(&n.ConnectIPv4, "connect-ipv4", "", "该节点作首跳时网关直连的 IPv4 地址；server 是域名而不填时，在本机解析一次并记下")
 	fs.StringVar(&n.ExpectExitIP, "expect-exit-ip", "", "落地的预期出口 IPv4；填了就必须与实测一致")
 	fs.StringVar(&n.TZ, "tz", "", "落地所在地区的时区，例如 Asia/Tokyo；绑定它的槽位默认沿用")
 	fs.StringVar(&n.Lang, "lang", "", "落地所在地区的语言，例如 en_US.UTF-8；绑定它的槽位默认沿用")
+	sub := fs.String("sub", "", "从这个订阅里取节点（先用 sub add 登记订阅）")
+	subName := fs.String("name", "", "配合 --sub：订阅里的节点名称；不填则列出来让你选")
 	id, err := parseWithID(fs, args)
 	if err != nil {
 		return err
 	}
 	n.ID = id
+
+	ctx := context.Background()
+	if *sub != "" {
+		if *file != "" || *typ != "" || *server != "" || *port != 0 {
+			return errors.New("--sub 与 --file、--type/--server/--port 只能选一种")
+		}
+		eng, st, err := a.open(ctx, false)
+		if err != nil {
+			return err
+		}
+		name := *subName
+		if name == "" {
+			if name, err = a.pickSubNode(st, *sub); err != nil {
+				return err
+			}
+		}
+		if err := eng.NodeFromSub(ctx, n, *sub, name); err != nil {
+			return err
+		}
+		return a.reportNode(st, n.ID)
+	}
 
 	switch {
 	case *file != "" && (*typ != "" || *server != "" || *port != 0):
@@ -109,15 +146,49 @@ func (a *app) nodeAdd(args []string) error {
 	delete(n.Proxy, "name")
 	delete(n.Proxy, "udp")
 
-	eng, _, err := a.open(context.Background(), false)
+	eng, st, err := a.open(ctx, false)
 	if err != nil {
 		return err
 	}
-	if err := eng.AddNode(n); err != nil {
+	if err := eng.AddNode(ctx, n); err != nil {
+		return err
+	}
+	return a.reportNode(st, n.ID)
+}
+
+// reportNode 打印刚登记的节点；首跳地址是自动解析出来的也一并说明。
+func (a *app) reportNode(st *store.Store, id string) error {
+	n, err := st.Node(id)
+	if err != nil {
 		return err
 	}
 	fmt.Fprintf(a.out, "已登记节点 %s（%s，%s:%d）\n", n.ID, n.Role, n.Server(), n.Port())
+	if n.ConnectAuto {
+		fmt.Fprintf(a.out, "服务器地址是域名，已在本机解析为 %s 并记下；地址变了以后执行 node resolve %s\n", n.ConnectIPv4, n.ID)
+	}
 	return nil
+}
+
+// pickSubNode 列出订阅里的节点让用户选一个，返回它的名称。
+func (a *app) pickSubNode(st *store.Store, subID string) (string, error) {
+	sub, err := st.Sub(subID)
+	if err != nil {
+		return "", err
+	}
+	if !a.interactive {
+		return "", fmt.Errorf("需要用 --name 指定订阅里的节点名称；用 sub nodes %s 查看", subID)
+	}
+	items := make([]string, len(sub.Proxies))
+	for i, p := range sub.Proxies {
+		n := model.Node{Proxy: p.Proxy}
+		typ, _ := p.Proxy["type"].(string)
+		items[i] = fmt.Sprintf("%s  (%s, %s:%d)", p.Name, typ, n.Server(), n.Port())
+	}
+	i, err := a.choose(fmt.Sprintf("订阅 %s 的节点：", subID), items, -1)
+	if err != nil {
+		return "", err
+	}
+	return sub.Proxies[i].Name, nil
 }
 
 func (a *app) nodeList(args []string) error {
@@ -133,10 +204,15 @@ func (a *app) nodeList(args []string) error {
 		return err
 	}
 	w := a.table()
-	fmt.Fprintln(w, "节点\t角色\t类型\t服务器\t首跳地址\t预期出口")
+	fmt.Fprintln(w, "节点\t角色\t类型\t服务器\t首跳地址\t预期出口\t时区\t来源")
 	for _, n := range nodes {
 		typ, _ := n.Proxy["type"].(string)
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s:%d\t%s\t%s\n", n.ID, n.Role, typ, n.Server(), n.Port(), orDash(n.ConnectIPv4), orDash(n.ExpectExitIP))
+		src := "-"
+		if n.Source != nil {
+			src = n.Source.Sub + " / " + n.Source.Name
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s:%d\t%s\t%s\t%s\t%s\n", n.ID, n.Role, typ, n.Server(), n.Port(),
+			orDash(n.ConnectIPv4), orDash(n.ExpectExitIP), orDash(n.TZ), src)
 	}
 	return w.Flush()
 }
@@ -333,10 +409,58 @@ func (a *app) cmdSlot(ctx context.Context, args []string) error {
 	case "exec":
 		return a.slotExec(ctx, rest)
 	case "enter":
-		return a.slotEnter(ctx, rest)
+		return a.cmdEnter(ctx, "enter", rest)
+	case "mounts":
+		return a.slotMounts(rest)
+	case "unmount":
+		return a.slotUnmount(rest)
 	}
 	fmt.Fprintf(a.errw, "未知的 slot 子命令 %q\n", sub)
 	return errUsage
+}
+
+// slotMounts 列出槽位的挂载。
+func (a *app) slotMounts(args []string) error {
+	id, err := parseWithID(a.newFlags("slot mounts", "slot mounts <槽位>"), args)
+	if err != nil {
+		return err
+	}
+	_, st, err := a.open(context.Background(), false)
+	if err != nil {
+		return err
+	}
+	sl, err := st.Slot(id)
+	if err != nil {
+		return err
+	}
+	w := a.table()
+	fmt.Fprintln(w, "宿主目录\tworker 内路径\t只读")
+	for _, m := range sl.Mounts {
+		fmt.Fprintf(w, "%s\t%s\t%s\n", m.Source, m.Target, yesNo(m.ReadOnly))
+	}
+	return w.Flush()
+}
+
+// slotUnmount 从槽位的挂载里去掉一项。
+func (a *app) slotUnmount(args []string) error {
+	fs := a.newFlags("slot unmount", "slot unmount <槽位> <worker 内路径>")
+	id, err := parseWithID(fs, args)
+	if err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return errUsage
+	}
+	eng, _, err := a.open(context.Background(), false)
+	if err != nil {
+		return err
+	}
+	if err := eng.SlotRemoveMount(id, fs.Arg(0)); err != nil {
+		return err
+	}
+	fmt.Fprintf(a.out, "已从槽位 %s 的挂载里去掉 %s；运行中的 worker 要 slot up %s --recreate 之后才生效\n", id, fs.Arg(0), id)
+	return nil
 }
 
 func (a *app) slotAdd(args []string) error {
@@ -347,7 +471,7 @@ func (a *app) slotAdd(args []string) error {
 	fs.StringVar(&s.Landing, "landing", "", "绑定的落地节点")
 	fs.StringVar(&s.Image, "image", "", "worker 镜像；不填用 init 时设定的")
 	fs.StringVar(&s.Shell, "shell", model.DefaultShell, "worker 内的登录 shell")
-	fs.Var(&mounts, "mount", "挂载，形如 宿主路径:容器路径[:ro]，可重复")
+	fs.Var(&mounts, "mount", "挂载，形如 宿主目录[:容器路径[:ro]]，可重复；只给宿主目录时 worker 内用相同的路径，相对路径按当前目录解析")
 	fs.Var(&envs, "env", "额外的环境变量 名=值，可重复；不允许代理变量")
 	fs.StringVar(&s.TZ, "tz", "", "时区，例如 Asia/Shanghai；不填沿用落地的设置")
 	fs.StringVar(&s.Lang, "lang", "", "LANG；不填沿用落地的设置，都没有则为 "+model.DefaultLang)
@@ -373,14 +497,19 @@ func (a *app) slotAdd(args []string) error {
 	}
 	for _, m := range mounts {
 		parts := strings.Split(m, ":")
-		if len(parts) < 2 || len(parts) > 3 || (len(parts) == 3 && parts[2] != "ro" && parts[2] != "rw") {
-			return fmt.Errorf("挂载 %q 的格式应为 宿主路径:容器路径[:ro]", m)
+		if len(parts) > 3 || (len(parts) == 3 && parts[2] != "ro" && parts[2] != "rw") {
+			return fmt.Errorf("挂载 %q 的格式应为 宿主目录[:容器路径[:ro]]", m)
 		}
 		src, err := filepath.Abs(parts[0])
 		if err != nil {
 			return err
 		}
-		s.Mounts = append(s.Mounts, model.Mount{Source: src, Target: parts[1], ReadOnly: len(parts) == 3 && parts[2] == "ro"})
+		// 只给宿主目录时，worker 内使用相同的路径。
+		target := src
+		if len(parts) >= 2 {
+			target = parts[1]
+		}
+		s.Mounts = append(s.Mounts, model.Mount{Source: src, Target: target, ReadOnly: len(parts) == 3 && parts[2] == "ro"})
 	}
 	for _, kv := range envs {
 		k, v, ok := strings.Cut(kv, "=")
@@ -397,7 +526,7 @@ func (a *app) slotAdd(args []string) error {
 	if err != nil {
 		return err
 	}
-	out, warnings, err := eng.AddSlot(s, opt)
+	out, warnings, err := eng.AddSlot(context.Background(), s, opt)
 	if err != nil {
 		return err
 	}
@@ -454,34 +583,4 @@ func (a *app) slotExec(ctx context.Context, args []string) error {
 		return fmt.Errorf("命令退出码 %d", res.ExitCode)
 	}
 	return nil
-}
-
-// slotEnter 进入槽位的交互式 shell。交互终端交给 docker 命令行处理，
-// 这是整个程序里唯一用到 docker 命令行的地方。
-func (a *app) slotEnter(ctx context.Context, args []string) error {
-	id, err := parseWithID(a.newFlags("slot enter", "slot enter <槽位>"), args)
-	if err != nil {
-		return err
-	}
-	eng, st, err := a.open(ctx, true)
-	if err != nil {
-		return err
-	}
-	if err := eng.RequireReady(ctx, id); err != nil {
-		return err
-	}
-	sl, err := st.Slot(id)
-	if err != nil {
-		return err
-	}
-	ident, _, err := st.Identity(id)
-	if err != nil {
-		return err
-	}
-	docker, err := exec.LookPath("docker")
-	if err != nil {
-		return errors.New("进入交互式 shell 需要 docker 命令行，PATH 里没有找到")
-	}
-	argv := []string{"docker", "exec", "-it", "-w", ident.Home(), eng.WorkerContainer(id), sl.Shell, "-l"}
-	return syscall.Exec(docker, argv, os.Environ())
 }

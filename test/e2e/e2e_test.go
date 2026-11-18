@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sheyestherrr/cc-cluster/internal/cli"
 	"github.com/sheyestherrr/cc-cluster/internal/dockerapi"
 	"github.com/sheyestherrr/cc-cluster/internal/engine"
 	"github.com/sheyestherrr/cc-cluster/internal/model"
@@ -125,10 +126,10 @@ func setup(t *testing.T) *env {
 		return map[string]any{"type": "socks5", "server": server, "port": 1080}
 	}
 	// 中转用域名 + connect_ipv4，顺带验证核心的 hosts 固定。
-	must(t, e.eng.AddNode(model.Node{ID: "transit", Role: model.RoleTransit, Proxy: socks("transit.test"), ConnectIPv4: ipTransitEgress}))
-	must(t, e.eng.AddNode(model.Node{ID: "la", Role: model.RoleLanding, Proxy: socks(ipLandA), ExpectExitIP: ipLandA, TZ: "Asia/Tokyo"}))
-	must(t, e.eng.AddNode(model.Node{ID: "lb", Role: model.RoleLanding, Proxy: socks(ipLandB), ExpectExitIP: ipLandB}))
-	must(t, e.eng.AddNode(model.Node{ID: "lwrong", Role: model.RoleLanding, Proxy: socks(ipLandB), ExpectExitIP: "198.51.100.99"}))
+	must(t, e.eng.AddNode(e.ctx, model.Node{ID: "transit", Role: model.RoleTransit, Proxy: socks("transit.test"), ConnectIPv4: ipTransitEgress}))
+	must(t, e.eng.AddNode(e.ctx, model.Node{ID: "la", Role: model.RoleLanding, Proxy: socks(ipLandA), ExpectExitIP: ipLandA, TZ: "Asia/Tokyo"}))
+	must(t, e.eng.AddNode(e.ctx, model.Node{ID: "lb", Role: model.RoleLanding, Proxy: socks(ipLandB), ExpectExitIP: ipLandB}))
+	must(t, e.eng.AddNode(e.ctx, model.Node{ID: "lwrong", Role: model.RoleLanding, Proxy: socks(ipLandB), ExpectExitIP: "198.51.100.99"}))
 	must(t, e.eng.AddGateway(model.Gateway{
 		ID: "main", Transit: "transit", EgressNetwork: netEgress,
 		DNS: []string{"tcp://" + ipTarget + ":53"}, EchoURLs: []string{"http://" + ipTarget + "/"},
@@ -157,7 +158,7 @@ func (e *env) addSlot(id, landing string) {
 		opt.User = "kevin"
 		sl.FakeDMI, sl.FakeProc, sl.CPUs, sl.MemoryBytes = true, true, 2, 1<<30
 	}
-	_, _, err := e.eng.AddSlot(sl, opt)
+	_, _, err := e.eng.AddSlot(e.ctx, sl, opt)
 	must(e.t, err)
 }
 
@@ -473,6 +474,66 @@ func TestEndToEnd(t *testing.T) {
 		workerAfter, _ := e.dk.ContainerInspect(e.ctx, e.eng.WorkerContainer("a"))
 		if workerBefore.ID != workerAfter.ID || workerBefore.State.StartedAt != workerAfter.State.StartedAt {
 			t.Error("重建网关不应重建或重启 worker")
+		}
+	})
+
+	t.Run("在项目目录里进入槽位", func(t *testing.T) {
+		e.t = t
+		proj := filepath.Join(filepath.Dir(e.st.Dir()), "proj-b")
+		other := filepath.Join(filepath.Dir(e.st.Dir()), "proj-c")
+		must(t, os.MkdirAll(filepath.Join(proj, "log"), 0o755))
+		must(t, os.MkdirAll(other, 0o755))
+		must(t, os.WriteFile(filepath.Join(proj, "log", "note.txt"), []byte("from-host\n"), 0o644))
+		worker := e.eng.WorkerContainer("b")
+		containerID := func() string {
+			c, err := e.dk.ContainerInspect(e.ctx, worker)
+			must(t, err)
+			return c.ID
+		}
+		// 以非交互方式运行命令行：与用户在终端里敲的是同一条路径，只是命令的输出被收集回来。
+		enter := func(args ...string) (string, int) {
+			var out, errOut strings.Builder
+			code := cli.Run(append([]string{"--data-dir", e.st.Dir(), "enter", "b"}, args...), strings.NewReader(""), &out, &errOut)
+			return strings.TrimSpace(out.String()) + "|" + strings.TrimSpace(errOut.String()), code
+		}
+
+		before := containerID()
+		got, code := enter(proj, "--", "pwd")
+		if code == 0 || !strings.Contains(got, "--yes") {
+			t.Fatalf("目录不在挂载范围内、又没有确认时，应拒绝并提示 --yes: %d %s", code, got)
+		}
+		if containerID() != before {
+			t.Fatal("被拒绝时不应动 worker 容器")
+		}
+
+		got, code = enter(proj, "--yes", "--", "pwd")
+		e.expect("新目录以相同的路径挂入并进入", "^"+regexp.QuoteMeta(proj)+`\|`, got)
+		if code != 0 || containerID() == before {
+			t.Fatalf("挂载新目录应重建 worker: code=%d", code)
+		}
+		e.expect("重建后仍从自己的落地出去", seenB, e.w("b", "get", ipTarget, "80"))
+		e.expect("重建后身份文件重新写入，/.dockerenv 仍被删除", `^gone$`, e.wsh("b", "test -e /.dockerenv && echo present || echo gone"))
+
+		after := containerID()
+		got, code = enter(filepath.Join(proj, "log"), "--", "cat", "note.txt")
+		e.expect("已挂载目录的子目录直接进入，工作目录就是它", `^from-host\|$`, got)
+		if code != 0 || containerID() != after {
+			t.Fatalf("子目录不应触发重建: code=%d", code)
+		}
+
+		// 挂上级目录后，原先单独挂的子目录并进去；它下面的其他项目也不用再重建。
+		got, code = enter(other, "--mount", filepath.Dir(proj), "--yes", "--", "pwd")
+		e.expect("用 --mount 指定挂上级目录", "^"+regexp.QuoteMeta(other)+`\|`, got)
+		if code != 0 {
+			t.Fatalf("挂上级目录失败: %s", got)
+		}
+		sl, err := e.st.Slot("b")
+		must(t, err)
+		if _, ok := model.ContainerPath(sl.Mounts, proj); !ok || len(sl.Mounts) != 2 {
+			t.Fatalf("上级目录应覆盖原先的子目录挂载，只剩它和测试程序目录: %+v", sl.Mounts)
+		}
+		if e.state("b") != engine.StateReady {
+			t.Fatalf("进入之后槽位应是 ready: %s", e.state("b"))
 		}
 	})
 

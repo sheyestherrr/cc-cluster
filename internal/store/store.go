@@ -5,13 +5,14 @@
 //	<数据目录>/                       0700
 //	├── cluster.json                  集群设置
 //	├── nodes.d/<node-id>.json        节点片段与角色，含凭据，0600
+//	├── subs/<sub-id>.json            订阅地址与拉取到的节点列表，含凭据，0600
 //	├── gateways/<gw-id>/gateway.json 网关期望配置
 //	├── slots/<slot-id>/
 //	│   ├── slot.json                 槽位期望配置
 //	│   ├── identity.json             首次生成后不再改动
 //	│   ├── applied.json              最近一次成功应用的记录
 //	│   ├── hold.json                 手动断网标记
-//	│   ├── etc/                      挂进 worker 的 machine-id、passwd、group
+//	│   ├── etc/                      可选的硬件信息覆盖文件（DMI、cpuinfo、meminfo）
 //	│   └── home/                     该槽完整 HOME
 //	├── ops.jsonl                     追加式操作记录，不含密钥
 //	└── lock
@@ -139,6 +140,59 @@ func (s *Store) DeleteNode(id string) error {
 		return err
 	}
 	return wrapNotFound(os.Remove(s.path("nodes.d", id+".json")), "节点", id)
+}
+
+// ---- 订阅 ----
+
+// SaveSub 写入订阅（含订阅地址与节点凭据，0600）；create 为 true 时已存在则返回 ErrExists。
+func (s *Store) SaveSub(sub model.Subscription, create bool) error {
+	if err := os.MkdirAll(s.path("subs"), 0o700); err != nil {
+		return err
+	}
+	p := s.path("subs", sub.ID+".json")
+	if create && exists(p) {
+		return fmt.Errorf("订阅 %s %w", sub.ID, ErrExists)
+	}
+	return writeJSON(p, sub)
+}
+
+// Sub 读取一个订阅。
+func (s *Store) Sub(id string) (model.Subscription, error) {
+	var sub model.Subscription
+	if err := model.ValidateID("订阅", id); err != nil {
+		return sub, err
+	}
+	err := readJSON(s.path("subs", id+".json"), &sub)
+	return sub, wrapNotFound(err, "订阅", id)
+}
+
+// Subs 按 ID 顺序列出全部订阅。
+func (s *Store) Subs() ([]model.Subscription, error) {
+	names, err := listNames(s.path("subs"), ".json")
+	if errors.Is(err, fs.ErrNotExist) {
+		// 早期版本初始化的数据目录里没有这个子目录。
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Subscription, 0, len(names))
+	for _, id := range names {
+		sub, err := s.Sub(id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sub)
+	}
+	return out, nil
+}
+
+// DeleteSub 删除一个订阅。
+func (s *Store) DeleteSub(id string) error {
+	if err := model.ValidateID("订阅", id); err != nil {
+		return err
+	}
+	return wrapNotFound(os.Remove(s.path("subs", id+".json")), "订阅", id)
 }
 
 // ---- 网关 ----

@@ -51,14 +51,50 @@ type Node struct {
 	Role string `json:"role"`
 	// Proxy 是 Mihomo 原生 proxy 片段，不含 name；由管理器控制的字段不允许自带。
 	Proxy map[string]any `json:"proxy"`
-	// ConnectIPv4 在 server 是域名且该节点作首跳时必填，写入核心的 hosts 与网关的首跳路由。
+	// ConnectIPv4 是该节点作首跳时网关直连的地址，写入核心的 hosts 与网关的首跳路由。
+	// server 是域名时需要它：可以手工指定，否则由管理器在宿主上解析一次并记在这里。
 	ConnectIPv4 string `json:"connect_ipv4,omitempty"`
+	// ConnectAuto 表示 ConnectIPv4 是管理器解析出来的，可以用 node resolve 重新解析。
+	ConnectAuto bool `json:"connect_auto,omitempty"`
+	// Source 记录该节点取自哪个订阅的哪一项；刷新订阅时据此更新片段。
+	Source *NodeSource `json:"source,omitempty"`
 	// ExpectExitIP 是落地的预期出口地址；填了就必须与实测一致。
 	ExpectExitIP string `json:"expect_exit_ip,omitempty"`
 	// TZ 与 Lang 是落地所在地区的时区和语言；绑定它的槽位没有自己指定时沿用，
 	// 让槽内的时区与出口地区一致。
 	TZ   string `json:"tz,omitempty"`
 	Lang string `json:"lang,omitempty"`
+}
+
+// NodeSource 指向订阅里的一个节点。
+type NodeSource struct {
+	Sub  string `json:"sub"`
+	Name string `json:"name"`
+}
+
+// Subscription 是一个 Clash 格式的订阅及其最近一次拉取的节点列表。
+// 订阅地址里通常带有令牌，节点片段里有凭据，整个对象按机密保存。
+type Subscription struct {
+	ID        string     `json:"id"`
+	URL       string     `json:"url"`
+	FetchedAt time.Time  `json:"fetched_at"`
+	Proxies   []SubProxy `json:"proxies"`
+}
+
+// SubProxy 是订阅里的一个节点：名称加 Mihomo 原生 proxy 片段（不含 name）。
+type SubProxy struct {
+	Name  string         `json:"name"`
+	Proxy map[string]any `json:"proxy"`
+}
+
+// Find 按名称查找订阅里的节点。
+func (s Subscription) Find(name string) (SubProxy, bool) {
+	for _, p := range s.Proxies {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return SubProxy{}, false
 }
 
 // Gateway 是一个网关容器的期望配置。
