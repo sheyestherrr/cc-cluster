@@ -121,7 +121,11 @@ func TestSlotValidate(t *testing.T) {
 		"小写代理变量":     func(s *Slot) { s.Env = map[string]string{"all_proxy": "socks5://x"} },
 		"挂载源相对路径":    func(s *Slot) { s.Mounts = []Mount{{Source: "proj", Target: "/work"}} },
 		"挂载目标占用":     func(s *Slot) { s.Mounts = []Mount{{Source: "/data/p", Target: "/etc/passwd"}} },
-		"覆盖 HOME":    func(s *Slot) { s.Mounts = []Mount{{Source: "/data/p", Target: WorkerHome}} },
+		"挂到根目录":      func(s *Slot) { s.Mounts = []Mount{{Source: "/data/p", Target: "/"}} },
+		"挂进系统目录":     func(s *Slot) { s.Mounts = []Mount{{Source: "/usr/local/x", Target: "/usr/local/x"}} },
+		"时区带空格":      func(s *Slot) { s.TZ = "Asia/Tokyo; id" },
+		"语言带斜杠":      func(s *Slot) { s.Lang = "en_US/UTF-8" },
+		"无限额却改 proc": func(s *Slot) { s.FakeProc = true },
 		"挂载目标不规范":    func(s *Slot) { s.Mounts = []Mount{{Source: "/data/p", Target: "/work/../etc"}} },
 		"挂 Docker 口": func(s *Slot) { s.Mounts = []Mount{{Source: "/var/run/docker.sock", Target: "/var/run/docker.sock"}} },
 		"路径含冒号":      func(s *Slot) { s.Mounts = []Mount{{Source: "/data/p:rw", Target: "/work"}} },
@@ -137,8 +141,35 @@ func TestSlotValidate(t *testing.T) {
 	ok := base
 	ok.Mounts = []Mount{{Source: "/data/proj", Target: "/work", ReadOnly: true}}
 	ok.Env = map[string]string{"EDITOR": "vim"}
+	ok.TZ, ok.Lang = "America/Argentina/Buenos_Aires", "en_US.UTF-8"
 	if err := ok.Validate(); err != nil {
 		t.Fatalf("正常的挂载与环境变量应通过: %v", err)
+	}
+}
+
+func TestCheckMountTargetProtectsHome(t *testing.T) {
+	for _, bad := range []string{"/home/kevin", "/home"} {
+		if err := CheckMountTarget(bad, "/home/kevin"); err == nil {
+			t.Errorf("%s 会盖住 HOME，应被拒绝", bad)
+		}
+	}
+	for _, good := range []string{"/home/kevin/work", "/home/dev/proj", "/data/proj", "/tmp/x"} {
+		if err := CheckMountTarget(good, "/home/kevin"); err != nil {
+			t.Errorf("%s 应允许: %v", good, err)
+		}
+	}
+}
+
+func TestEffectiveLocale(t *testing.T) {
+	landing := Node{TZ: "Asia/Tokyo", Lang: "ja_JP.UTF-8"}
+	if tz, lang := EffectiveLocale(Slot{}, landing); tz != "Asia/Tokyo" || lang != "ja_JP.UTF-8" {
+		t.Fatalf("槽位未指定时应沿用落地: %s %s", tz, lang)
+	}
+	if tz, lang := EffectiveLocale(Slot{TZ: "Europe/Paris", Lang: "fr_FR.UTF-8"}, landing); tz != "Europe/Paris" || lang != "fr_FR.UTF-8" {
+		t.Fatalf("槽位自己的设置优先: %s %s", tz, lang)
+	}
+	if tz, lang := EffectiveLocale(Slot{}, Node{}); tz != "" || lang != DefaultLang {
+		t.Fatalf("都没有时时区为空、语言用默认: %q %s", tz, lang)
 	}
 }
 

@@ -338,6 +338,29 @@ func (s *Store) WriteSlotFile(id, name string, data []byte) (string, error) {
 	return p, writeFile(p, data, 0o644)
 }
 
+// WriteSlotDir 在槽位的 etc 目录下重建一个子目录并写入给定的文件，返回它的绝对路径。
+func (s *Store) WriteSlotDir(id, name string, files map[string][]byte) (string, error) {
+	if strings.ContainsAny(name, "/\\") || name == "" || name == "." || name == ".." {
+		return "", fmt.Errorf("目录名 %q 不合法", name)
+	}
+	dir := filepath.Join(s.EtcDir(id), name)
+	if err := os.RemoveAll(dir); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	for f, data := range files {
+		if strings.ContainsAny(f, "/\\") {
+			return "", fmt.Errorf("文件名 %q 不合法", f)
+		}
+		if err := writeFile(filepath.Join(dir, f), data, 0o444); err != nil {
+			return "", err
+		}
+	}
+	return dir, nil
+}
+
 // AppendOp 追加一条操作记录。
 func (s *Store) AppendOp(op model.Op) error {
 	b, err := json.Marshal(op)

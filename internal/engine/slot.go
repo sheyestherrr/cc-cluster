@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -91,9 +93,15 @@ func (e *Engine) AddGateway(g model.Gateway) (err error) {
 	return e.st.SaveGateway(g, true)
 }
 
+// SlotOptions 是登记槽位时可以指定的身份部分；留空则随机生成。
+type SlotOptions struct {
+	Hostname string
+	User     string
+}
+
 // AddSlot 登记一个槽位：分配网段，首次创建时生成身份。
 // 返回补全后的槽位和需要提醒用户的事项。
-func (e *Engine) AddSlot(sl model.Slot, hostname string) (out model.Slot, warnings []string, err error) {
+func (e *Engine) AddSlot(sl model.Slot, opt SlotOptions) (out model.Slot, warnings []string, err error) {
 	unlock, err := e.st.Lock()
 	if err != nil {
 		return sl, nil, err
@@ -127,9 +135,13 @@ func (e *Engine) AddSlot(sl model.Slot, hostname string) (out model.Slot, warnin
 		return sl, nil, err
 	}
 	var used []netip.Prefix
+	var takenUsers []string
 	for _, o := range all {
 		if o.ID == sl.ID {
 			return sl, nil, fmt.Errorf("槽位 %s 已存在", sl.ID)
+		}
+		if oi, ok, _ := e.st.Identity(o.ID); ok {
+			takenUsers = append(takenUsers, oi.UserName())
 		}
 		if o.Landing == sl.Landing {
 			warnings = append(warnings, fmt.Sprintf("落地 %s 已被槽位 %s 使用；两个槽共用一个出口地址会让它们互相关联", sl.Landing, o.ID))
@@ -157,32 +169,40 @@ func (e *Engine) AddSlot(sl model.Slot, hostname string) (out model.Slot, warnin
 	if err := sl.Validate(); err != nil {
 		return sl, nil, err
 	}
+	ident, has, err := e.st.Identity(sl.ID)
+	if err != nil {
+		return sl, nil, err
+	}
+	if has && (opt.Hostname != "" || opt.User != "") {
+		return sl, nil, fmt.Errorf("槽位 %s 已有持久化的身份，不能再指定 hostname 或用户名", sl.ID)
+	}
+	if !has {
+		if ident, err = identity.New(identity.Options{Hostname: opt.Hostname, User: opt.User, TakenUsers: takenUsers}); err != nil {
+			return sl, nil, err
+		}
+	}
 	for _, m := range sl.Mounts {
 		if _, err := os.Stat(m.Source); err != nil {
 			return sl, nil, fmt.Errorf("挂载源 %s 不可用：%w", m.Source, err)
 		}
+		if err := model.CheckMountTarget(m.Target, ident.Home()); err != nil {
+			return sl, nil, err
+		}
+	}
+	if sl.FakeDMI && len(ident.DMI) == 0 {
+		return sl, nil, fmt.Errorf("槽位 %s 保留的身份里没有机型信息，不能开启 DMI 覆盖", sl.ID)
+	}
+	if tz, _ := model.EffectiveLocale(sl, landing); tz == "" {
+		warnings = append(warnings, fmt.Sprintf("槽位和落地 %s 都没有设置时区，槽内将是 UTC；建议按出口所在地区设置（slot add --tz，或 node add --tz）", landing.ID))
 	}
 
-	_, has, err := e.st.Identity(sl.ID)
-	if err != nil {
-		return sl, nil, err
-	}
-	if has && hostname != "" {
-		return sl, nil, fmt.Errorf("槽位 %s 已有持久化的身份，不能再指定 hostname", sl.ID)
-	}
 	if err := e.st.SaveSlot(sl, true); err != nil {
 		return sl, nil, err
 	}
 	if has {
 		warnings = append(warnings, fmt.Sprintf("沿用槽位 %s 之前保留的身份与 HOME", sl.ID))
-	} else {
-		ident, err := identity.New(hostname)
-		if err != nil {
-			return sl, nil, err
-		}
-		if err := e.st.SaveIdentity(sl.ID, ident); err != nil {
-			return sl, nil, err
-		}
+	} else if err := e.st.SaveIdentity(sl.ID, ident); err != nil {
+		return sl, nil, err
 	}
 	return sl, warnings, nil
 }
@@ -248,7 +268,7 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 		return res, fmt.Errorf("槽位 %s 的链路出口是 %s，与落地 %s 绑定的 %s 不符，未接线", id, chainIP, landing.ID, landing.ExpectExitIP)
 	}
 
-	wc, err := e.ensureWorker(ctx, slot, ident, opt.Recreate)
+	wc, err := e.ensureWorker(ctx, slot, ident, landing, opt.Recreate)
 	if err != nil {
 		return res, err
 	}
@@ -313,38 +333,59 @@ func (e *Engine) slotDigest(slot model.Slot, ident model.Identity, p *gatewayPla
 	return hex.EncodeToString(sum[:]), nil
 }
 
+// seedVersion 计入 worker 的规格摘要：写入容器的身份文件的做法改变时提高它，已有的容器就会被要求重建。
+const seedVersion = "1"
+
+// workerDigest 是 worker 容器的规格摘要：容器规格加上创建后写进容器的身份内容。
+func workerDigest(spec dockerapi.ContainerSpec, ident model.Identity) string {
+	b, _ := json.Marshal(struct {
+		Spec      dockerapi.ContainerSpec
+		MachineID string
+		DMI       map[string]string
+		Seed      string
+	}{spec, ident.MachineID, ident.DMI, seedVersion})
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])[:32]
+}
+
 // ensureWorker 确保 worker 容器存在并在运行。容器以 --network none 启动，此时没有网络。
-func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.Identity, recreate bool) (dockerapi.Container, error) {
+func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.Identity, landing model.Node, recreate bool) (dockerapi.Container, error) {
 	var none dockerapi.Container
 	name := e.WorkerContainer(slot.ID)
 	image := slot.Image
 	if image == "" {
 		image = e.cl.WorkerImage
 	}
-
-	files := workerFiles{Home: e.st.HomeDir(slot.ID)}
-	var err error
-	if files.MachineID, err = e.st.WriteSlotFile(slot.ID, "machine-id", []byte(ident.MachineID+"\n")); err != nil {
-		return none, err
-	}
-	if files.Passwd, err = e.st.WriteSlotFile(slot.ID, "passwd", passwdFile(slot)); err != nil {
-		return none, err
-	}
-	if files.Group, err = e.st.WriteSlotFile(slot.ID, "group", groupFile(slot)); err != nil {
-		return none, err
-	}
-	if files.ResolvConf, err = e.st.WriteSlotFile(slot.ID, "resolv.conf", []byte("nameserver "+workerDNS+"\n")); err != nil {
-		return none, err
-	}
-	// 挂载源不存在时 Docker 会以 root 身份在宿主上把它建出来，所以先自己检查。
 	for _, m := range slot.Mounts {
+		// 挂载源不存在时 Docker 会以 root 身份在宿主上把它建出来，所以先自己检查。
 		if _, err := os.Stat(m.Source); err != nil {
 			return none, fmt.Errorf("槽位 %s 的挂载源 %s 不可用：%w", slot.ID, m.Source, err)
 		}
+		if err := model.CheckMountTarget(m.Target, ident.Home()); err != nil {
+			return none, fmt.Errorf("槽位 %s：%w", slot.ID, err)
+		}
 	}
 
-	spec := workerSpec(image, slot, ident, files, e.labels(roleWorker, slot.ID))
-	digest := specDigest(spec)
+	tz, lang := model.EffectiveLocale(slot, landing)
+	p := workerParams{
+		Image: image, Slot: slot, Ident: ident, TZ: tz, Lang: lang,
+		HomeDir: e.st.HomeDir(slot.ID), Labels: e.labels(roleWorker, slot.ID),
+	}
+	etc := e.st.EtcDir(slot.ID)
+	if slot.FakeDMI {
+		if len(ident.DMI) == 0 {
+			return none, fmt.Errorf("槽位 %s 的身份里没有机型信息，不能开启 DMI 覆盖", slot.ID)
+		}
+		p.DMIDir = filepath.Join(etc, "dmi")
+	}
+	if slot.FakeProc && slot.CPUs > 0 {
+		p.CPUInfo = filepath.Join(etc, "cpuinfo")
+	}
+	if slot.FakeProc && slot.MemoryBytes > 0 {
+		p.MemInfo = filepath.Join(etc, "meminfo")
+	}
+	spec := workerSpec(p)
+	digest := workerDigest(spec, ident)
 	spec.Labels[labelSpec] = digest
 
 	c, ok, err := e.inspect(ctx, name)
@@ -367,17 +408,111 @@ func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.
 		} else if !has {
 			return none, fmt.Errorf("本地没有 worker 镜像 %s", image)
 		}
+		if err := e.writeHardwareFiles(ctx, image, slot, ident, p); err != nil {
+			return none, err
+		}
 		e.logf("创建 worker 容器 %s（无网络）", name)
 		if _, err := e.dk.ContainerCreate(ctx, name, spec); err != nil {
 			return none, err
 		}
+		// 身份文件在第一次启动之前写好；写不进去就不留下一个半成品容器。
+		if err := e.seedWorker(ctx, name, slot, ident); err != nil {
+			_ = e.dk.ContainerRemove(ctx, name)
+			return none, fmt.Errorf("向 worker 容器 %s 写入身份文件失败：%w", name, err)
+		}
 	}
 	if !ok || !c.State.Running {
 		if err := e.dk.ContainerStart(ctx, name); err != nil {
+			if slot.FakeDMI {
+				return none, fmt.Errorf("%w（该槽开启了 DMI 覆盖；宿主没有 %s 时无法使用）", err, dmiPath)
+			}
 			return none, err
 		}
 	}
+	// 每次都执行：容器可能在管理器之外被重启过，而 Docker 每次启动都会重新生成 resolv.conf。
+	if err := e.settleWorker(ctx, name, tz); err != nil {
+		_ = e.dk.ContainerStop(ctx, name, 0)
+		return none, fmt.Errorf("worker 容器 %s 启动后的整理失败，已停止该容器：%w", name, err)
+	}
 	return e.dk.ContainerInspect(ctx, name)
+}
+
+// seedWorker 把该槽的用户、组和 machine-id 写进刚创建、尚未启动的容器。
+// 文件进入容器自己的文件层，重启后仍在；重建容器时重新写入。
+func (e *Engine) seedWorker(ctx context.Context, name string, slot model.Slot, ident model.Identity) error {
+	read := func(p string) ([]byte, error) {
+		b, err := e.dk.CopyFrom(ctx, name, p)
+		if dockerapi.IsNotFound(err) {
+			return nil, nil
+		}
+		return b, err
+	}
+	passwd, err := read("/etc/passwd")
+	if err != nil {
+		return err
+	}
+	group, err := read("/etc/group")
+	if err != nil {
+		return err
+	}
+	mid := []byte(ident.MachineID + "\n")
+	return e.dk.CopyTo(ctx, name, "/", map[string]dockerapi.File{
+		"etc/passwd":              {Data: mergePasswd(passwd, ident, slot), Mode: 0o644},
+		"etc/group":               {Data: mergeGroup(group, ident, slot), Mode: 0o644},
+		"etc/machine-id":          {Data: mid, Mode: 0o444},
+		"var/lib/dbus/machine-id": {Data: mid, Mode: 0o444},
+	})
+}
+
+// settleWorker 在运行中的 worker 里以容器内的 root 身份执行 workerSettleScript。
+func (e *Engine) settleWorker(ctx context.Context, name, tz string) error {
+	res, err := e.dk.Exec(ctx, name, []string{"/bin/sh", "-c", workerSettleScript},
+		dockerapi.ExecOptions{User: "0:0", Env: []string{"CC_DNS=" + workerDNS, "CC_TZ=" + tz}})
+	if err != nil {
+		return err
+	}
+	if res.ExitCode != 0 {
+		return &exitError{code: res.ExitCode, output: strings.TrimSpace(res.Stderr + res.Stdout)}
+	}
+	return nil
+}
+
+// writeHardwareFiles 生成可选的硬件信息覆盖文件。只在创建容器时生成一次，之后内容不变。
+func (e *Engine) writeHardwareFiles(ctx context.Context, image string, slot model.Slot, ident model.Identity, p workerParams) error {
+	if p.DMIDir != "" {
+		if _, err := e.st.WriteSlotDir(slot.ID, filepath.Base(p.DMIDir), dmiFiles(ident.DMI)); err != nil {
+			return err
+		}
+	}
+	if p.CPUInfo == "" && p.MemInfo == "" {
+		return nil
+	}
+	// 从一个同镜像的一次性无网容器里读出真实内容，再按限额改写。
+	res, err := e.dk.RunOnce(ctx, dockerapi.ContainerSpec{
+		Image:      image,
+		Entrypoint: []string{"cat"},
+		Cmd:        []string{"/proc/cpuinfo", "/proc/meminfo"},
+		Labels:     e.labels(roleHelper, ""),
+		HostConfig: dockerapi.HostConfig{NetworkMode: "none", CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges"}},
+	})
+	if err != nil {
+		return err
+	}
+	i := strings.Index(res.Stdout, "MemTotal:")
+	if res.ExitCode != 0 || i <= 0 {
+		return fmt.Errorf("读取 /proc/cpuinfo 与 /proc/meminfo 失败（退出码 %d）", res.ExitCode)
+	}
+	if p.CPUInfo != "" {
+		if _, err := e.st.WriteSlotFile(slot.ID, filepath.Base(p.CPUInfo), limitCPUInfo([]byte(res.Stdout[:i]), int(math.Ceil(slot.CPUs)))); err != nil {
+			return err
+		}
+	}
+	if p.MemInfo != "" {
+		if _, err := e.st.WriteSlotFile(slot.ID, filepath.Base(p.MemInfo), limitMemInfo([]byte(res.Stdout[i:]), slot.MemoryBytes)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // isPlumbed 报告该槽在网关一侧的网卡和策略路由是否都在。

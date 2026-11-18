@@ -118,3 +118,27 @@ func (c *Client) CopyTo(ctx context.Context, container, dir string, files map[st
 	}
 	return resp.Body.Close()
 }
+
+// maxCopyFrom 是 CopyFrom 读取单个文件的上限。
+const maxCopyFrom = 1 << 20
+
+// CopyFrom 读出容器里的一个普通文件；容器不必在运行。文件不存在时返回的错误满足 IsNotFound。
+func (c *Client) CopyFrom(ctx context.Context, container, file string) ([]byte, error) {
+	resp, err := c.request(ctx, http.MethodGet, "/containers/"+container+"/archive", url.Values{"path": {file}}, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	tr := tar.NewReader(resp.Body)
+	hdr, err := tr.Next()
+	if err != nil {
+		return nil, fmt.Errorf("读取容器文件 %s: %w", file, err)
+	}
+	if hdr.Typeflag != tar.TypeReg {
+		return nil, fmt.Errorf("容器里的 %s 不是普通文件", file)
+	}
+	if hdr.Size > maxCopyFrom {
+		return nil, fmt.Errorf("容器里的 %s 超过 %d 字节", file, maxCopyFrom)
+	}
+	return io.ReadAll(io.LimitReader(tr, maxCopyFrom))
+}

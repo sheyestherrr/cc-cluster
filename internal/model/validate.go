@@ -86,6 +86,12 @@ func (n Node) Validate() error {
 			return fmt.Errorf("节点 %s 的 expect_exit_ip：%w", n.ID, err)
 		}
 	}
+	if (n.TZ != "" || n.Lang != "") && n.Role != RoleLanding {
+		return fmt.Errorf("节点 %s：只有落地节点可以设置时区和语言", n.ID)
+	}
+	if err := checkLocale(n.TZ, n.Lang); err != nil {
+		return fmt.Errorf("节点 %s：%w", n.ID, err)
+	}
 	return nil
 }
 
@@ -228,7 +234,7 @@ func checkDNS(s string) error {
 	return nil
 }
 
-// Normalize 给未填的字段补默认值。
+// Normalize 给未填的字段补默认值。时区和语言留空表示沿用落地的设置，见 EffectiveLocale。
 func (s *Slot) Normalize() {
 	if s.Shell == "" {
 		s.Shell = DefaultShell
@@ -236,16 +242,63 @@ func (s *Slot) Normalize() {
 	if s.PidsLimit == 0 {
 		s.PidsLimit = DefaultPidsLimit
 	}
-	if s.Lang == "" {
-		s.Lang = "C.UTF-8"
-	}
 }
 
-// worker 内由管理器占用的路径，不允许被用户挂载覆盖。
-var reservedTargets = []string{"/", "/proc", "/sys", "/dev", "/etc", "/etc/machine-id", "/etc/passwd", "/etc/group", "/etc/hostname", "/etc/hosts", "/etc/resolv.conf", WorkerHome}
+// EffectiveLocale 返回槽位实际使用的时区和语言：槽位自己的设置优先，其次是落地的，
+// 语言最后落到 DefaultLang。时区可能为空，此时槽内是 UTC。
+func EffectiveLocale(s Slot, landing Node) (tz, lang string) {
+	tz, lang = s.TZ, s.Lang
+	if tz == "" {
+		tz = landing.TZ
+	}
+	if lang == "" {
+		lang = landing.Lang
+	}
+	if lang == "" {
+		lang = DefaultLang
+	}
+	return tz, lang
+}
 
-// WorkerHome 是 worker 内的 HOME 路径。
-const WorkerHome = "/home/dev"
+var (
+	tzRe   = regexp.MustCompile(`^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+){0,2}$`)
+	langRe = regexp.MustCompile(`^[A-Za-z0-9_.@-]+$`)
+)
+
+// checkLocale 检查时区与语言的写法；空值表示未设置。时区是否存在取决于镜像里的 tzdata。
+func checkLocale(tz, lang string) error {
+	if tz != "" && !tzRe.MatchString(tz) {
+		return fmt.Errorf("时区 %q 不合法：应形如 Asia/Tokyo", tz)
+	}
+	if lang != "" && !langRe.MatchString(lang) {
+		return fmt.Errorf("语言 %q 不合法：应形如 en_US.UTF-8", lang)
+	}
+	return nil
+}
+
+// worker 内不允许被用户挂载覆盖的目录树：系统目录与由管理器写入身份文件的位置。
+var reservedTrees = []string{"/proc", "/sys", "/dev", "/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/boot", "/run", "/var/lib/dbus"}
+
+// CheckMountTarget 检查一个挂载目标：规范的绝对路径，且不落在系统目录里。
+// home 是该槽在 worker 内的 HOME；非空时还要求目标不是 HOME 本身或它的上级目录。
+func CheckMountTarget(target, home string) error {
+	t := path.Clean(target)
+	if !path.IsAbs(target) || t != target {
+		return fmt.Errorf("挂载目标 %q 必须是规范的绝对路径", target)
+	}
+	if t == "/" {
+		return errors.New("不能挂载到根目录")
+	}
+	for _, r := range reservedTrees {
+		if t == r || strings.HasPrefix(t, r+"/") {
+			return fmt.Errorf("挂载目标 %q 在系统目录 %s 里", target, r)
+		}
+	}
+	if home != "" && (t == home || strings.HasPrefix(home, t+"/")) {
+		return fmt.Errorf("挂载目标 %q 会盖住该槽的 HOME（%s）", target, home)
+	}
+	return nil
+}
 
 // Validate 检查槽位。
 func (s Slot) Validate() error {
@@ -265,8 +318,11 @@ func (s Slot) Validate() error {
 	if s.UID <= 0 || s.GID <= 0 {
 		return fmt.Errorf("槽位 %s 的 UID/GID 必须是非 root 用户", s.ID)
 	}
-	if !path.IsAbs(s.Shell) {
-		return fmt.Errorf("槽位 %s 的 shell 必须是绝对路径", s.ID)
+	if !path.IsAbs(s.Shell) || strings.ContainsAny(s.Shell, ":\n ") {
+		return fmt.Errorf("槽位 %s 的 shell 必须是不含空白和冒号的绝对路径", s.ID)
+	}
+	if err := checkLocale(s.TZ, s.Lang); err != nil {
+		return fmt.Errorf("槽位 %s：%w", s.ID, err)
 	}
 	for _, m := range s.Mounts {
 		if !filepath.IsAbs(m.Source) {
@@ -278,14 +334,8 @@ func (s Slot) Validate() error {
 		if strings.ContainsAny(m.Source+m.Target, ":\n") {
 			return fmt.Errorf("槽位 %s 的挂载路径不能含冒号或换行", s.ID)
 		}
-		t := path.Clean(m.Target)
-		if !path.IsAbs(m.Target) || t != m.Target {
-			return fmt.Errorf("槽位 %s 的挂载目标 %q 必须是规范的绝对路径", s.ID, m.Target)
-		}
-		for _, r := range reservedTargets {
-			if t == r {
-				return fmt.Errorf("槽位 %s 的挂载目标 %q 由管理器占用", s.ID, m.Target)
-			}
+		if err := CheckMountTarget(m.Target, ""); err != nil {
+			return fmt.Errorf("槽位 %s：%w", s.ID, err)
 		}
 	}
 	for k := range s.Env {
@@ -298,6 +348,9 @@ func (s Slot) Validate() error {
 	}
 	if s.MemoryBytes < 0 || s.CPUs < 0 || s.PidsLimit < 0 {
 		return fmt.Errorf("槽位 %s 的资源限额不能为负", s.ID)
+	}
+	if s.FakeProc && s.CPUs == 0 && s.MemoryBytes == 0 {
+		return fmt.Errorf("槽位 %s：/proc 信息按限额显示，需要先设置 CPU 或内存上限", s.ID)
 	}
 	return nil
 }

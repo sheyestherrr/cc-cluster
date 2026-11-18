@@ -2,6 +2,7 @@ package engine
 
 import (
 	"net/netip"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -143,13 +144,19 @@ func testSlot() (model.Slot, model.Identity) {
 		TZ:     "Asia/Shanghai", MemoryBytes: 8 << 30, CPUs: 2.5,
 	}
 	sl.Normalize()
-	return sl, model.Identity{MachineID: strings.Repeat("ab", 16), Hostname: "dev-k3x9q1", MAC: "02:11:22:33:44:55"}
+	return sl, model.Identity{
+		MachineID: strings.Repeat("ab", 16), Hostname: "kevin-OptiPlex-7090", MAC: "3c:2c:30:33:44:55", User: "kevin",
+		DMI: map[string]string{"sys_vendor": "Dell Inc.", "product_name": "OptiPlex 7090", "bios_date": "07/12/2023", "chassis_type": "3"},
+	}
+}
+
+func testParams() workerParams {
+	sl, ident := testSlot()
+	return workerParams{Image: "img:1", Slot: sl, Ident: ident, TZ: sl.TZ, Lang: model.DefaultLang, HomeDir: "/d/slots/a/home", Labels: map[string]string{"k": "v"}}
 }
 
 func TestWorkerSpecIsolation(t *testing.T) {
-	sl, ident := testSlot()
-	files := workerFiles{Home: "/d/slots/a/home", MachineID: "/d/slots/a/etc/machine-id", Passwd: "/d/slots/a/etc/passwd", Group: "/d/slots/a/etc/group", ResolvConf: "/d/slots/a/etc/resolv.conf"}
-	spec := workerSpec("img:1", sl, ident, files, map[string]string{"k": "v"})
+	spec := workerSpec(testParams())
 	hc := spec.HostConfig
 
 	if hc.NetworkMode != "none" {
@@ -158,20 +165,26 @@ func TestWorkerSpecIsolation(t *testing.T) {
 	if len(hc.CapDrop) != 1 || hc.CapDrop[0] != "ALL" || len(hc.CapAdd) != 0 {
 		t.Fatalf("worker 不应有任何能力: drop=%v add=%v", hc.CapDrop, hc.CapAdd)
 	}
-	if !hc.ReadonlyRootfs || len(hc.SecurityOpt) != 1 || hc.SecurityOpt[0] != "no-new-privileges" {
-		t.Fatal("worker 必须只读 rootfs 且禁止提权")
+	if len(hc.SecurityOpt) != 1 || hc.SecurityOpt[0] != "no-new-privileges" {
+		t.Fatal("worker 必须禁止提权")
+	}
+	if hc.CgroupnsMode != "private" {
+		t.Fatal("worker 必须使用私有的 cgroup 命名空间")
 	}
 	if len(hc.Devices) != 0 || hc.PidMode != "" {
 		t.Fatal("worker 不应有设备或共享 PID 命名空间")
 	}
-	if spec.User != "1002:1002" || spec.Hostname != "dev-k3x9q1" {
-		t.Fatalf("用户与 hostname 不对: %s %s", spec.User, spec.Hostname)
+	if spec.User != "1002:1002" || spec.Hostname != "kevin-OptiPlex-7090" || spec.WorkingDir != "/home/kevin" {
+		t.Fatalf("用户、hostname 或工作目录不对: %s %s %s", spec.User, spec.Hostname, spec.WorkingDir)
+	}
+	if len(hc.ExtraHosts) != 1 || hc.ExtraHosts[0] != "kevin-OptiPlex-7090:127.0.1.1" {
+		t.Fatalf("主机名应解析到 127.0.1.1: %v", hc.ExtraHosts)
 	}
 	if hc.Sysctls["net.ipv6.conf.all.disable_ipv6"] != "1" {
 		t.Fatal("worker 必须关闭 IPv6")
 	}
-	if len(hc.DNS) != 1 || hc.DNS[0] != workerDNS {
-		t.Fatalf("resolv.conf 应只有一个普通的解析器地址: %v", hc.DNS)
+	if len(hc.DNS) != 1 || hc.DNS[0] != workerDNS || len(hc.DNSSearch) != 1 || hc.DNSSearch[0] != "." {
+		t.Fatalf("Docker 生成的 resolv.conf 不应带宿主的 search 域: %v %v", hc.DNS, hc.DNSSearch)
 	}
 	if hc.Memory != 8<<30 || hc.NanoCPUs != 2_500_000_000 || hc.PidsLimit != model.DefaultPidsLimit {
 		t.Fatalf("资源限额不对: %d %d %d", hc.Memory, hc.NanoCPUs, hc.PidsLimit)
@@ -181,54 +194,131 @@ func TestWorkerSpecIsolation(t *testing.T) {
 	if strings.Contains(strings.ToLower(env), "proxy") {
 		t.Fatalf("worker 环境里不允许出现任何代理变量:\n%s", env)
 	}
-	for _, want := range []string{"HOME=/home/dev", "EDITOR=vim", "TZ=Asia/Shanghai", "LANG=C.UTF-8"} {
+	for _, want := range []string{"HOME=/home/kevin", "USER=kevin", "EDITOR=vim", "TZ=Asia/Shanghai", "LANG=en_US.UTF-8"} {
 		if !strings.Contains(env, want) {
 			t.Errorf("环境变量缺少 %s", want)
 		}
 	}
 
 	binds := strings.Join(hc.Binds, "\n")
-	for _, want := range []string{
-		"/d/slots/a/home:/home/dev", "/d/slots/a/etc/machine-id:/etc/machine-id:ro",
-		"/d/slots/a/etc/passwd:/etc/passwd:ro", "/data/proj:/work", "/data/ref:/ref:ro",
-	} {
+	for _, want := range []string{"/d/slots/a/home:/home/kevin", "/data/proj:/work", "/data/ref:/ref:ro"} {
 		if !strings.Contains(binds, want) {
 			t.Errorf("挂载缺少 %s", want)
 		}
 	}
-	if strings.Contains(binds, "docker.sock") {
-		t.Fatal("worker 不能挂 Docker socket")
+	// 身份文件写进容器自己的文件层，不走挂载：挂载会在容器内的 mountinfo 里带出宿主路径。
+	for _, never := range []string{"docker.sock", "/etc/passwd", "/etc/machine-id", "/proc/cpuinfo", dmiPath} {
+		if strings.Contains(binds, never) {
+			t.Errorf("默认不应有挂载 %s", never)
+		}
 	}
 
 	masked := strings.Join(hc.MaskedPaths, "\n")
-	if !strings.Contains(masked, "/sys/devices/virtual/dmi/id") {
-		t.Fatal("必须遮蔽 DMI 信息")
+	if !strings.Contains(masked, dmiPath) {
+		t.Fatal("默认必须遮蔽 DMI 信息")
 	}
 	if !strings.Contains(masked, "/proc/kcore") || !strings.Contains(masked, "/sys/firmware") {
 		t.Fatal("给出 MaskedPaths 会替换 Docker 的默认列表，默认项必须一并带上")
 	}
 }
 
-func TestWorkerSpecDigestTracksChanges(t *testing.T) {
-	sl, ident := testSlot()
-	files := workerFiles{Home: "/h", MachineID: "/m", Passwd: "/p", Group: "/g"}
-	a := specDigest(workerSpec("img:1", sl, ident, files, map[string]string{}))
-	if a != specDigest(workerSpec("img:1", sl, ident, files, map[string]string{})) {
-		t.Fatal("相同输入应得到相同摘要")
+func TestWorkerSpecHardwareOverrides(t *testing.T) {
+	p := testParams()
+	p.DMIDir, p.CPUInfo, p.MemInfo = "/d/slots/a/etc/dmi", "/d/slots/a/etc/cpuinfo", "/d/slots/a/etc/meminfo"
+	hc := workerSpec(p).HostConfig
+	binds := strings.Join(hc.Binds, "\n")
+	for _, want := range []string{"/d/slots/a/etc/dmi:" + dmiPath + ":ro", "/d/slots/a/etc/cpuinfo:/proc/cpuinfo:ro", "/d/slots/a/etc/meminfo:/proc/meminfo:ro"} {
+		if !strings.Contains(binds, want) {
+			t.Errorf("挂载缺少 %s", want)
+		}
 	}
-	sl.Mounts = sl.Mounts[:1]
-	if a == specDigest(workerSpec("img:1", sl, ident, files, map[string]string{})) {
-		t.Fatal("挂载变化必须改变摘要")
+	// 遮蔽在挂载之后生效，留在列表里会把覆盖的内容再遮掉。
+	if strings.Contains(strings.Join(hc.MaskedPaths, "\n"), dmiPath) {
+		t.Fatal("覆盖 DMI 时不能同时遮蔽它")
 	}
 }
 
-func TestPasswdAndGroup(t *testing.T) {
-	sl, _ := testSlot()
-	pw := string(passwdFile(sl))
-	if !strings.Contains(pw, "dev:x:1002:1002:dev:/home/dev:/bin/bash\n") || !strings.HasPrefix(pw, "root:x:0:0:") {
+func TestWorkerDigestTracksChanges(t *testing.T) {
+	p := testParams()
+	a := workerDigest(workerSpec(p), p.Ident)
+	if a != workerDigest(workerSpec(p), p.Ident) {
+		t.Fatal("相同输入应得到相同摘要")
+	}
+	q := p
+	q.Slot.Mounts = q.Slot.Mounts[:1]
+	if a == workerDigest(workerSpec(q), q.Ident) {
+		t.Fatal("挂载变化必须改变摘要")
+	}
+	q = p
+	q.Ident.MachineID = strings.Repeat("cd", 16)
+	if a == workerDigest(workerSpec(q), q.Ident) {
+		t.Fatal("machine-id 不在容器规格里，但写进了容器，也必须改变摘要")
+	}
+}
+
+func TestMergePasswdAndGroup(t *testing.T) {
+	sl, ident := testSlot()
+	base := "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nnode:x:1002:1002::/home/node:/bin/bash\nkevin:x:1500:1500::/home/old:/bin/sh\n"
+	pw := string(mergePasswd([]byte(base), ident, sl))
+	if !strings.HasSuffix(pw, "kevin:x:1002:1002:Kevin:/home/kevin:/bin/bash\n") || !strings.HasPrefix(pw, "root:x:0:0:") || !strings.Contains(pw, "daemon:x:1:1:") {
 		t.Fatalf("passwd 内容不对:\n%s", pw)
 	}
-	if gr := string(groupFile(sl)); !strings.Contains(gr, "dev:x:1002:\n") {
+	if strings.Contains(pw, "node:") || strings.Contains(pw, "/home/old") {
+		t.Fatalf("同 UID 或同名的旧条目应被去掉:\n%s", pw)
+	}
+	if got := string(mergePasswd(nil, ident, sl)); !strings.HasPrefix(got, "root:x:0:0:") || !strings.Contains(got, "kevin:x:1002:1002:") {
+		t.Fatalf("镜像没有 passwd 时应从最小内容开始:\n%s", got)
+	}
+
+	gr := string(mergeGroup([]byte("root:x:0:\nusers:x:100:\nkevin:x:1500:\n"), ident, sl))
+	if gr != "root:x:0:\nusers:x:100:\nkevin:x:1002:\n" {
 		t.Fatalf("group 内容不对:\n%s", gr)
+	}
+	if gr := string(mergeGroup([]byte("root:x:0:\nstaff:x:1002:\n"), ident, sl)); gr != "root:x:0:\nstaff:x:1002:\n" {
+		t.Fatalf("已有同 GID 的组时应沿用:\n%s", gr)
+	}
+}
+
+func TestLimitCPUInfo(t *testing.T) {
+	block := func(i int) string {
+		return "processor\t: " + strconv.Itoa(i) + "\nmodel name\t: Intel(R) Xeon(R)\nsiblings\t: 48\ncore id\t\t: " + strconv.Itoa(i) + "\ncpu cores\t: 24"
+	}
+	real := block(0) + "\n\n" + block(1) + "\n\n" + block(2) + "\n\n" + block(3) + "\n\n"
+	got := string(limitCPUInfo([]byte(real), 2))
+	if strings.Count(got, "processor\t:") != 2 || strings.Contains(got, ": 48") || strings.Contains(got, ": 24") {
+		t.Fatalf("应只剩 2 个处理器且核数字段一致:\n%s", got)
+	}
+	if !strings.Contains(got, "siblings\t: 2\n") || !strings.Contains(got, "cpu cores\t: 2") || !strings.Contains(got, "model name\t: Intel(R) Xeon(R)") {
+		t.Fatalf("字段改写不对:\n%s", got)
+	}
+	if n := strings.Count(string(limitCPUInfo([]byte(real), 99)), "processor\t:"); n != 4 {
+		t.Fatalf("限额超过实际核数时保持原样，得到 %d", n)
+	}
+}
+
+func TestLimitMemInfo(t *testing.T) {
+	real := "MemTotal:       16000000 kB\nMemFree:         8000000 kB\nHugePages_Total:       0\nHugepagesize:       2048 kB\n"
+	got := string(limitMemInfo([]byte(real), 4000000*1024))
+	for _, want := range []string{"MemTotal:        4000000 kB", "MemFree:         2000000 kB", "HugePages_Total:       0", "Hugepagesize:       2048 kB"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("缺少 %q:\n%s", want, got)
+		}
+	}
+	if string(limitMemInfo([]byte(real), 32000000*1024)) != real {
+		t.Fatal("限额不小于实际总量时保持原样")
+	}
+}
+
+func TestDMIFiles(t *testing.T) {
+	_, ident := testSlot()
+	files := dmiFiles(ident.DMI)
+	if string(files["sys_vendor"]) != "Dell Inc.\n" || string(files["product_name"]) != "OptiPlex 7090\n" {
+		t.Fatalf("字段内容不对: %q", files["sys_vendor"])
+	}
+	if !strings.HasPrefix(string(files["modalias"]), "dmi:bvn") || !strings.Contains(string(files["modalias"]), ":svnDellInc.:pnOptiPlex7090:") {
+		t.Fatalf("modalias 不对: %s", files["modalias"])
+	}
+	if string(files["uevent"]) != "MODALIAS="+string(files["modalias"]) {
+		t.Fatal("uevent 应与 modalias 一致")
 	}
 }

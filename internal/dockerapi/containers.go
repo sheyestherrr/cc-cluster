@@ -38,12 +38,16 @@ type HostConfig struct {
 	Tmpfs          map[string]string `json:"Tmpfs,omitempty"`
 	Devices        []DeviceMapping   `json:"Devices,omitempty"`
 	Sysctls        map[string]string `json:"Sysctls,omitempty"`
-	DNS            []string          `json:"Dns,omitempty"`
-	DNSSearch      []string          `json:"DnsSearch,omitempty"`
-	Memory         int64             `json:"Memory,omitempty"`
-	NanoCPUs       int64             `json:"NanoCpus,omitempty"`
-	PidsLimit      int64             `json:"PidsLimit,omitempty"`
-	Init           *bool             `json:"Init,omitempty"`
+	// CgroupnsMode 为 private 时容器看不到自己在宿主 cgroup 树里的路径（其中带容器 ID）。
+	CgroupnsMode string `json:"CgroupnsMode,omitempty"`
+	// ExtraHosts 追加到容器的 /etc/hosts，每项形如 名字:地址。
+	ExtraHosts []string `json:"ExtraHosts,omitempty"`
+	DNS        []string `json:"Dns,omitempty"`
+	DNSSearch  []string `json:"DnsSearch,omitempty"`
+	Memory     int64    `json:"Memory,omitempty"`
+	NanoCPUs   int64    `json:"NanoCpus,omitempty"`
+	PidsLimit  int64    `json:"PidsLimit,omitempty"`
+	Init       *bool    `json:"Init,omitempty"`
 	// MaskedPaths 为 nil 时使用 Docker 的默认列表；给出时整体替换默认值。
 	MaskedPaths []string   `json:"MaskedPaths,omitempty"`
 	LogConfig   *LogConfig `json:"LogConfig,omitempty"`

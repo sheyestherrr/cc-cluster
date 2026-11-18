@@ -68,6 +68,8 @@ func (a *app) nodeAdd(args []string) error {
 	passwordFile := fs.String("password-file", "", "不用 --file 时：存放口令的文件（口令不从命令行传，避免留在进程列表和 shell 历史里）")
 	fs.StringVar(&n.ConnectIPv4, "connect-ipv4", "", "server 是域名且该节点作首跳时必填：它的 IPv4 地址")
 	fs.StringVar(&n.ExpectExitIP, "expect-exit-ip", "", "落地的预期出口 IPv4；填了就必须与实测一致")
+	fs.StringVar(&n.TZ, "tz", "", "落地所在地区的时区，例如 Asia/Tokyo；绑定它的槽位默认沿用")
+	fs.StringVar(&n.Lang, "lang", "", "落地所在地区的语言，例如 en_US.UTF-8；绑定它的槽位默认沿用")
 	id, err := parseWithID(fs, args)
 	if err != nil {
 		return err
@@ -347,12 +349,16 @@ func (a *app) slotAdd(args []string) error {
 	fs.StringVar(&s.Shell, "shell", model.DefaultShell, "worker 内的登录 shell")
 	fs.Var(&mounts, "mount", "挂载，形如 宿主路径:容器路径[:ro]，可重复")
 	fs.Var(&envs, "env", "额外的环境变量 名=值，可重复；不允许代理变量")
-	fs.StringVar(&s.TZ, "tz", "", "时区，例如 Asia/Shanghai")
-	fs.StringVar(&s.Lang, "lang", "", "LANG，默认 C.UTF-8")
+	fs.StringVar(&s.TZ, "tz", "", "时区，例如 Asia/Shanghai；不填沿用落地的设置")
+	fs.StringVar(&s.Lang, "lang", "", "LANG；不填沿用落地的设置，都没有则为 "+model.DefaultLang)
 	memory := fs.String("memory", "", "内存上限，例如 8g")
 	fs.Float64Var(&s.CPUs, "cpus", 0, "CPU 上限（核数）")
 	fs.Int64Var(&s.PidsLimit, "pids", model.DefaultPidsLimit, "进程数上限")
-	hostname := fs.String("hostname", "", "指定 hostname；不填则随机生成并持久化")
+	var opt engine.SlotOptions
+	fs.StringVar(&opt.Hostname, "hostname", "", "指定 hostname；不填则按“用户名-机型”生成并持久化")
+	fs.StringVar(&opt.User, "user", "", "指定 worker 内的用户名；不填则随机挑一个并持久化")
+	fs.BoolVar(&s.FakeDMI, "fake-dmi", false, "用该槽身份里的机型信息覆盖 DMI（默认是把 DMI 遮成空的）")
+	fs.BoolVar(&s.FakeProc, "fake-proc", false, "让 /proc/cpuinfo 与 /proc/meminfo 按 --cpus / --memory 的限额显示（静态内容，不随用量变化）")
 	id, err := parseWithID(fs, args)
 	if err != nil {
 		return err
@@ -391,7 +397,7 @@ func (a *app) slotAdd(args []string) error {
 	if err != nil {
 		return err
 	}
-	out, warnings, err := eng.AddSlot(s, *hostname)
+	out, warnings, err := eng.AddSlot(s, opt)
 	if err != nil {
 		return err
 	}
@@ -468,10 +474,14 @@ func (a *app) slotEnter(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	ident, _, err := st.Identity(id)
+	if err != nil {
+		return err
+	}
 	docker, err := exec.LookPath("docker")
 	if err != nil {
 		return errors.New("进入交互式 shell 需要 docker 命令行，PATH 里没有找到")
 	}
-	argv := []string{"docker", "exec", "-it", "-w", model.WorkerHome, eng.WorkerContainer(id), sl.Shell, "-l"}
+	argv := []string{"docker", "exec", "-it", "-w", ident.Home(), eng.WorkerContainer(id), sl.Shell, "-l"}
 	return syscall.Exec(docker, argv, os.Environ())
 }

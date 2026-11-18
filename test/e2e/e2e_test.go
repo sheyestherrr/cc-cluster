@@ -126,7 +126,7 @@ func setup(t *testing.T) *env {
 	}
 	// 中转用域名 + connect_ipv4，顺带验证核心的 hosts 固定。
 	must(t, e.eng.AddNode(model.Node{ID: "transit", Role: model.RoleTransit, Proxy: socks("transit.test"), ConnectIPv4: ipTransitEgress}))
-	must(t, e.eng.AddNode(model.Node{ID: "la", Role: model.RoleLanding, Proxy: socks(ipLandA), ExpectExitIP: ipLandA}))
+	must(t, e.eng.AddNode(model.Node{ID: "la", Role: model.RoleLanding, Proxy: socks(ipLandA), ExpectExitIP: ipLandA, TZ: "Asia/Tokyo"}))
 	must(t, e.eng.AddNode(model.Node{ID: "lb", Role: model.RoleLanding, Proxy: socks(ipLandB), ExpectExitIP: ipLandB}))
 	must(t, e.eng.AddNode(model.Node{ID: "lwrong", Role: model.RoleLanding, Proxy: socks(ipLandB), ExpectExitIP: "198.51.100.99"}))
 	must(t, e.eng.AddGateway(model.Gateway{
@@ -147,10 +147,17 @@ func must(t *testing.T, err error) {
 
 func (e *env) addSlot(id, landing string) {
 	e.t.Helper()
-	_, _, err := e.eng.AddSlot(model.Slot{
+	sl := model.Slot{
 		ID: id, Gateway: "main", Landing: landing, Shell: "/bin/sh", UID: os.Getuid(), GID: os.Getgid(),
 		Mounts: []model.Mount{{Source: e.bin, Target: "/opt/e2e", ReadOnly: true}},
-	}, "")
+	}
+	var opt engine.SlotOptions
+	if id == "a" {
+		// 槽 a 打开全部可选项，槽 b 保持默认，两种情形各有一个槽覆盖。
+		opt.User = "kevin"
+		sl.FakeDMI, sl.FakeProc, sl.CPUs, sl.MemoryBytes = true, true, 2, 1<<30
+	}
+	_, _, err := e.eng.AddSlot(sl, opt)
 	must(e.t, err)
 }
 
@@ -287,13 +294,24 @@ func TestEndToEnd(t *testing.T) {
 		e.expect("默认路由指向本槽网关", `^default via 10\.213\.250\.1 dev eth0`, e.wsh("a", "ip route show default"))
 		e.expect("MAC 是持久化的那一个", "^"+identA.MAC+"$", e.wsh("a", "cat /sys/class/net/eth0/address"))
 		e.expect("hostname", "^"+identA.Hostname+"/"+identA.Hostname+"$", e.wsh("a", "echo $(hostname)/$(cat /etc/hostname)"))
-		e.expect("machine-id", "^"+identA.MachineID+"$", e.wsh("a", "cat /etc/machine-id"))
-		e.expect("以项目用户运行", `^`+regexp.QuoteMeta(e.wsh("a", "echo $(id -u):$(id -g)"))+`$`, e.wsh("a", "stat -c %u:%g /home/dev"))
-		e.expect("用户名", `^dev$`, e.wsh("a", "whoami"))
+		e.expect("machine-id", "^"+identA.MachineID+"/"+identA.MachineID+"$", e.wsh("a", "echo $(cat /etc/machine-id)/$(cat /var/lib/dbus/machine-id)"))
+		e.expect("以项目用户运行", `^`+regexp.QuoteMeta(e.wsh("a", "echo $(id -u):$(id -g)"))+`$`, e.wsh("a", "stat -c %u:%g /home/kevin"))
+		e.expect("用户名与 HOME 是该槽自己的", `^kevin /home/kevin /home/kevin$`, e.wsh("a", "echo $(whoami) $HOME $(pwd)"))
+		e.expect("passwd 保留镜像的系统账号并加入该槽用户", `^root:x:0:0:.*\nkevin:x:\d+:\d+:Kevin:/home/kevin:/bin/sh$`, e.wsh("a", "grep -E '^(root|kevin):' /etc/passwd"))
+		e.expect("另一个槽的用户名是随机挑的，不相同", `^ok$`, e.wsh("b", "[ \"$(whoami)\" != kevin ] && [ \"$HOME\" = \"/home/$(whoami)\" ] && echo ok"))
 		e.expect("没有任何能力", `^CapEff:\s+0000000000000000$`, e.wsh("a", "grep CapEff /proc/self/status"))
-		e.expect("rootfs 只读", `Read-only`, e.wsh("a", "touch /probe 2>&1"))
-		e.expect("HOME 可写", `^ok$`, e.wsh("a", "touch /home/dev/.probe && echo ok"))
-		e.expect("DMI 信息被遮蔽", `^0$`, e.wsh("a", "ls /sys/devices/virtual/dmi/id 2>/dev/null | wc -l"))
+		e.expect("系统目录写不动", `^denied denied$`, e.wsh("a", "for d in /etc /usr; do touch $d/.probe 2>/dev/null && echo wrote || echo denied; done | tr '\\n' ' ' | sed 's/ $//'"))
+		e.expect("HOME 可写", `^ok$`, e.wsh("a", "touch /home/kevin/.probe && echo ok"))
+		e.expect("/.dockerenv 已删除", `^gone$`, e.wsh("a", "test -e /.dockerenv && echo present || echo gone"))
+		e.expect("cgroup 路径里没有容器 ID", `^0$`, e.wsh("a", "grep -c docker /proc/self/cgroup"))
+		e.expect("身份文件不是挂载进来的", `^0$`, e.wsh("a", "grep -cE ' /etc/(passwd|group|machine-id) ' /proc/self/mountinfo"))
+		e.expect("主机名解析到 127.0.1.1", `^127\.0\.1\.1\s+`+identA.Hostname+`$`, e.wsh("a", "grep 127.0.1.1 /etc/hosts"))
+		e.expect("时区沿用落地的设置", `^Asia/Tokyo$`, e.wsh("a", "echo $TZ"))
+		e.expect("槽 b 没有设置时区", `^unset$`, e.wsh("b", "echo ${TZ:-unset}"))
+		e.expect("槽 a 的 DMI 是该槽身份里的机型", "^"+regexp.QuoteMeta(identA.DMI["sys_vendor"]+"/"+identA.DMI["product_name"])+"$", e.wsh("a", "echo \"$(cat /sys/class/dmi/id/sys_vendor)/$(cat /sys/class/dmi/id/product_name)\""))
+		e.expect("槽 a 的 DMI 不含只有 root 可读的序列号", `^0$`, e.wsh("a", "ls /sys/class/dmi/id | grep -cE 'serial|uuid'"))
+		e.expect("槽 b 的 DMI 信息被遮蔽", `^0$`, e.wsh("b", "ls /sys/devices/virtual/dmi/id 2>/dev/null | wc -l"))
+		e.expect("槽 a 的 cpuinfo 与 meminfo 按限额显示", `^2 1048576$`, e.wsh("a", "echo $(grep -c ^processor /proc/cpuinfo) $(awk '/^MemTotal:/{print $2}' /proc/meminfo)"))
 		e.expect("worker 自己不能改路由", `not permitted`, e.wsh("a", "ip route add 192.0.2.0/24 dev eth0 2>&1"))
 	})
 
@@ -430,7 +448,8 @@ func TestEndToEnd(t *testing.T) {
 		e.up("a", ipLandA)
 		e.expect("重新接线后 MAC 不变", "^"+identA.MAC+"$", e.wsh("a", "cat /sys/class/net/eth0/address"))
 		e.expect("machine-id 不变", "^"+identA.MachineID+"$", e.wsh("a", "cat /etc/machine-id"))
-		e.expect("HOME 里的文件还在", `^ok$`, e.wsh("a", "test -f /home/dev/.probe && echo ok"))
+		e.expect("HOME 里的文件还在", `^ok$`, e.wsh("a", "test -f /home/kevin/.probe && echo ok"))
+		e.expect("重启后 /.dockerenv 没有回来，resolv.conf 仍只有一行", `^gone nameserver 1\.1\.1\.1$`, e.wsh("a", "echo $(test -e /.dockerenv && echo present || echo gone) $(cat /etc/resolv.conf)"))
 	})
 
 	t.Run("网关重建后逐槽恢复", func(t *testing.T) {

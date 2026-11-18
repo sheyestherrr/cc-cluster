@@ -23,6 +23,11 @@ const (
 	DefaultShell         = "/bin/bash"
 	DefaultLogLevel      = "warning"
 	DefaultPidsLimit     = 4096
+	// DefaultLang 在槽位和落地都没有指定语言时使用；默认的 worker 镜像里生成了这个 locale。
+	DefaultLang = "en_US.UTF-8"
+	// LegacyUser 是早期版本里所有槽共用的用户名；没有记录用户名的旧身份继续用它，
+	// 这样已有 HOME 里保存的路径不会失效。
+	LegacyUser = "dev"
 )
 
 // DefaultEchoURLs 是出口 IP 探测地址，逐个尝试，取第一个返回 IPv4 的结果。
@@ -50,6 +55,10 @@ type Node struct {
 	ConnectIPv4 string `json:"connect_ipv4,omitempty"`
 	// ExpectExitIP 是落地的预期出口地址；填了就必须与实测一致。
 	ExpectExitIP string `json:"expect_exit_ip,omitempty"`
+	// TZ 与 Lang 是落地所在地区的时区和语言；绑定它的槽位没有自己指定时沿用，
+	// 让槽内的时区与出口地区一致。
+	TZ   string `json:"tz,omitempty"`
+	Lang string `json:"lang,omitempty"`
 }
 
 // Gateway 是一个网关容器的期望配置。
@@ -90,15 +99,35 @@ type Slot struct {
 	MemoryBytes int64             `json:"memory_bytes,omitempty"`
 	CPUs        float64           `json:"cpus,omitempty"`
 	PidsLimit   int64             `json:"pids_limit,omitempty"`
+	// FakeDMI 用该槽身份里的机型信息覆盖 DMI 目录；默认关闭，此时 DMI 目录被遮成空的。
+	FakeDMI bool `json:"fake_dmi,omitempty"`
+	// FakeProc 让 /proc/cpuinfo 与 /proc/meminfo 按该槽的 CPU / 内存限额显示；默认关闭。
+	// 覆盖后的内容是创建容器时生成的静态文件，不随实际用量变化。
+	FakeProc bool `json:"fake_proc,omitempty"`
 }
 
 // Identity 是槽位的稳定身份，首次生成后不再改动。
 type Identity struct {
-	MachineID string    `json:"machine_id"`
-	Hostname  string    `json:"hostname"`
-	MAC       string    `json:"mac"`
-	CreatedAt time.Time `json:"created_at"`
+	MachineID string `json:"machine_id"`
+	Hostname  string `json:"hostname"`
+	MAC       string `json:"mac"`
+	// User 是 worker 内的用户名，HOME 为 /home/<User>。为空表示早期版本生成的身份。
+	User string `json:"user,omitempty"`
+	// DMI 是该槽的机型信息（sysfs 的 DMI 字段名 → 值），只在槽位开启 FakeDMI 时使用。
+	DMI       map[string]string `json:"dmi,omitempty"`
+	CreatedAt time.Time         `json:"created_at"`
 }
+
+// UserName 返回 worker 内的用户名。
+func (i Identity) UserName() string {
+	if i.User == "" {
+		return LegacyUser
+	}
+	return i.User
+}
+
+// Home 返回 worker 内的 HOME 路径。
+func (i Identity) Home() string { return "/home/" + i.UserName() }
 
 // Applied 记录一次成功应用的结果。
 type Applied struct {
