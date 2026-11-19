@@ -13,6 +13,13 @@
 #     安装与更新产生的访问都从该槽绑定的出口发出。
 #   - 不保留镜像自带的 node 用户：每个槽的用户由管理器在容器创建后写入 /etc/passwd。
 #
+# 另外带两个只在开启“宿主 tmux 桥接”的槽位里用到的程序（所有槽的镜像都带，不随开关变化）：
+#   - tmux：发行版自带的版本。它只作为客户端去连宿主上的 tmux server。
+#   - tmux-mcp-rs：https://github.com/bnomei/tmux-mcp（MIT），用 npm 安装，取当时的最新版。
+#     npm 包只是一个启动脚本，真正的二进制在第一次运行时才从 GitHub Releases 下载到缓存目录；
+#     这里在构建时就运行一次让它落在镜像里（否则每个槽位第一次使用时都要各自经出口去下载），
+#     再把命令直接指向这个二进制，槽内不需要额外的环境变量。
+#
 # 需要别的工具链时，以此为基础另建镜像，再用 slot add --image 指定。
 # 自定义镜像至少要有 /bin/sh、sleep、rm、ln；想让时区生效还需要 tzdata。
 ARG BASE_IMAGE=node:24-bookworm
@@ -20,8 +27,15 @@ FROM ${BASE_IMAGE}
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash ca-certificates curl fzf gh git gnupg2 jq less locales man-db nano \
-        openssh-client procps ripgrep tzdata unzip vim zsh \
+        openssh-client procps ripgrep tmux tzdata unzip vim zsh \
     && rm -rf /var/lib/apt/lists/* \
     && sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen \
     && locale-gen \
     && (userdel -r node 2>/dev/null || true)
+RUN npm install -g @bnomei/tmux-mcp-rs \
+    && TMUX_MCP_RS_NPM_CACHE=/usr/local/share/tmux-mcp-rs tmux-mcp-rs --version \
+    && bin="$(find /usr/local/share/tmux-mcp-rs -type f -name tmux-mcp-rs)" \
+    && chmod 0755 "$bin" && chmod -R a+rX /usr/local/share/tmux-mcp-rs \
+    && ln -sf "$bin" /usr/local/bin/tmux-mcp-rs \
+    && tmux-mcp-rs --version \
+    && npm cache clean --force
