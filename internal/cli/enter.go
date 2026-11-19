@@ -183,7 +183,7 @@ func (a *app) enter(ctx context.Context, req enterRequest) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(a.errw, "槽位 %s 已就绪：出口 %s\n", req.Slot, res.ExitIP)
+		fmt.Fprintf(a.errw, "槽位 %s 已就绪：出口 %s\n", req.Slot, res.ExitSummary())
 	}
 
 	docker, err := exec.LookPath("docker")

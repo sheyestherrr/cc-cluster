@@ -28,6 +28,7 @@ type SlotStatus struct {
 	State      string
 	HoldReason string
 	ExitIP     string    // 最近一次复测通过的出口
+	ExitWhere  string    // 出口的国家与运营商，探测地址给出时才有
 	AppliedAt  time.Time // 最近一次复测通过的时间
 	WorkerIP   string
 }
@@ -67,6 +68,7 @@ func (e *Engine) slotStatus(ctx context.Context, sl model.Slot) (SlotStatus, err
 	}
 	if hasApplied {
 		s.ExitIP, s.AppliedAt = applied.ExitIP, applied.AppliedAt
+		s.ExitWhere = exitWhere(applied.ExitCountry, applied.ExitOrg)
 	}
 	if p, err := netip.ParsePrefix(sl.Subnet); err == nil {
 		s.WorkerIP = p.Addr().Next().Next().String()

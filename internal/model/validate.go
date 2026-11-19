@@ -265,10 +265,20 @@ var (
 	langRe = regexp.MustCompile(`^[A-Za-z0-9_.@-]+$`)
 )
 
+// CheckTZ 检查一个时区名的写法；空值也不合格。
+func CheckTZ(tz string) error {
+	if !tzRe.MatchString(tz) {
+		return fmt.Errorf("时区 %q 不合法：应形如 Asia/Tokyo", tz)
+	}
+	return nil
+}
+
 // checkLocale 检查时区与语言的写法；空值表示未设置。时区是否存在取决于镜像里的 tzdata。
 func checkLocale(tz, lang string) error {
-	if tz != "" && !tzRe.MatchString(tz) {
-		return fmt.Errorf("时区 %q 不合法：应形如 Asia/Tokyo", tz)
+	if tz != "" {
+		if err := CheckTZ(tz); err != nil {
+			return err
+		}
 	}
 	if lang != "" && !langRe.MatchString(lang) {
 		return fmt.Errorf("语言 %q 不合法：应形如 en_US.UTF-8", lang)

@@ -194,7 +194,14 @@ func target(answerIP string) {
 	seen := func(c net.Conn) {
 		defer c.Close()
 		_ = c.SetReadDeadline(time.Now().Add(1500 * time.Millisecond))
-		_, _ = c.Read(make([]byte, 4096))
+		buf := make([]byte, 4096)
+		n, _ := c.Read(buf)
+		// /json 模仿带时区的出口探测服务（ipinfo.io 的应答形状）。
+		if strings.HasPrefix(string(buf[:n]), "GET /json") {
+			fmt.Fprintf(c, "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n"+
+				"{\"ip\": \"%s\", \"country\": \"DE\", \"org\": \"AS64500 Fake Net\", \"timezone\": \"Europe/Berlin\"}\n", peerIP(c))
+			return
+		}
 		fmt.Fprintf(c, "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nSEEN %s\n", peerIP(c))
 	}
 	serve("80", seen)

@@ -30,8 +30,11 @@ const (
 	LegacyUser = "dev"
 )
 
-// DefaultEchoURLs 是出口 IP 探测地址，逐个尝试，取第一个返回 IPv4 的结果。
+// DefaultEchoURLs 是出口探测地址，逐个尝试，取第一个给出 IPv4 的结果。
+// 排在最前的 ipinfo.io 返回 JSON，除出口 IP 外还带所在时区、国家和运营商；
+// 落地没有设置时区时就用它给出的时区。其余几个只返回 IP，作为后备。
 var DefaultEchoURLs = []string{
+	"https://ipinfo.io/json",
 	"https://api.ipify.org",
 	"https://ifconfig.me/ip",
 	"https://icanhazip.com",
@@ -64,6 +67,8 @@ type Node struct {
 	// 让槽内的时区与出口地区一致。
 	TZ   string `json:"tz,omitempty"`
 	Lang string `json:"lang,omitempty"`
+	// TZAuto 表示 TZ 是首次启动槽位时按出口探测结果自动设置的。
+	TZAuto bool `json:"tz_auto,omitempty"`
 }
 
 // NodeSource 指向订阅里的一个节点。
@@ -173,6 +178,10 @@ type Applied struct {
 	ExitIP      string    `json:"exit_ip"`
 	AppliedAt   time.Time `json:"applied_at"`
 	EchoURLUsed string    `json:"echo_url,omitempty"`
+	// 以下三项来自返回 JSON 的探测地址，只用于显示。
+	ExitCountry string `json:"exit_country,omitempty"`
+	ExitOrg     string `json:"exit_org,omitempty"`
+	ExitTZ      string `json:"exit_tz,omitempty"`
 }
 
 // Hold 是手动断网的持久标记；存在时拒绝接线。

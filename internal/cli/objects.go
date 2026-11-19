@@ -352,7 +352,7 @@ func (a *app) cmdSlot(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(a.out, "槽位 %s 已就绪：出口 %s（已从 worker 的位置复测）\n", id, res.ExitIP)
+		fmt.Fprintf(a.out, "槽位 %s 已就绪：出口 %s（已从 worker 的位置复测）\n", id, res.ExitSummary())
 		return nil
 	case "stop":
 		id, err := parseWithID(a.newFlags("slot stop", "slot stop <槽位>"), rest)
@@ -543,14 +543,14 @@ func (a *app) printSlots(ctx context.Context, eng *engine.Engine) error {
 		return err
 	}
 	w := a.table()
-	fmt.Fprintln(w, "槽位\t状态\t网关\t落地\t已验证出口\t验证时间\thostname\t备注")
+	fmt.Fprintln(w, "槽位\t状态\t网关\t落地\t已验证出口\t出口归属\t验证时间\thostname\t备注")
 	for _, s := range sts {
 		at := "-"
 		if !s.AppliedAt.IsZero() {
 			at = s.AppliedAt.Local().Format("2006-01-02 15:04:05")
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Slot.ID, s.State, s.Slot.Gateway, s.Slot.Landing,
-			orDash(s.ExitIP), at, s.Identity.Hostname, orDash(s.HoldReason))
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Slot.ID, s.State, s.Slot.Gateway, s.Slot.Landing,
+			orDash(s.ExitIP), orDash(s.ExitWhere), at, s.Identity.Hostname, orDash(s.HoldReason))
 	}
 	return w.Flush()
 }

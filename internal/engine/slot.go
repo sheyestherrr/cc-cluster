@@ -204,7 +204,7 @@ func (e *Engine) AddSlot(ctx context.Context, sl model.Slot, opt SlotOptions) (o
 		return sl, nil, fmt.Errorf("槽位 %s 保留的身份里没有机型信息，不能开启 DMI 覆盖", sl.ID)
 	}
 	if tz, _ := model.EffectiveLocale(sl, landing); tz == "" {
-		warnings = append(warnings, fmt.Sprintf("槽位和落地 %s 都没有设置时区，槽内将是 UTC；建议按出口所在地区设置（slot add --tz，或 node add --tz）", landing.ID))
+		warnings = append(warnings, fmt.Sprintf("槽位和落地 %s 都没有设置时区：首次启动时会按探测到的出口所在时区设置；探测不到时槽内是 UTC", landing.ID))
 	}
 
 	if err := e.st.SaveSlot(sl, true); err != nil {
@@ -231,6 +231,27 @@ type UpResult struct {
 	ExitIP    string
 	Worker    string
 	Replumbed bool
+	// Exit 是链路探测得到的出口信息（地区、运营商、时区），可能只有 IP。
+	Exit exitInfo
+}
+
+// ExitSummary 返回出口的一行描述，例如 "203.0.113.8（US，AS64500 Example）"。
+func (r UpResult) ExitSummary() string {
+	if where := exitWhere(r.Exit.Country, r.Exit.Org); where != "" {
+		return r.ExitIP + "（" + where + "）"
+	}
+	return r.ExitIP
+}
+
+// exitWhere 把出口的国家与运营商拼成一段，都没有时为空。
+func exitWhere(country, org string) string {
+	var parts []string
+	for _, s := range []string{country, org} {
+		if s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, "，")
 }
 
 // SlotUp 按下面的顺序启动一个槽：
@@ -271,12 +292,23 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 	link, landing := p.links[id], p.landings[id]
 
 	e.logf("经网关回环入口探测槽位 %s 的链路", id)
-	chainIP, echoURL, err := e.probeChain(ctx, rt, link, p.gw.EchoURLs)
+	exit, err := e.probeChain(ctx, rt, link, p.gw.EchoURLs)
 	if err != nil {
 		return res, fmt.Errorf("槽位 %s 的链路不可用，未接线：%w", id, err)
 	}
+	chainIP, echoURL := exit.IP, exit.URL
 	if landing.ExpectExitIP != "" && chainIP != landing.ExpectExitIP {
 		return res, fmt.Errorf("槽位 %s 的链路出口是 %s，与落地 %s 绑定的 %s 不符，未接线", id, chainIP, landing.ID, landing.ExpectExitIP)
+	}
+	// 落地没有设置时区时，按探测到的出口所在时区设置一次并记下，之后不再随探测结果变动：
+	// worker 的时区是容器规格的一部分，变了就要重建。
+	if landing.TZ == "" && exit.TZ != "" {
+		landing.TZ, landing.TZAuto = exit.TZ, true
+		if err := e.st.SaveNode(landing, false); err != nil {
+			return res, err
+		}
+		p.landings[id] = landing
+		e.logf("落地 %s 的时区按出口探测结果设为 %s", landing.ID, exit.TZ)
 	}
 
 	wc, err := e.ensureWorker(ctx, slot, ident, landing, opt.Recreate)
@@ -317,7 +349,9 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 	err = e.st.SaveApplied(id, model.Applied{
 		Digest: digest, WorkerID: wc.ID, GatewayID: rt.id, ExitIP: workerIP,
 		AppliedAt: time.Now().UTC(), EchoURLUsed: echoURL,
+		ExitCountry: exit.Country, ExitOrg: exit.Org, ExitTZ: exit.TZ,
 	})
+	res.Exit = exit
 	return res, err
 }
 
@@ -595,8 +629,46 @@ func parseExitIP(body string) (string, bool) {
 	return "", false
 }
 
-// probeChain 经该槽所用链路在网关回环上的入口访问探测地址，返回出口 IP 和成功的那个地址。
-func (e *Engine) probeChain(ctx context.Context, rt *gatewayRuntime, link netplan.Link, urls []string) (ip, used string, err error) {
+// exitInfo 是一次出口探测的结果。除 IP 外的各项只有探测地址返回 JSON（如 ipinfo.io）时才有。
+type exitInfo struct {
+	IP      string
+	TZ      string
+	Country string
+	Org     string
+	URL     string // 给出这个结果的探测地址
+}
+
+// parseExit 解析探测地址的应答：JSON（带 ip 字段，可带 timezone 等）或者含有 IPv4 地址的纯文本。
+func parseExit(body string) (exitInfo, bool) {
+	var info exitInfo
+	if trimmed := strings.TrimSpace(body); strings.HasPrefix(trimmed, "{") {
+		var j struct {
+			IP       string `json:"ip"`
+			Timezone string `json:"timezone"`
+			Country  string `json:"country"`
+			Org      string `json:"org"`
+		}
+		if json.Unmarshal([]byte(trimmed), &j) != nil {
+			return info, false
+		}
+		ip, ok := parseExitIP(j.IP)
+		if !ok {
+			return info, false
+		}
+		info.IP, info.Country, info.Org = ip, truncate(j.Country, 16), truncate(j.Org, 80)
+		// 时区会进入容器的环境变量和启动脚本，写法不对的一律不用。
+		if model.CheckTZ(j.Timezone) == nil {
+			info.TZ = j.Timezone
+		}
+		return info, true
+	}
+	ip, ok := parseExitIP(body)
+	info.IP = ip
+	return info, ok
+}
+
+// probeChain 经该槽所用链路在网关回环上的入口访问探测地址，返回出口信息。
+func (e *Engine) probeChain(ctx context.Context, rt *gatewayRuntime, link netplan.Link, urls []string) (exitInfo, error) {
 	var last error
 	for attempt := 0; attempt < 3; attempt++ {
 		for _, u := range urls {
@@ -605,18 +677,19 @@ func (e *Engine) probeChain(ctx context.Context, rt *gatewayRuntime, link netpla
 				last = err
 				continue
 			}
-			if ip, ok := parseExitIP(out); ok {
-				return ip, u, nil
+			if info, ok := parseExit(out); ok {
+				info.URL = u
+				return info, nil
 			}
 			last = fmt.Errorf("%s 的应答里没有 IPv4 地址", u)
 		}
 		select {
 		case <-ctx.Done():
-			return "", "", ctx.Err()
+			return exitInfo{}, ctx.Err()
 		case <-time.After(time.Second):
 		}
 	}
-	return "", "", last
+	return exitInfo{}, last
 }
 
 // probeFromWorker 让一个不带任何能力的助手进入 worker 的网络命名空间访问探测地址。
@@ -636,8 +709,8 @@ func (e *Engine) probeFromWorker(ctx context.Context, image, worker string, urls
 			last = err
 			continue
 		}
-		if ip, ok := parseExitIP(out); ok {
-			return ip, nil
+		if info, ok := parseExit(out); ok {
+			return info.IP, nil
 		}
 		last = fmt.Errorf("%s 的应答里没有 IPv4 地址", u)
 	}

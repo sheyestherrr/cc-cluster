@@ -136,6 +136,32 @@ func TestParseExitIP(t *testing.T) {
 	}
 }
 
+func TestParseExit(t *testing.T) {
+	info, ok := parseExit(`{"ip": "203.0.113.77", "country": "US", "org": "AS64500 Example", "timezone": "America/Los_Angeles"}`)
+	if !ok || info.IP != "203.0.113.77" || info.TZ != "America/Los_Angeles" || info.Country != "US" || info.Org != "AS64500 Example" {
+		t.Errorf("JSON 应答应给出 IP、时区、国家和运营商: %+v %v", info, ok)
+	}
+	// 时区会写进容器的环境变量和启动脚本，写法不对的不采用，但 IP 仍然有效。
+	info, ok = parseExit(`{"ip": "203.0.113.77", "timezone": "x; rm -rf /"}`)
+	if !ok || info.IP != "203.0.113.77" || info.TZ != "" {
+		t.Errorf("不合法的时区应被丢弃: %+v %v", info, ok)
+	}
+	if info, ok = parseExit("198.51.100.3\n"); !ok || info.IP != "198.51.100.3" || info.TZ != "" {
+		t.Errorf("纯文本应答只有 IP: %+v %v", info, ok)
+	}
+	for _, body := range []string{`{"error": "rate limited"}`, `{"ip": "not-an-ip"}`, `{broken`, ""} {
+		if info, ok = parseExit(body); ok {
+			t.Errorf("parseExit(%q) 不应成功: %+v", body, info)
+		}
+	}
+	if got := (UpResult{ExitIP: "203.0.113.77", Exit: exitInfo{Country: "US", Org: "AS64500 Example"}}).ExitSummary(); got != "203.0.113.77（US，AS64500 Example）" {
+		t.Errorf("出口描述: %q", got)
+	}
+	if got := (UpResult{ExitIP: "203.0.113.77"}).ExitSummary(); got != "203.0.113.77" {
+		t.Errorf("没有归属信息时只显示 IP: %q", got)
+	}
+}
+
 func testSlot() (model.Slot, model.Identity) {
 	sl := model.Slot{
 		ID: "a", Gateway: "main", Landing: "home-a", Subnet: "10.213.250.8/30", UID: 1002, GID: 1002,

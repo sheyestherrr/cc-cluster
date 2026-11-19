@@ -132,7 +132,7 @@ func setup(t *testing.T) *env {
 	must(t, e.eng.AddNode(e.ctx, model.Node{ID: "lwrong", Role: model.RoleLanding, Proxy: socks(ipLandB), ExpectExitIP: "198.51.100.99"}))
 	must(t, e.eng.AddGateway(model.Gateway{
 		ID: "main", Transit: "transit", EgressNetwork: netEgress,
-		DNS: []string{"tcp://" + ipTarget + ":53"}, EchoURLs: []string{"http://" + ipTarget + "/"},
+		DNS: []string{"tcp://" + ipTarget + ":53"}, EchoURLs: []string{"http://" + ipTarget + "/json"},
 	}))
 	e.addSlot("a", "la")
 	e.addSlot("b", "lb")
@@ -307,8 +307,11 @@ func TestEndToEnd(t *testing.T) {
 		e.expect("cgroup 路径里没有容器 ID", `^0$`, e.wsh("a", "grep -c docker /proc/self/cgroup"))
 		e.expect("身份文件不是挂载进来的", `^0$`, e.wsh("a", "grep -cE ' /etc/(passwd|group|machine-id) ' /proc/self/mountinfo"))
 		e.expect("主机名解析到 127.0.1.1", `^127\.0\.1\.1\s+`+identA.Hostname+`$`, e.wsh("a", "grep 127.0.1.1 /etc/hosts"))
-		e.expect("时区沿用落地的设置", `^Asia/Tokyo$`, e.wsh("a", "echo $TZ"))
-		e.expect("槽 b 没有设置时区", `^unset$`, e.wsh("b", "echo ${TZ:-unset}"))
+		e.expect("落地设置了时区的，沿用它而不是探测结果", `^Asia/Tokyo$`, e.wsh("a", "echo $TZ"))
+		e.expect("落地没有设置时区的，首次启动时按出口探测结果设置", `^Europe/Berlin$`, e.wsh("b", "echo $TZ"))
+		if lb, err := e.st.Node("lb"); err != nil || lb.TZ != "Europe/Berlin" || !lb.TZAuto {
+			t.Errorf("探测到的时区应记在落地上，之后不再变动: %+v %v", lb, err)
+		}
 		e.expect("槽 a 的 DMI 是该槽身份里的机型", "^"+regexp.QuoteMeta(identA.DMI["sys_vendor"]+"/"+identA.DMI["product_name"])+"$", e.wsh("a", "echo \"$(cat /sys/class/dmi/id/sys_vendor)/$(cat /sys/class/dmi/id/product_name)\""))
 		e.expect("槽 a 的 DMI 不含只有 root 可读的序列号", `^0$`, e.wsh("a", "ls /sys/class/dmi/id | grep -cE 'serial|uuid'"))
 		e.expect("槽 b 的 DMI 信息被遮蔽", `^0$`, e.wsh("b", "ls /sys/devices/virtual/dmi/id 2>/dev/null | wc -l"))

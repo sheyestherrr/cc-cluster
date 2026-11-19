@@ -182,7 +182,7 @@ func (a *app) upSlot(ctx context.Context, eng *engine.Engine, id string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "槽位 %s 已就绪：出口 %s（已从 worker 的位置复测）\n", id, res.ExitIP)
+	fmt.Fprintf(a.out, "槽位 %s 已就绪：出口 %s（已从 worker 的位置复测）\n", id, res.ExitSummary())
 	return nil
 }
 
