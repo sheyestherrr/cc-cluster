@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-Go 管理器已实现：命令行、交互面板、订阅导入与测速、网页界面。除了全程使用假节点的端到端测试，还在一台机器上用真实的落地与中转节点跑通过完整链路。**Claude CLI 在槽内的安装与登录尚未验证**；宿主 tmux 桥接已实现，但带它的 worker 镜像还没有实际构建和运行过；登录出口对齐尚未实现。
+Go 管理器已实现：命令行、交互面板、订阅导入与测速、网页界面。除了全程使用假节点的端到端测试，还在一台机器上用真实的落地与中转节点跑通过完整链路。Claude Code 在槽内的安装、经第三方接口的调用和宿主 tmux 桥接都实际运行过；**用 Anthropic 账号登录和登录后的使用尚未验证**，登录出口对齐尚未实现。
 
 Docker 共享宿主内核，独立配置与资源限额不能证明物理机级隔离或账号不会关联。
 
@@ -90,7 +90,9 @@ cc-cluster tmux alice --kill               # 结束它，连同其中的程序
 
 每个槽位在宿主上有一个专用的 tmux，槽内经 [tmux-mcp](https://github.com/bnomei/tmux-mcp) 操作它，默认不开放结束 session / window / pane 的工具（`--tools` 可改）。停止或删除槽位不会结束宿主的 tmux。
 
-**经桥接执行的命令是宿主上的命令：用的是你的权限和宿主网络，不走该槽的出口，手动断网也拦不住。** 只给需要它的槽位开启。宿主需要 tmux 3.0 以上；macOS 上不可用。
+**经桥接执行的命令是宿主上的命令：用的是你的权限和宿主网络，不走该槽的出口，手动断网也拦不住。** 只给需要它的槽位开启。宿主 pane 里是你自己的登录 shell，执行过的命令会进你的 shell 历史。
+
+tmux 的客户端和 server 要同一版本才连得上：`make image-worker` 按宿主 `tmux -V` 的版本在镜像里编译 tmux，所以镜像要在使用它的机器上构建，宿主升级 tmux 后重建镜像并 `slot up --recreate`。宿主需要 tmux 3.0 以上；macOS 上不可用。
 
 ## 目录
 
@@ -110,4 +112,4 @@ cc-cluster tmux alice --kill               # 结束它，连同其中的程序
 
 默认 worker 镜像的软件包选择参考了 Claude Code 官方的开发容器，Dockerfile 为重新编写。网关核心是 [Mihomo](https://github.com/MetaCubeX/mihomo)。
 
-宿主桥接使用 [tmux-mcp](https://github.com/bnomei/tmux-mcp)（MIT），由 worker 镜像经 npm 安装，本仓库不含它的代码。
+宿主桥接使用 [tmux-mcp](https://github.com/bnomei/tmux-mcp)（MIT），由 worker 镜像经 npm 安装；镜像里的 [tmux](https://github.com/tmux/tmux)（ISC）在构建时从官方源码包编译。本仓库不含它们的代码。
