@@ -101,6 +101,33 @@ func TestTransitDomainIsResolvedOnce(t *testing.T) {
 	}
 }
 
+func TestFakeIPFirstHopIsKeptAndFollowed(t *testing.T) {
+	// 宿主或上游路由器在用 fake-ip 模式的透明代理时，系统解析器返回 198.18.0.0/15 里的假地址。
+	// 这个地址要原样采用：只有连它才通。透明代理重启后映射会变，启动网关前要跟着更新。
+	addrs := map[string][]string{"hk.example.com": {"198.18.0.160"}}
+	eng, st := newTestEngine(t, nil, addrs)
+	ctx := context.Background()
+	if err := eng.AddNode(ctx, model.Node{ID: "hk", Role: model.RoleTransit, Proxy: map[string]any{"type": "socks5", "server": "hk.example.com", "port": 1080}}); err != nil {
+		t.Fatal(err)
+	}
+	n, _ := st.Node("hk")
+	if n.ConnectIPv4 != "198.18.0.160" || !IsFakeIP(n.ConnectIPv4) || IsFakeIP("203.0.113.8") {
+		t.Fatalf("假地址应原样记下并能被认出来: %+v", n)
+	}
+
+	addrs["hk.example.com"] = []string{"198.18.3.77"}
+	eng.refreshFirstHop(ctx, "hk")
+	if n, _ := st.Node("hk"); n.ConnectIPv4 != "198.18.3.77" {
+		t.Fatalf("映射变了以后应更新: %+v", n)
+	}
+	// 解析不出来时沿用已记下的地址，不清空。
+	delete(addrs, "hk.example.com")
+	eng.refreshFirstHop(ctx, "hk")
+	if n, _ := st.Node("hk"); n.ConnectIPv4 != "198.18.3.77" {
+		t.Fatalf("解析失败时应沿用旧地址: %+v", n)
+	}
+}
+
 func TestSubscriptionLifecycle(t *testing.T) {
 	yaml := `proxies:
   - {name: "HK 01", type: ss, server: hk1.example.com, port: 8388, cipher: aes-256-gcm, password: old}

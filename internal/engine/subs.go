@@ -15,7 +15,7 @@ import (
 	"github.com/sheyestherrr/cc-cluster/internal/subscription"
 )
 
-// 以下两个函数是引擎与宿主网络打交道的全部入口，测试里替换成假的。
+// 以下三个函数是引擎与宿主网络打交道的全部入口，测试里替换成假的。
 var (
 	// fetchSubscription 拉取订阅内容。
 	fetchSubscription = func(ctx context.Context, url string) ([]byte, error) {
@@ -29,11 +29,26 @@ var (
 	}
 )
 
-// resolveFirstHop 在节点的 server 是域名且没有首跳地址时，在宿主上解析一次并记进节点。
+// fakeIPRange 是 fake-ip 模式的透明代理（Clash / Mihomo 等）返回给客户端的假地址段。
+// 宿主或上游路由器在用这种代理时，系统解析器对任何域名都返回这个段里的地址。
+var fakeIPRange = netip.MustParsePrefix("198.18.0.0/15")
+
+// IsFakeIP 报告一个地址是否落在 fake-ip 地址段里。
+func IsFakeIP(s string) bool {
+	a, err := netip.ParseAddr(s)
+	return err == nil && fakeIPRange.Contains(a)
+}
+
+// resolveFirstHop 在节点的 server 是域名且没有手工指定首跳地址时，在宿主上解析并记进节点。
 //
-// 网关的主路由表只放行首跳地址，核心不能自己去解析它，所以要事先知道。解析由宿主的系统
-// 解析器完成，与任何代理客户端连接节点前所做的一样。多个地址时取排序后的第一个，
-// 这样重复解析得到的结果稳定，不会让网关配置无故变化。
+// 网关的主路由表只放行首跳地址，核心不能自己去解析它，所以要事先知道。解析用宿主的系统
+// 解析器，结果原样采用：宿主上别的程序怎样到达这台服务器，网关就怎样到达。
+//
+// 这一点在宿主或上游路由器使用 fake-ip 透明代理的网络里尤其要紧：那里解析到的是假地址，
+// 而且只有连这个假地址才通——透明代理靠它认出目标域名。实测中绕开它去连服务器的真实地址，
+// 连接反而被透明代理按 TLS 里的域名改了去向，中转的握手认证失败。
+//
+// 多个地址时取排序后的第一个；已记下的地址仍在解析结果里就不换，配置不会无故变化。
 func resolveFirstHop(ctx context.Context, n *model.Node) error {
 	if !n.ServerIsDomain() || (n.ConnectIPv4 != "" && !n.ConnectAuto) {
 		return nil
@@ -46,7 +61,6 @@ func resolveFirstHop(ctx context.Context, n *model.Node) error {
 		addrs[i] = addrs[i].Unmap()
 	}
 	sort.Slice(addrs, func(i, j int) bool { return addrs[i].Less(addrs[j]) })
-	// 已有的地址仍在解析结果里就不换，避免多地址轮转的域名让配置来回变。
 	for _, a := range addrs {
 		if a.String() == n.ConnectIPv4 {
 			return nil
@@ -54,6 +68,28 @@ func resolveFirstHop(ctx context.Context, n *model.Node) error {
 	}
 	n.ConnectIPv4, n.ConnectAuto = addrs[0].String(), true
 	return nil
+}
+
+// refreshFirstHop 在启动网关前核对一个自动解析的首跳地址，变了就更新并保存。
+// fake-ip 的映射在透明代理重启后会变，所以每次都核对；解析不出来时沿用已记下的地址。
+func (e *Engine) refreshFirstHop(ctx context.Context, id string) {
+	n, err := e.st.Node(id)
+	if err != nil || !n.ConnectAuto {
+		return
+	}
+	old := n.ConnectIPv4
+	if err := resolveFirstHop(ctx, &n); err != nil {
+		e.logf("提醒：%v；沿用已记下的 %s", err, old)
+		return
+	}
+	if n.ConnectIPv4 == old {
+		return
+	}
+	if err := e.st.SaveNode(n, false); err != nil {
+		e.logf("提醒：保存节点 %s 的新首跳地址失败：%v", id, err)
+		return
+	}
+	e.logf("节点 %s 的首跳地址由 %s 变为 %s", id, old, n.ConnectIPv4)
 }
 
 // ResolveNode 重新解析一个节点的首跳地址，返回解析后的地址。

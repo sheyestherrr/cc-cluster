@@ -159,6 +159,18 @@ func (e *Engine) GatewayUp(ctx context.Context, id string) (err error) {
 }
 
 func (e *Engine) gatewayUp(ctx context.Context, id string) (*gatewayPlan, *gatewayRuntime, error) {
+	// 先核对自动解析的首跳地址：中转，或者专用网关直连的那个落地。
+	if gw, err := e.st.Gateway(id); err == nil {
+		if gw.Transit != "" {
+			e.refreshFirstHop(ctx, gw.Transit)
+		} else if slots, err := e.st.Slots(); err == nil {
+			for _, s := range slots {
+				if s.Gateway == id {
+					e.refreshFirstHop(ctx, s.Landing)
+				}
+			}
+		}
+	}
 	p, err := e.plan(id)
 	if err != nil {
 		return nil, nil, err
