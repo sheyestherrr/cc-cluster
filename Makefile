@@ -1,17 +1,30 @@
-# cc-cluster 构建入口。只依赖 Go 工具链和 docker 命令行，不下载任何 Go 依赖。
+# cc-cluster 构建入口。构建二进制只需要 Go 工具链（依赖见 go.mod），镜像需要 docker 命令行；
+# 网页界面是可选的，构建它另外需要 Node.js 与 pnpm。
 GO          ?= go
 DOCKER      ?= docker
+PNPM        ?= pnpm
 PKGS        := ./cmd/... ./internal/...
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 GATEWAY_IMG ?= cc-cluster-gateway:dev
 WORKER_IMG  ?= cc-cluster-worker:dev
 # e2e 的临时数据放在仓库 tmp/ 下（已被 .gitignore 排除），不散落到系统临时目录。
 E2E_DIR     ?= $(CURDIR)/tmp/e2e
+WEB_DIST    := internal/web/dist
 
-.PHONY: build test vet fmt check images image-gateway image-worker e2e clean
+.PHONY: build web release test vet fmt check images image-gateway image-worker e2e clean
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-X github.com/sheyestherrr/cc-cluster/internal/cli.Version=$(VERSION)" -o bin/cc-cluster ./cmd/cc-cluster
+
+# 构建网页界面并放进 Go 的嵌入目录；之后再 make build，二进制里就带上了它。
+# 没有执行过这一步时二进制照常可用，只是 cc-cluster web 会说明不带网页界面。
+web:
+	$(PNPM) --dir web install --frozen-lockfile
+	rm -rf $(WEB_DIST)/assets $(WEB_DIST)/index.html
+	$(PNPM) --dir web build
+
+# 发布用：带网页界面的单个二进制。使用者下载后不需要 Node.js、pnpm 或 Go。
+release: web build
 
 test:
 	$(GO) test $(PKGS)

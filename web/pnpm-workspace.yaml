@@ -1,0 +1,5 @@
+# 只允许 esbuild 运行安装脚本（它要取自己的可执行文件）。两种写法分别对应 pnpm 10 和 pnpm 11。
+onlyBuiltDependencies:
+  - esbuild
+allowBuilds:
+  esbuild: true
