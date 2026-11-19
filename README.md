@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-Go 管理器已实现：命令行、交互面板、订阅导入与测速、网页界面。除了全程使用假节点的端到端测试，还在一台机器上用真实的落地与中转节点跑通过完整链路。**Claude CLI 在槽内的安装与登录尚未验证**；登录出口对齐和 tmux 桥接尚未实现。
+Go 管理器已实现：命令行、交互面板、订阅导入与测速、网页界面。除了全程使用假节点的端到端测试，还在一台机器上用真实的落地与中转节点跑通过完整链路。**Claude CLI 在槽内的安装与登录尚未验证**；宿主 tmux 桥接已实现，但带它的 worker 镜像还没有实际构建和运行过；登录出口对齐尚未实现。
 
 Docker 共享宿主内核，独立配置与资源限额不能证明物理机级隔离或账号不会关联。
 
@@ -76,6 +76,22 @@ cc-cluster slot release alice && cc-cluster slot up alice
 - 默认的 worker 镜像不预装 Claude CLI：首次用 `claude` 进入时会询问是否在槽内安装，它装进该槽的 HOME 并随 HOME 持久化，安装与更新产生的访问都从该槽的出口发出。
 - worker 或网关重启后，线不会自动接回：重新执行 `slot up`。在那之前该槽保持没网。
 
+### 宿主 tmux 桥接（可选）
+
+需要让槽内的 Claude Code 驱动宿主上的程序（EDA、GDB 等）时，按槽位开启：
+
+```sh
+cc-cluster tmux alice --on                 # 或登记时 slot add … --tmux-bridge
+cc-cluster slot up alice --recreate        # 重建 worker 后生效
+cc-cluster claude alice                    # 启动时自动带上 tmux 这个 MCP 服务器
+cc-cluster tmux alice                      # 在另一个终端接入同一个 tmux，观察或接管
+cc-cluster tmux alice --kill               # 结束它，连同其中的程序
+```
+
+每个槽位在宿主上有一个专用的 tmux，槽内经 [tmux-mcp](https://github.com/bnomei/tmux-mcp) 操作它，默认不开放结束 session / window / pane 的工具（`--tools` 可改）。停止或删除槽位不会结束宿主的 tmux。
+
+**经桥接执行的命令是宿主上的命令：用的是你的权限和宿主网络，不走该槽的出口，手动断网也拦不住。** 只给需要它的槽位开启。宿主需要 tmux 3.0 以上；macOS 上不可用。
+
 ## 目录
 
 | 路径 | 内容 |
@@ -94,4 +110,4 @@ cc-cluster slot release alice && cc-cluster slot up alice
 
 默认 worker 镜像的软件包选择参考了 Claude Code 官方的开发容器，Dockerfile 为重新编写。网关核心是 [Mihomo](https://github.com/MetaCubeX/mihomo)。
 
-宿主桥接（tmux-mcp）使用本人的真实宿主权限，容器的代理规则不覆盖宿主命令；该功能尚未实现。
+宿主桥接使用 [tmux-mcp](https://github.com/bnomei/tmux-mcp)（MIT），由 worker 镜像经 npm 安装，本仓库不含它的代码。
