@@ -12,17 +12,18 @@ import (
 )
 
 func TestBridgeFiles(t *testing.T) {
-	if files, err := bridgeFiles(model.Slot{ID: "a"}); err != nil || files != nil {
+	const sock = "/d/slots/a/tmux/sock"
+	if files, err := bridgeFiles(model.Slot{ID: "a"}, sock); err != nil || files != nil {
 		t.Fatalf("没有开启桥接时不应生成文件：%v %v", files, err)
 	}
-	files, err := bridgeFiles(model.Slot{ID: "a", TmuxBridge: true, TmuxShell: "zsh"})
+	files, err := bridgeFiles(model.Slot{ID: "a", TmuxBridge: true, TmuxShell: "zsh"}, sock)
 	if err != nil {
 		t.Fatal(err)
 	}
 	policy := string(files["etc/tmux-mcp/config.toml"])
 	for _, want := range []string{
 		`type = "zsh"`,
-		`allowed_sockets = ["/run/tmux-host/sock"]`,
+		`allowed_sockets = ["/d/slots/a/tmux/sock"]`,
 		`mode = "deny"`,
 		`items = ["@kill"]`,
 	} {
@@ -31,13 +32,13 @@ func TestBridgeFiles(t *testing.T) {
 		}
 	}
 	mcp := string(files["etc/tmux-mcp/mcp.json"])
-	for _, want := range []string{`"command": "tmux-mcp-rs"`, `"/run/tmux-host/sock"`, `"/etc/tmux-mcp/config.toml"`} {
+	for _, want := range []string{`"command": "tmux-mcp-rs"`, `"/d/slots/a/tmux/sock"`, `"/etc/tmux-mcp/config.toml"`} {
 		if !strings.Contains(mcp, want) {
 			t.Errorf("MCP 配置里缺少 %s：\n%s", want, mcp)
 		}
 	}
 
-	files, err = bridgeFiles(model.Slot{ID: "a", TmuxBridge: true, TmuxTools: "allow:@read,execute-command"})
+	files, err = bridgeFiles(model.Slot{ID: "a", TmuxBridge: true, TmuxTools: "allow:@read,execute-command"}, sock)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,9 +46,13 @@ func TestBridgeFiles(t *testing.T) {
 	if !strings.Contains(policy, `mode = "allow"`) || !strings.Contains(policy, `items = ["@read", "execute-command"]`) || !strings.Contains(policy, `type = "bash"`) {
 		t.Errorf("指定的工具范围没有照写：\n%s", policy)
 	}
-	files, _ = bridgeFiles(model.Slot{ID: "a", TmuxBridge: true, TmuxTools: "deny:"})
+	files, _ = bridgeFiles(model.Slot{ID: "a", TmuxBridge: true, TmuxTools: "deny:"}, sock)
 	if !strings.Contains(string(files["etc/tmux-mcp/config.toml"]), "items = []") {
 		t.Error("deny: 后面不带项应表示不限制")
+	}
+	// 路径原样写进 TOML 的字符串里，带引号的路径会破坏配置。
+	if _, err := bridgeFiles(model.Slot{ID: "a", TmuxBridge: true}, `/d/x"y/sock`); err == nil {
+		t.Error("带引号的 socket 路径应被拒绝")
 	}
 }
 
@@ -65,14 +70,15 @@ func TestParseTmuxTools(t *testing.T) {
 
 func TestWorkerSpecMountsTmuxDirectory(t *testing.T) {
 	p := testParams()
-	if strings.Contains(strings.Join(workerSpec(p).HostConfig.Binds, "\n"), tmuxMountPath) {
+	if strings.Contains(strings.Join(workerSpec(p).HostConfig.Binds, "\n"), "/tmux") {
 		t.Fatal("没有开启桥接时不应出现 tmux 的挂载")
 	}
 	p.TmuxDir = "/d/slots/a/tmux"
 	binds := strings.Join(workerSpec(p).HostConfig.Binds, "\n")
 	// 必须挂目录：挂 socket 文件的话，宿主的 server 重建后 worker 里还是旧的那个。
-	if !strings.Contains(binds, "/d/slots/a/tmux:/run/tmux-host") || strings.Contains(binds, "tmux/sock:") {
-		t.Fatalf("应把 socket 所在的目录挂进 worker：\n%s", binds)
+	// 槽内路径必须与宿主相同：tmux-mcp 会让宿主的 pane 用同一个路径回连这个 socket。
+	if !strings.Contains(binds, "/d/slots/a/tmux:/d/slots/a/tmux") || strings.Contains(binds, "tmux/sock:") {
+		t.Fatalf("应把 socket 所在的目录以相同的路径挂进 worker：\n%s", binds)
 	}
 }
 

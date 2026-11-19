@@ -45,8 +45,11 @@ images: image-gateway image-worker
 image-gateway:
 	$(DOCKER) build -t $(GATEWAY_IMG) images/gateway
 
+# worker 里的 tmux 客户端要与宿主的 tmux 同一版本才连得上（宿主桥接用）：
+# 取宿主 tmux -V 的版本号，在镜像里从源码编译同一版本。宿主没有 tmux 时为空，镜像里只有发行版自带的。
+TMUX_VERSION ?= $(shell tmux -V 2>/dev/null | awk '{print $$2}')
 image-worker:
-	$(DOCKER) build -t $(WORKER_IMG) images/worker
+	$(DOCKER) build --build-arg TMUX_VERSION=$(TMUX_VERSION) -t $(WORKER_IMG) images/worker
 
 # 端到端测试：需要 Docker 和网关镜像。全部使用 internal 网络与假节点，没有通往宿主外部的路径。
 e2e:

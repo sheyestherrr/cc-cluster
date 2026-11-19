@@ -11,6 +11,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -152,19 +153,6 @@ func must(t *testing.T, err error) {
 func (e *env) hostTmuxVersion(bin string) string {
 	out, _ := exec.Command(bin, "-V").Output()
 	return strings.TrimSpace(string(out))
-}
-
-// waitFile 等一个文件出现并有内容，返回去掉首尾空白后的内容。
-func waitFile(t *testing.T, path string) string {
-	t.Helper()
-	for i := 0; i < 50; i++ {
-		if b, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(b))) > 0 {
-			return strings.TrimSpace(string(b))
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	t.Fatalf("等不到文件 %s", path)
-	return ""
 }
 
 func truncateForLog(s string) string {
@@ -710,40 +698,67 @@ func TestEndToEnd(t *testing.T) {
 		}
 		t.Logf("宿主 %s；worker 里 %s", e.hostTmuxVersion(tmuxBin), e.exec(worker, "tmux", "-V"))
 
-		list := "tmux -S /run/tmux-host/sock list-sessions -F '#{session_name}'"
+		// 槽内的 socket 路径与宿主相同。
+		sock := e.eng.TmuxSocket("t")
+		list := fmt.Sprintf("tmux -S %s list-sessions -F '#{session_name}'", sock)
 		e.expect("槽内看到宿主的 session", `^main$`, e.exec(worker, "/bin/sh", "-c", list))
 		// 两个配置文件属于容器内的 root，槽内的用户改不了工具范围。
 		e.expect("配置文件的属主与权限", `^root 644$`, e.exec(worker, "stat", "-c", "%U %a", "/etc/tmux-mcp/config.toml"))
 		e.expect("槽内不能改写工具范围", `denied`, e.exec(worker, "/bin/sh", "-c", "echo x >> /etc/tmux-mcp/config.toml 2>&1 || echo denied"))
 
-		// 经 MCP 的标准输入输出握手：列出工具，再调用一次 list-sessions。
-		rpc := strings.Join([]string{
-			`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"e2e","version":"0"}}}`,
-			`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
-			`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
-			`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list-sessions","arguments":{}}}`,
-		}, "\n")
-		must(t, os.WriteFile(filepath.Join(proj, "rpc.jsonl"), []byte(rpc+"\n"), 0o644))
-		out := e.exec(worker, "/bin/sh", "-c", fmt.Sprintf(
-			"(cat %s/rpc.jsonl; sleep 4) | tmux-mcp-rs --socket /run/tmux-host/sock --config /etc/tmux-mcp/config.toml 2>/dev/null", proj))
+		// 用一个写死调用内容的 MCP 客户端走一轮（不经过任何模型）：列出工具、列出 session、
+		// 试一个不在允许范围内的 socket、在宿主的 pane 里执行 hostname 并取回结果。
+		client, err := os.ReadFile("mcpclient.js")
+		must(t, err)
+		must(t, os.WriteFile(filepath.Join(proj, "mcpclient.js"), client, 0o644))
+		paneOut, err := exec.Command(tmuxBin, "-S", sock, "list-panes", "-a", "-F", "#{pane_id}").Output()
+		must(t, err)
+		pane := strings.TrimSpace(strings.Split(string(paneOut), "\n")[0])
+		raw := e.exec(worker, "node", filepath.Join(proj, "mcpclient.js"), sock, pane)
+		type toolResult struct {
+			IsError bool   `json:"isError"`
+			Text    string `json:"text"`
+		}
+		var got struct {
+			Fatal       string     `json:"fatal"`
+			Tools       []string   `json:"tools"`
+			Sessions    toolResult `json:"sessions"`
+			OtherSocket toolResult `json:"otherSocket"`
+			Exec        toolResult `json:"exec"`
+			Result      toolResult `json:"result"`
+			Screen      toolResult `json:"screen"`
+		}
+		if err := json.Unmarshal([]byte(raw), &got); err != nil || got.Fatal != "" {
+			t.Fatalf("MCP 客户端没有跑完：%v %s", err, truncateForLog(raw))
+		}
+		tools := " " + strings.Join(got.Tools, " ") + " "
 		for _, want := range []string{"execute-command", "send-keys", "capture-pane"} {
-			if !regexp.MustCompile(`"name":\s*"` + want + `"`).MatchString(out) {
+			if !strings.Contains(tools, " "+want+" ") {
 				t.Errorf("tmux-mcp 的工具列表里缺少 %s", want)
 			}
 		}
-		if regexp.MustCompile(`"name":\s*"(kill-session|kill-window|kill-pane|detach-client)"`).MatchString(out) {
-			t.Error("默认的工具范围不应包含 kill 类工具")
+		for _, banned := range []string{"kill-session", "kill-window", "kill-pane", "detach-client"} {
+			if strings.Contains(tools, " "+banned+" ") {
+				t.Errorf("默认的工具范围不应包含 %s", banned)
+			}
 		}
-		if !regexp.MustCompile(`"id":3[^\n]*main`).MatchString(out) && !regexp.MustCompile(`main[^\n]*"id":3`).MatchString(out) {
-			t.Errorf("经 tmux-mcp 调用 list-sessions 没有看到 main：%s", truncateForLog(out))
+		if got.Sessions.IsError || !strings.Contains(got.Sessions.Text, "main") {
+			t.Errorf("经 tmux-mcp 调用 list-sessions 没有看到 main：%+v", got.Sessions)
 		}
-
-		// 经桥接发出的命令是在宿主上执行的：留下的主机名是宿主的，不是 worker 的。
-		e.exec(worker, "/bin/sh", "-c", fmt.Sprintf("tmux -S /run/tmux-host/sock send-keys -t main 'hostname > %s/who' Enter", proj))
+		if !got.OtherSocket.IsError {
+			t.Errorf("不在允许范围内的 socket 应被拒绝：%+v", got.OtherSocket)
+		}
+		// 命令的结束与退出码能取回来：tmux-mcp 让宿主的 pane 用同一个 socket 路径回报命令结束，
+		// 槽内外路径不同时这一步会失败（pane 里出现 error connecting）。
+		if got.Exec.IsError || got.Result.IsError ||
+			!strings.Contains(got.Result.Text, `"status":"completed"`) || !strings.Contains(got.Result.Text, `"exitCode":0`) {
+			t.Errorf("execute-command 应执行完并取回退出码：%+v / %+v", got.Exec, got.Result)
+		}
+		// 命令是在宿主上执行的：pane 里出现的是宿主的主机名，不是 worker 的。
 		hostName, _ := os.Hostname()
-		who := waitFile(t, filepath.Join(proj, "who"))
-		if who != hostName || who == e.exec(worker, "hostname") {
-			t.Errorf("命令应在宿主上执行：文件里是 %q，宿主是 %q", who, hostName)
+		if got.Screen.IsError || !strings.Contains(got.Screen.Text, hostName) ||
+			strings.Contains(got.Screen.Text, "error connecting") || hostName == e.exec(worker, "hostname") {
+			t.Errorf("hostname 应在宿主上执行（宿主是 %q），pane 里是：%s", hostName, truncateForLog(got.Screen.Text))
 		}
 
 		// 宿主的 server 重建后，worker 不用重建就能看到新的 socket。

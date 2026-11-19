@@ -215,11 +215,12 @@ func (a *app) enter(ctx context.Context, req enterRequest) error {
 	switch {
 	case req.Claude:
 		argv = append(argv, "claude")
+		argv = append(argv, req.Command...)
 		if bridged {
 			// 只在这一次启动里告诉 Claude Code 有这个 MCP 服务器，不改它自己的配置文件。
+			// 放在用户给的参数之后：这个选项可以带多个值，放在前面会把紧跟着的提示词也当成配置文件。
 			argv = append(argv, "--mcp-config", engine.TmuxMCPConfig)
 		}
-		argv = append(argv, req.Command...)
 	case len(req.Command) > 0:
 		argv = append(argv, req.Command...)
 	default:

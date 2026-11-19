@@ -457,7 +457,7 @@ func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.
 	if slot.FakeProc && slot.MemoryBytes > 0 {
 		p.MemInfo = filepath.Join(etc, "meminfo")
 	}
-	extra, err := bridgeFiles(slot)
+	extra, err := bridgeFiles(slot, e.TmuxSocket(slot.ID))
 	if err != nil {
 		return none, fmt.Errorf("槽位 %s：%w", slot.ID, err)
 	}

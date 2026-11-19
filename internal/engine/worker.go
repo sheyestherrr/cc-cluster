@@ -98,7 +98,8 @@ func workerSpec(p workerParams) dockerapi.ContainerSpec {
 	}
 	if p.TmuxDir != "" {
 		// 挂的是目录而不是 socket 文件：宿主的 tmux server 重建后，worker 里看到的仍是新的 socket。
-		binds = append(binds, p.TmuxDir+":"+tmuxMountPath)
+		// 槽内的路径与宿主相同，原因见 tmux.go 开头。
+		binds = append(binds, p.TmuxDir+":"+p.TmuxDir)
 	}
 
 	hc := dockerapi.HostConfig{

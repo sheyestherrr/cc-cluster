@@ -21,14 +21,14 @@ import (
 // 这个目录（不是 socket 文件本身，这样 server 重建后 worker 仍看得到新的 socket）挂进 worker。
 // 槽内的 tmux-mcp 用镜像里的 tmux 客户端连它，于是 Claude 能操作宿主上的终端。
 //
+// 目录在 worker 里的路径与宿主上相同。tmux-mcp 跟踪一条命令是否结束的办法，是在发给 pane 的命令后面
+// 接一句 tmux -S <socket> wait-for …，这一句在宿主的 pane 里执行；两边路径不同的话，
+// 宿主上找不到那个 socket，命令虽然执行了，结果却等不回来。
+//
 // 经桥接执行的命令在宿主上运行：用的是启动 tmux server 的那个用户的权限和宿主的网络，
 // 不经过网关，也不受该槽断网与否的影响。这是用户按槽位选择的信任边界。
 const (
-	// tmuxMountPath 是槽位的 socket 目录在 worker 里的位置。
-	tmuxMountPath  = "/run/tmux-host"
 	tmuxSocketName = "sock"
-	// TmuxSocketInWorker 是 worker 里看到的 socket 路径。
-	TmuxSocketInWorker = tmuxMountPath + "/" + tmuxSocketName
 	// TmuxMCPConfig 是写进 worker 的 MCP 服务器配置，启动 Claude Code 时经 --mcp-config 给出。
 	TmuxMCPConfig = "/etc/tmux-mcp/mcp.json"
 	// tmuxPolicy 是写进 worker 的 tmux-mcp 配置（工具范围与允许的 socket）。
@@ -262,10 +262,13 @@ func HostShellType() string {
 }
 
 // bridgeFiles 是开启桥接时写进 worker 文件层的两个配置文件（路径相对容器根）。
-// 它们属于容器内的 root，槽内的用户改不了。
-func bridgeFiles(sl model.Slot) (map[string][]byte, error) {
+// 它们属于容器内的 root，槽内的用户改不了。sock 是 tmux socket 的路径（宿主与 worker 里相同）。
+func bridgeFiles(sl model.Slot, sock string) (map[string][]byte, error) {
 	if !sl.TmuxBridge {
 		return nil, nil
+	}
+	if strings.ContainsAny(sock, "\"\\\n") {
+		return nil, fmt.Errorf("tmux socket 的路径 %q 里有引号、反斜杠或换行，不能开启桥接", sock)
 	}
 	mode, items, err := model.ParseTmuxTools(sl.EffectiveTmuxTools())
 	if err != nil {
@@ -290,13 +293,13 @@ allowed_sockets = ["%s"]
 [security.tools]
 mode = "%s"
 items = [%s]
-`, shell, TmuxSocketInWorker, mode, strings.Join(quoted, ", "))
+`, shell, sock, mode, strings.Join(quoted, ", "))
 
 	mcp, err := json.MarshalIndent(map[string]any{
 		"mcpServers": map[string]any{
 			"tmux": map[string]any{
 				"command": "tmux-mcp-rs",
-				"args":    []string{"--socket", TmuxSocketInWorker, "--config", tmuxPolicy},
+				"args":    []string{"--socket", sock, "--config", tmuxPolicy},
 			},
 		},
 	}, "", "  ")
@@ -343,10 +346,14 @@ func (e *Engine) bridgeUp(ctx context.Context, sl model.Slot, worker string) boo
 		e.logf("宿主 tmux 桥接不可用：该槽的 worker 镜像里没有 tmux-mcp-rs")
 		return false
 	}
-	if out, ok := inWorker("tmux", "-S", TmuxSocketInWorker, "list-sessions", "-F", "#{session_name}"); !ok {
-		// 两端的 tmux 版本可以不同（客户端只负责把命令交给 server），所以只在连不上时才把版本列出来供排查。
+	if out, ok := inWorker("tmux", "-S", e.TmuxSocket(sl.ID), "list-sessions", "-F", "#{session_name}"); !ok {
+		// tmux 的客户端与 server 要同一版本：版本不同时协议号可能相同，但照样连不上，报错也看不出原因。
 		host, _ := e.TmuxVersion(ctx)
-		e.logf("宿主 tmux 桥接不可用：槽内连不上宿主的 tmux（%s）。宿主是 %s，worker 镜像里是 %s", truncate(out, 200), orUnknown(host), client)
+		hint := ""
+		if host != "" && host != client {
+			hint = "；两端版本不同，用 make image-worker 重建 worker 镜像（它会按宿主的版本编译 tmux）后再 slot up --recreate"
+		}
+		e.logf("宿主 tmux 桥接不可用：槽内连不上宿主的 tmux（%s）。宿主是 %s，worker 镜像里是 %s%s", truncate(out, 200), orUnknown(host), client, hint)
 		return false
 	}
 	e.logf("宿主 tmux 桥接已接通：槽内经它执行的命令使用宿主的权限和宿主网络，不受该槽的网络约束")
