@@ -39,7 +39,7 @@ cc-cluster doctor                                   # 检查这台机器能否�
 之后有三种用法，做的是同一件事：
 
 - **交互面板**：在终端里不带参数运行 `cc-cluster`，按编号选择。
-- **网页界面**：`cc-cluster web`，在本机浏览器里打开它打印的地址。只监听 `127.0.0.1`；在别的机器上使用时先做 SSH 端口转发。
+- **网页界面**：`cc-cluster web`，在本机浏览器里打开它打印的地址。只监听 `127.0.0.1`；在别的机器上使用时先做 SSH 端口转发。在源码目录里预览可以用 `sh scripts/web.sh [数据目录]`，它每次先重新构建再启动。
 - **命令行**，如下。每个命令和子命令都可以加 `-h` 查看参数。
 
 ```sh
@@ -83,6 +83,7 @@ cc-cluster slot release alice && cc-cluster slot up alice
 | `cmd/cc-cluster` | 程序入口 |
 | `internal/` | 配置模型、文件状态、编址、核心配置生成、订阅解析、Docker API 客户端、编排、命令行与网页服务 |
 | `web/` | 网页界面的前端源码（React），构建后嵌入二进制 |
+| `scripts/` | 辅助脚本：`web.sh` 一键构建并启动网页界面 |
 | `images/gateway` | 网关镜像：固定版本的 Mihomo 与监督脚本 |
 | `images/worker` | 默认的 worker 基础镜像 |
 | `test/e2e` | 端到端测试与假服务 |
