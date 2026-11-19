@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -34,6 +35,13 @@ const (
 
 // 由管理器控制、不从订阅里带进来的字段。
 var droppedKeys = []string{"name", "udp", "dialer-proxy", "interface-name", "routing-mark"}
+
+// 订阅服务常把套餐信息做成节点塞在列表里，名称形如"剩余流量：267 GB""套餐到期：2026-11-23"。
+var infoNameRe = regexp.MustCompile(`(?i)剩余流量|下次重置|套餐到期|到期时间|过期时间|traffic|expire`)
+
+// IsInfoName 报告一个节点名称是否像这类提示项。它们往往也能连通，但不是给人用的线路，
+// 自动挑选节点时跳过；手工仍然可以选。
+func IsInfoName(name string) bool { return infoNameRe.MatchString(name) }
 
 // CheckURL 检查订阅地址的写法。
 func CheckURL(raw string) error {

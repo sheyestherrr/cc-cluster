@@ -80,16 +80,23 @@ type NodeSource struct {
 // Subscription 是一个 Clash 格式的订阅及其最近一次拉取的节点列表。
 // 订阅地址里通常带有令牌，节点片段里有凭据，整个对象按机密保存。
 type Subscription struct {
-	ID        string     `json:"id"`
-	URL       string     `json:"url"`
-	FetchedAt time.Time  `json:"fetched_at"`
-	Proxies   []SubProxy `json:"proxies"`
+	ID        string    `json:"id"`
+	URL       string    `json:"url"`
+	FetchedAt time.Time `json:"fetched_at"`
+	// TestedAt 是最近一次测延迟的时间；没测过时为零值。
+	TestedAt time.Time  `json:"tested_at"`
+	Proxies  []SubProxy `json:"proxies"`
 }
+
+// DelayFailed 是 SubProxy.DelayMS 里表示"测过但不通"的值。
+const DelayFailed = -1
 
 // SubProxy 是订阅里的一个节点：名称加 Mihomo 原生 proxy 片段（不含 name）。
 type SubProxy struct {
 	Name  string         `json:"name"`
 	Proxy map[string]any `json:"proxy"`
+	// DelayMS 是最近一次测得的延迟（毫秒）；0 表示没测过，DelayFailed 表示不通。
+	DelayMS int `json:"delay_ms,omitempty"`
 }
 
 // Find 按名称查找订阅里的节点。

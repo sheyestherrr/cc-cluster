@@ -46,7 +46,7 @@ const usage = `cc-cluster：为 Claude Code 管理相互独立的工作槽位。
 配置：
   init                      初始化数据目录
   doctor                    检查这台机器能否运行（不访问外部地址）
-  sub add|list|nodes|refresh|rm
+  sub add|list|nodes|test|refresh|rm
                             Clash 格式的订阅
   node add|list|resolve|rm  代理节点（中转 / 落地），可取自订阅
   gateway add|list|up|down|rm

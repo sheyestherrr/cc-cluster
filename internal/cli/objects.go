@@ -85,7 +85,7 @@ func (a *app) nodeAdd(args []string) error {
 	fs.StringVar(&n.TZ, "tz", "", "落地所在地区的时区，例如 Asia/Tokyo；绑定它的槽位默认沿用")
 	fs.StringVar(&n.Lang, "lang", "", "落地所在地区的语言，例如 en_US.UTF-8；绑定它的槽位默认沿用")
 	sub := fs.String("sub", "", "从这个订阅里取节点（先用 sub add 登记订阅）")
-	subName := fs.String("name", "", "配合 --sub：订阅里的节点名称；不填则列出来让你选")
+	subName := fs.String("name", "", "配合 --sub：订阅里的节点名称；不填时先测延迟，中转默认用延迟最低的，落地列出来让你选")
 	id, err := parseWithID(fs, args)
 	if err != nil {
 		return err
@@ -103,7 +103,7 @@ func (a *app) nodeAdd(args []string) error {
 		}
 		name := *subName
 		if name == "" {
-			if name, err = a.pickSubNode(st, *sub); err != nil {
+			if name, err = a.pickSubNode(ctx, *sub, n.Role); err != nil {
 				return err
 			}
 		}
@@ -169,26 +169,62 @@ func (a *app) reportNode(st *store.Store, id string) error {
 	return nil
 }
 
-// pickSubNode 列出订阅里的节点让用户选一个，返回它的名称。
-func (a *app) pickSubNode(st *store.Store, subID string) (string, error) {
+// pickSubNode 从订阅里定下一个节点，返回它的名称。先测一遍延迟：
+// 中转默认用延迟最低的那个（终端里可以改选，非交互时直接采用）；落地决定出口，必须由人来选。
+func (a *app) pickSubNode(ctx context.Context, subID, role string) (string, error) {
+	_, st, err := a.open(ctx, false)
+	if err != nil {
+		return "", err
+	}
 	sub, err := st.Sub(subID)
 	if err != nil {
 		return "", err
 	}
-	if !a.interactive {
+	auto := role == model.RoleTransit
+	if !a.interactive && !auto {
 		return "", fmt.Errorf("需要用 --name 指定订阅里的节点名称；用 sub nodes %s 查看", subID)
 	}
-	items := make([]string, len(sub.Proxies))
-	for i, p := range sub.Proxies {
-		n := model.Node{Proxy: p.Proxy}
-		typ, _ := p.Proxy["type"].(string)
-		items[i] = fmt.Sprintf("%s  (%s, %s:%d)", p.Name, typ, n.Server(), n.Port())
+	delays, terr := a.testSub(ctx, subID, engine.DelayOptions{})
+	if terr != nil {
+		if !a.interactive {
+			return "", fmt.Errorf("测延迟没有成功，无法自动挑选：%w；可以用 --name 直接指定节点", terr)
+		}
+		fmt.Fprintf(a.errw, "测延迟没有成功（%v），按已有的记录列出\n", terr)
+		delays = engine.SubDelays(sub)
 	}
-	i, err := a.choose(fmt.Sprintf("订阅 %s 的节点：", subID), items, -1)
+	best, hasBest := engine.Fastest(delays)
+	if !a.interactive {
+		if !hasBest {
+			return "", fmt.Errorf("订阅 %s 里没有测通的节点；用 sub refresh %s 刷新后再试，或用 --name 直接指定", subID, subID)
+		}
+		fmt.Fprintf(a.out, "按延迟选用订阅 %s 的节点 %s（%s）\n", subID, best.Name, best.DelayText())
+		return best.Name, nil
+	}
+	items, def := make([]string, len(delays)), -1
+	for i, d := range delays {
+		items[i] = fmt.Sprintf("%-8s %s  (%s, %s)", d.DelayText(), d.Name, d.Type, d.Server)
+		if auto && hasBest && def < 0 && d.Name == best.Name {
+			def = i
+		}
+	}
+	title := fmt.Sprintf("订阅 %s 的节点（按延迟排序）：", subID)
+	if def >= 0 {
+		title = fmt.Sprintf("订阅 %s 的节点（按延迟排序，直接回车用延迟最低的）：", subID)
+	}
+	i, err := a.choose(title, items, def)
 	if err != nil {
 		return "", err
 	}
-	return sub.Proxies[i].Name, nil
+	return delays[i].Name, nil
+}
+
+// testSub 测一遍订阅里各节点的延迟。
+func (a *app) testSub(ctx context.Context, subID string, opt engine.DelayOptions) ([]engine.NodeDelay, error) {
+	eng, _, err := a.open(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	return eng.SubTest(ctx, subID, opt)
 }
 
 func (a *app) nodeList(args []string) error {

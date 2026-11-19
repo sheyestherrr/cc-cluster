@@ -431,6 +431,13 @@ func (a *app) menuNode(ctx context.Context) error {
 			return a.wizardNodeFromSub(ctx, id)
 		}},
 		{"手工添加节点（SOCKS5 / HTTP）", a.wizardNodeManual},
+		{"测订阅里各节点的延迟", func(ctx context.Context) error {
+			id, err := a.pickSub(ctx)
+			if err != nil {
+				return err
+			}
+			return a.cmdSub(ctx, []string{"test", id})
+		}},
 		{"刷新订阅", func(ctx context.Context) error {
 			id, err := a.pickSub(ctx)
 			if err != nil {
@@ -487,7 +494,7 @@ func (a *app) askRole(n *model.Node, defLanding bool) error {
 		if n.ExpectExitIP, err = a.ask("预期的出口 IPv4（填了就必须与实测一致；不填不检查）", ""); err != nil {
 			return err
 		}
-		if n.TZ, err = a.ask("出口所在地区的时区，例如 Asia/Tokyo（绑定它的槽位默认沿用；可不填）", ""); err != nil {
+		if n.TZ, err = a.ask("出口所在地区的时区，例如 Asia/Tokyo（不填则首次启动槽位时按探测到的出口所在地设置）", ""); err != nil {
 			return err
 		}
 	}
@@ -499,15 +506,15 @@ func (a *app) wizardNodeFromSub(ctx context.Context, subID string) error {
 	if err != nil {
 		return err
 	}
-	name, err := a.pickSubNode(st, subID)
-	if err != nil {
-		return err
-	}
 	n := model.Node{}
 	if n.ID, err = a.askRequired("给这个节点起个名字（小写字母、数字、连字符）"); err != nil {
 		return err
 	}
 	if err := a.askRole(&n, false); err != nil {
+		return err
+	}
+	name, err := a.pickSubNode(ctx, subID, n.Role)
+	if err != nil {
 		return err
 	}
 	if err := eng.NodeFromSub(ctx, n, subID, name); err != nil {

@@ -63,6 +63,21 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestIsInfoName(t *testing.T) {
+	for name, want := range map[string]bool{
+		"剩余流量：267.59 GB":  true,
+		"距离下次重置剩余：4 天":    true,
+		"套餐到期：2026-11-23": true,
+		"Traffic: 10 GB":  true,
+		"🇺🇸美·凤凰城|专线-BP2":  false,
+		"悦 · 🇯🇵 日本专属2💎":   false,
+	} {
+		if IsInfoName(name) != want {
+			t.Errorf("IsInfoName(%q) 应为 %v", name, want)
+		}
+	}
+}
+
 func TestParseRejectsNonClash(t *testing.T) {
 	for name, body := range map[string]string{
 		"base64 节点列表": "c3M6Ly9hYmM=",

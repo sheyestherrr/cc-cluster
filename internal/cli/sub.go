@@ -7,12 +7,13 @@ import (
 	"os"
 	"strings"
 
+	"github.com/sheyestherrr/cc-cluster/internal/engine"
 	"github.com/sheyestherrr/cc-cluster/internal/model"
 )
 
 // cmdSub 管理 Clash 格式的订阅。
 func (a *app) cmdSub(ctx context.Context, args []string) error {
-	sub, rest, err := a.subcommand("sub", "add|list|nodes|refresh|rm", args)
+	sub, rest, err := a.subcommand("sub", "add|list|nodes|test|refresh|rm", args)
 	if err != nil {
 		return err
 	}
@@ -51,13 +52,51 @@ func (a *app) cmdSub(ctx context.Context, args []string) error {
 			return err
 		}
 		w := a.table()
-		fmt.Fprintln(w, "序号\t名称\t类型\t服务器")
-		for i, p := range s.Proxies {
-			n := model.Node{Proxy: p.Proxy}
-			typ, _ := p.Proxy["type"].(string)
-			fmt.Fprintf(w, "%d\t%s\t%s\t%s:%d\n", i+1, p.Name, typ, n.Server(), n.Port())
+		fmt.Fprintln(w, "序号\t名称\t类型\t服务器\t延迟")
+		for i, d := range engine.SubDelays(s) {
+			fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", i+1, d.Name, d.Type, d.Server, d.DelayText())
 		}
-		return w.Flush()
+		if err := w.Flush(); err != nil {
+			return err
+		}
+		if s.TestedAt.IsZero() {
+			fmt.Fprintf(a.out, "还没有测过延迟；用 sub test %s 测一遍\n", id)
+		} else {
+			fmt.Fprintf(a.out, "延迟测于 %s；用 sub test %s 重测\n", s.TestedAt.Local().Format("2006-01-02 15:04:05"), id)
+		}
+		return nil
+	case "test":
+		fs := a.newFlags("sub test", "sub test <订阅> [参数]")
+		var opt engine.DelayOptions
+		fs.StringVar(&opt.URL, "url", "", "测速时访问的地址（默认 "+engine.DefaultDelayURL+"）")
+		fs.DurationVar(&opt.Timeout, "timeout", engine.DefaultDelayTimeout, "单个节点的时限，超过算不通")
+		fs.StringVar(&opt.Network, "egress-network", "", "从哪个 Docker 网络发起，应与网关的出口网络相同（默认 "+model.DefaultEgressNetwork+"）")
+		id, err := parseWithID(fs, rest)
+		if err != nil {
+			return err
+		}
+		delays, err := a.testSub(ctx, id, opt)
+		if err != nil {
+			return err
+		}
+		w := a.table()
+		fmt.Fprintln(w, "延迟\t名称\t类型\t服务器")
+		ok := 0
+		for _, d := range delays {
+			if d.Usable() {
+				ok++
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", d.DelayText(), d.Name, d.Type, d.Server)
+		}
+		if err := w.Flush(); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.out, "%d 个节点里 %d 个测通", len(delays), ok)
+		if best, has := engine.Fastest(delays); has {
+			fmt.Fprintf(a.out, "；延迟最低的是 %s（%s）", best.Name, best.DelayText())
+		}
+		fmt.Fprintln(a.out)
+		return nil
 	case "refresh":
 		id, err := parseWithID(a.newFlags("sub refresh", "sub refresh <订阅>"), rest)
 		if err != nil {

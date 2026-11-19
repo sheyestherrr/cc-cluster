@@ -558,6 +558,43 @@ func TestEndToEnd(t *testing.T) {
 		e.expect("A 不受影响", seenA, e.w("a", "get", ipTarget, "80"))
 	})
 
+	t.Run("订阅节点测延迟", func(t *testing.T) {
+		socks5 := func(server string) map[string]any {
+			return map[string]any{"type": "socks5", "server": server, "port": 1080}
+		}
+		must(t, e.st.SaveSub(model.Subscription{ID: "s", URL: "https://sub.invalid/x", Proxies: []model.SubProxy{
+			{Name: "剩余流量：1 GB", Proxy: socks5(ipTransitEgress)},
+			{Name: "不通的节点", Proxy: socks5("203.0.113.99")},
+			{Name: "能用的节点", Proxy: socks5(ipTransitEgress)},
+		}}, true))
+		delays, err := e.eng.SubTest(e.ctx, "s", engine.DelayOptions{
+			URL: "http://" + ipTarget + "/", Timeout: 4 * time.Second, Network: netEgress,
+		})
+		must(t, err)
+		byName := map[string]engine.NodeDelay{}
+		for _, d := range delays {
+			byName[d.Name] = d
+		}
+		if d := byName["能用的节点"]; !d.Usable() {
+			t.Errorf("经假中转能到目标，应测通: %+v", d)
+		}
+		if d := byName["不通的节点"]; d.DelayMS != model.DelayFailed || delays[len(delays)-1].Name != "不通的节点" {
+			t.Errorf("连不上的节点应记为不通并排在最后: %+v", delays)
+		}
+		if best, ok := engine.Fastest(delays); !ok || best.Name != "能用的节点" {
+			t.Errorf("自动挑选应跳过提示项，选中能用的节点: %+v %v", best, ok)
+		}
+		if s, err := e.st.Sub("s"); err != nil || s.TestedAt.IsZero() || s.Proxies[2].DelayMS <= 0 || s.Proxies[1].DelayMS != model.DelayFailed {
+			t.Errorf("测速结果应记在订阅上: %+v %v", s.Proxies, err)
+		}
+		// 测速用的一次性容器不能留下：里面有节点凭据。
+		left, err := e.dk.ContainerList(e.ctx, map[string]string{"cc-cluster.cluster": cluster, "cc-cluster.role": "helper"})
+		must(t, err)
+		if len(left) != 0 {
+			t.Errorf("测速后不应留下助手容器: %+v", left)
+		}
+	})
+
 	t.Run("操作记录", func(t *testing.T) {
 		b, err := os.ReadFile(filepath.Join(e.st.Dir(), "ops.jsonl"))
 		must(t, err)
