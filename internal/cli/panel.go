@@ -513,7 +513,30 @@ func (a *app) wizardNodeFromSub(ctx context.Context, subID string) error {
 	if err := a.askRole(&n, false); err != nil {
 		return err
 	}
-	name, err := a.pickSubNode(ctx, subID, n.Role)
+	// 挑中转时，已有落地的话接上它测整条链路：节点自己能用不代表它肯转发到落地。
+	landing := ""
+	if n.Role == model.RoleTransit {
+		nodes, err := st.Nodes()
+		if err != nil {
+			return err
+		}
+		items := []string{}
+		for _, o := range nodes {
+			if o.Role == model.RoleLanding {
+				items = append(items, o.ID)
+			}
+		}
+		if len(items) > 0 {
+			i, err := a.choose("这个中转准备接哪个落地？测速时会接上它测整条链路", append(items, "先不指定，只测节点本身"), 0)
+			if err != nil {
+				return err
+			}
+			if i < len(items) {
+				landing = items[i]
+			}
+		}
+	}
+	name, err := a.pickSubNode(ctx, subID, n.Role, landing)
 	if err != nil {
 		return err
 	}

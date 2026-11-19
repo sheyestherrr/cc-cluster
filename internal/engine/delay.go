@@ -23,12 +23,18 @@ const DefaultDelayURL = "https://www.gstatic.com/generate_204"
 // DefaultDelayTimeout 是单个节点测延迟的时限，超过就算不通。
 const DefaultDelayTimeout = 5 * time.Second
 
+// DefaultChainDelayTimeout 是接上落地测整条链路时的时限。
+const DefaultChainDelayTimeout = 8 * time.Second
+
 // DelayOptions 是测延迟的选项，零值表示用默认值。
 type DelayOptions struct {
 	URL     string
 	Timeout time.Duration
 	// Network 是发起测速的 Docker 网络，应当与网关的出口网络相同，这样测到的就是网关连它的延迟。
 	Network string
+	// Landing 不为空时测的是整条链路：经订阅里的每个节点再到这个落地节点。
+	// 节点自己能用不代表它肯转发到落地，挑中转时应当这样测。
+	Landing string
 }
 
 // NodeDelay 是订阅里一个节点的测速结果。
@@ -96,7 +102,8 @@ func Fastest(delays []NodeDelay) (NodeDelay, bool) {
 	return NodeDelay{}, false
 }
 
-// SubTest 对订阅里的全部节点测一次延迟，把结果记在订阅上并返回（排序同 SubDelays）。
+// SubTest 对订阅里的全部节点测一次延迟并返回（排序同 SubDelays）。
+// 只测节点本身时结果记在订阅上；指定了落地、测整条链路时结果只返回，不记录。
 //
 // 测速在一个一次性的容器里进行：用网关镜像里的同一个核心，接在出口网络上，
 // 没有 TUN、没有任何能力，也不对外监听；节点配置经归档接口写入，不经过命令行。
@@ -108,7 +115,11 @@ func (e *Engine) SubTest(ctx context.Context, id string, opt DelayOptions) (res 
 				ok++
 			}
 		}
-		e.record("sub.test", id, err, fmt.Sprintf("%d 个节点里 %d 个测通", len(res), ok))
+		detail := fmt.Sprintf("%d 个节点里 %d 个测通", len(res), ok)
+		if opt.Landing != "" {
+			detail += "（接落地 " + opt.Landing + "）"
+		}
+		e.record("sub.test", id, err, detail)
 	}()
 	sub, err := e.st.Sub(id)
 	if err != nil {
@@ -117,14 +128,35 @@ func (e *Engine) SubTest(ctx context.Context, id string, opt DelayOptions) (res 
 	if len(sub.Proxies) == 0 {
 		return nil, fmt.Errorf("订阅 %s 里没有节点", id)
 	}
+	var via map[string]any
+	if opt.Landing != "" {
+		landing, err := e.st.Node(opt.Landing)
+		if err != nil {
+			return nil, err
+		}
+		if landing.Role != model.RoleLanding {
+			return nil, fmt.Errorf("节点 %s 的角色不是落地", landing.ID)
+		}
+		via = landing.Proxy
+	}
 	fragments := make([]map[string]any, len(sub.Proxies))
 	for i, p := range sub.Proxies {
 		fragments[i] = p.Proxy
 	}
-	e.logf("正在测订阅 %s 里 %d 个节点的延迟", id, len(fragments))
-	delays, err := e.measureDelays(ctx, fragments, opt)
+	if via != nil {
+		e.logf("正在测订阅 %s 里 %d 个节点接落地 %s 的整条链路", id, len(fragments), opt.Landing)
+	} else {
+		e.logf("正在测订阅 %s 里 %d 个节点的延迟", id, len(fragments))
+	}
+	delays, err := e.measureDelays(ctx, fragments, via, opt)
 	if err != nil {
 		return nil, err
+	}
+	if via != nil {
+		for i := range sub.Proxies {
+			sub.Proxies[i].DelayMS = delays[i]
+		}
+		return SubDelays(sub), nil
 	}
 
 	// 测速期间不占着数据目录的锁；写回时重新读取，订阅在此期间被刷新过的话只更新仍然相同的节点。
@@ -153,7 +185,8 @@ func (e *Engine) SubTest(ctx context.Context, id string, opt DelayOptions) (res 
 }
 
 // measureDelays 返回与 proxies 一一对应的延迟（毫秒），不通的是 model.DelayFailed。
-func (e *Engine) measureDelays(ctx context.Context, proxies []map[string]any, opt DelayOptions) ([]int, error) {
+// via 不为空时每个节点后面接上这个落地，测整条链路。
+func (e *Engine) measureDelays(ctx context.Context, proxies []map[string]any, via map[string]any, opt DelayOptions) ([]int, error) {
 	if e.dk == nil {
 		return nil, errors.New("测延迟需要连接 Docker")
 	}
@@ -167,6 +200,9 @@ func (e *Engine) measureDelays(ctx context.Context, proxies []map[string]any, op
 	timeout := opt.Timeout
 	if timeout <= 0 {
 		timeout = DefaultDelayTimeout
+		if via != nil { // 两跳的握手更久
+			timeout = DefaultChainDelayTimeout
+		}
 	}
 	network := opt.Network
 	if network == "" {
@@ -181,7 +217,7 @@ func (e *Engine) measureDelays(ctx context.Context, proxies []map[string]any, op
 	if err := e.ensureEgressNetwork(ctx, network); err != nil {
 		return nil, err
 	}
-	config, names, err := mihomo.RenderDelayProbe(proxies)
+	config, names, err := mihomo.RenderDelayProbe(proxies, via)
 	if err != nil {
 		return nil, err
 	}

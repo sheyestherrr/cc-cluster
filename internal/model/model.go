@@ -23,6 +23,8 @@ const (
 	DefaultShell         = "/bin/bash"
 	DefaultLogLevel      = "warning"
 	DefaultPidsLimit     = 4096
+	// MaxSlotsPerLanding 是同一个落地最多同时接线的槽位数。
+	MaxSlotsPerLanding = 5
 	// DefaultLang 在槽位和落地都没有指定语言时使用；默认的 worker 镜像里生成了这个 locale。
 	DefaultLang = "en_US.UTF-8"
 	// LegacyUser 是早期版本里所有槽共用的用户名；没有记录用户名的旧身份继续用它，
@@ -38,6 +40,13 @@ var DefaultEchoURLs = []string{
 	"https://api.ipify.org",
 	"https://ifconfig.me/ip",
 	"https://icanhazip.com",
+}
+
+// DefaultConnectURLs 是检查链路连通性时访问的地址：应答只有一个状态码，各地都能访问。
+// 出口探测之前先用它们分段检查，链路不通时可以指出是中转还是落地这一段的问题。
+var DefaultConnectURLs = []string{
+	"https://www.gstatic.com/generate_204",
+	"https://cp.cloudflare.com/generate_204",
 }
 
 // Cluster 是数据目录级别的设置。
@@ -118,8 +127,18 @@ type Gateway struct {
 	Pool          string   `json:"pool"`
 	DNS           []string `json:"dns"`
 	EchoURLs      []string `json:"echo_urls"`
-	Image         string   `json:"image,omitempty"`
-	LogLevel      string   `json:"log_level,omitempty"`
+	// ConnectURLs 是连通性检查访问的地址；不填用 DefaultConnectURLs。
+	ConnectURLs []string `json:"connect_urls,omitempty"`
+	Image       string   `json:"image,omitempty"`
+	LogLevel    string   `json:"log_level,omitempty"`
+}
+
+// ConnectivityURLs 返回连通性检查要访问的地址。
+func (g Gateway) ConnectivityURLs() []string {
+	if len(g.ConnectURLs) == 0 {
+		return DefaultConnectURLs
+	}
+	return g.ConnectURLs
 }
 
 // Mount 是 worker 的一个 bind 挂载。

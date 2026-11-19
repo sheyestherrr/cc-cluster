@@ -130,9 +130,11 @@ func setup(t *testing.T) *env {
 	must(t, e.eng.AddNode(e.ctx, model.Node{ID: "la", Role: model.RoleLanding, Proxy: socks(ipLandA), ExpectExitIP: ipLandA, TZ: "Asia/Tokyo"}))
 	must(t, e.eng.AddNode(e.ctx, model.Node{ID: "lb", Role: model.RoleLanding, Proxy: socks(ipLandB), ExpectExitIP: ipLandB}))
 	must(t, e.eng.AddNode(e.ctx, model.Node{ID: "lwrong", Role: model.RoleLanding, Proxy: socks(ipLandB), ExpectExitIP: "198.51.100.99"}))
+	must(t, e.eng.AddNode(e.ctx, model.Node{ID: "ldead", Role: model.RoleLanding, Proxy: socks("198.51.100.98")}))
 	must(t, e.eng.AddGateway(model.Gateway{
 		ID: "main", Transit: "transit", EgressNetwork: netEgress,
 		DNS: []string{"tcp://" + ipTarget + ":53"}, EchoURLs: []string{"http://" + ipTarget + "/json"},
+		ConnectURLs: []string{"http://" + ipTarget + "/"},
 	}))
 	e.addSlot("a", "la")
 	e.addSlot("b", "lb")
@@ -389,6 +391,31 @@ func TestEndToEnd(t *testing.T) {
 		e.expect("删除槽 C 后它的探测入口消失", `^0$`, e.gw("netstat -lnt | grep -c '127.0.0.1:17002'; true"))
 	})
 
+	t.Run("链路不通时指出是哪一段", func(t *testing.T) {
+		e.t = t
+		// 中转可用，落地连不上：分段检查应当直接指出是中转到落地这一段。
+		e.addSlot("d", "ldead")
+		_, err := e.eng.SlotUp(e.ctx, "d", engine.UpOptions{})
+		if err == nil || !strings.Contains(err.Error(), "中转 transit 本身可用，但经它连不上落地 ldead") {
+			t.Errorf("应指出中转可用而落地连不上: %v", err)
+		}
+		if got := e.state("d"); got != engine.StateAbsent {
+			t.Errorf("链路不通时不应创建 worker，状态是 %s", got)
+		}
+		must(t, e.eng.SlotRemove(e.ctx, "d", true))
+
+		// 同一个落地同时接线的槽位数有上限：槽 A 已经接着落地 la。
+		e.eng.LandingLimit = 1
+		e.addSlot("d", "la")
+		_, err = e.eng.SlotUp(e.ctx, "d", engine.UpOptions{})
+		if err == nil || !strings.Contains(err.Error(), "最多同时给 1 个槽位用") {
+			t.Errorf("落地接线的槽位数到上限时应拒绝: %v", err)
+		}
+		e.eng.LandingLimit = 0
+		must(t, e.eng.SlotRemove(e.ctx, "d", true))
+		e.expect("A 不受影响", seenA, e.w("a", "get", ipTarget, "80"))
+	})
+
 	t.Run("核心被杀", func(t *testing.T) {
 		e.t = t
 		stream := make(chan string, 1)
@@ -586,6 +613,24 @@ func TestEndToEnd(t *testing.T) {
 		}
 		if s, err := e.st.Sub("s"); err != nil || s.TestedAt.IsZero() || s.Proxies[2].DelayMS <= 0 || s.Proxies[1].DelayMS != model.DelayFailed {
 			t.Errorf("测速结果应记在订阅上: %+v %v", s.Proxies, err)
+		}
+		// 接上落地测整条链路：落地连得上的测通，连不上的全部不通。
+		chain, err := e.eng.SubTest(e.ctx, "s", engine.DelayOptions{
+			URL: "http://" + ipTarget + "/", Timeout: 4 * time.Second, Network: netEgress, Landing: "la",
+		})
+		must(t, err)
+		if best, ok := engine.Fastest(chain); !ok || best.Name != "能用的节点" {
+			t.Errorf("经假中转再到落地 la 应测通: %+v", chain)
+		}
+		chain, err = e.eng.SubTest(e.ctx, "s", engine.DelayOptions{
+			URL: "http://" + ipTarget + "/", Timeout: 4 * time.Second, Network: netEgress, Landing: "ldead",
+		})
+		must(t, err)
+		if best, ok := engine.Fastest(chain); ok {
+			t.Errorf("落地连不上时整条链路都不通，却选出了 %+v", best)
+		}
+		if s, err := e.st.Sub("s"); err != nil || s.Proxies[2].DelayMS <= 0 {
+			t.Errorf("链路测速的结果不应覆盖节点自身的延迟记录: %+v %v", s.Proxies, err)
 		}
 		// 测速用的一次性容器不能留下：里面有节点凭据。
 		left, err := e.dk.ContainerList(e.ctx, map[string]string{"cc-cluster.cluster": cluster, "cc-cluster.role": "helper"})

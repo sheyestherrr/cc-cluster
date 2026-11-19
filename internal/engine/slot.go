@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/sheyestherrr/cc-cluster/internal/dockerapi"
 	"github.com/sheyestherrr/cc-cluster/internal/identity"
+	"github.com/sheyestherrr/cc-cluster/internal/mihomo"
 	"github.com/sheyestherrr/cc-cluster/internal/model"
 	"github.com/sheyestherrr/cc-cluster/internal/netplan"
 )
@@ -146,7 +148,7 @@ func (e *Engine) AddSlot(ctx context.Context, sl model.Slot, opt SlotOptions) (o
 		return sl, nil, err
 	}
 	var used []netip.Prefix
-	var takenUsers []string
+	var takenUsers, sharing []string
 	for _, o := range all {
 		if o.ID == sl.ID {
 			return sl, nil, fmt.Errorf("槽位 %s 已存在", sl.ID)
@@ -155,7 +157,7 @@ func (e *Engine) AddSlot(ctx context.Context, sl model.Slot, opt SlotOptions) (o
 			takenUsers = append(takenUsers, oi.UserName())
 		}
 		if o.Landing == sl.Landing {
-			warnings = append(warnings, fmt.Sprintf("落地 %s 已被槽位 %s 使用；两个槽共用一个出口地址会让它们互相关联", sl.Landing, o.ID))
+			sharing = append(sharing, o.ID)
 		}
 		if o.Gateway != sl.Gateway {
 			continue
@@ -166,6 +168,10 @@ func (e *Engine) AddSlot(ctx context.Context, sl model.Slot, opt SlotOptions) (o
 		if p, err := netip.ParsePrefix(o.Subnet); err == nil {
 			used = append(used, p)
 		}
+	}
+	if len(sharing) > 0 {
+		warnings = append(warnings, fmt.Sprintf("落地 %s 还绑定着槽位 %s，它们的出口地址相同；同一个落地最多同时给 %d 个槽位接线",
+			sl.Landing, strings.Join(sharing, "、"), model.MaxSlotsPerLanding))
 	}
 	pool, err := netip.ParsePrefix(gw.Pool)
 	if err != nil {
@@ -284,6 +290,9 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 	if !ok {
 		return res, fmt.Errorf("槽位 %s 缺少身份文件", id)
 	}
+	if err := e.checkLandingLoad(ctx, slot); err != nil {
+		return res, err
+	}
 
 	p, rt, err := e.gatewayUp(ctx, slot.Gateway)
 	if err != nil {
@@ -292,9 +301,12 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 	link, landing := p.links[id], p.landings[id]
 
 	e.logf("经网关回环入口探测槽位 %s 的链路", id)
+	if err := e.checkChain(ctx, rt, p, landing); err != nil {
+		return res, fmt.Errorf("槽位 %s 的链路不通，未接线：%w", id, err)
+	}
 	exit, err := e.probeChain(ctx, rt, link, p.gw.EchoURLs)
 	if err != nil {
-		return res, fmt.Errorf("槽位 %s 的链路不可用，未接线：%w", id, err)
+		return res, fmt.Errorf("槽位 %s 的链路能连通，但出口探测没有成功，未接线：%w", id, err)
 	}
 	chainIP, echoURL := exit.IP, exit.URL
 	if landing.ExpectExitIP != "" && chainIP != landing.ExpectExitIP {
@@ -665,6 +677,86 @@ func parseExit(body string) (exitInfo, bool) {
 	ip, ok := parseExitIP(body)
 	info.IP = ip
 	return info, ok
+}
+
+// checkLandingLoad 限制同一个落地同时接线的槽位数。哪个槽位用哪个落地由用户配置，
+// 登记多少个都可以；这里只看当前已经接着线的。
+func (e *Engine) checkLandingLoad(ctx context.Context, slot model.Slot) error {
+	all, err := e.st.Slots()
+	if err != nil {
+		return err
+	}
+	var using []string
+	for _, o := range all {
+		if o.ID == slot.ID || o.Landing != slot.Landing {
+			continue
+		}
+		st, err := e.slotStatus(ctx, o)
+		if err != nil {
+			return err
+		}
+		if st.State == StateReady || st.State == StatePending {
+			using = append(using, o.ID)
+		}
+	}
+	if len(using) >= e.landingLimit() {
+		return fmt.Errorf("落地 %s 已经有 %d 个槽位接着线（%s），同一个落地最多同时给 %d 个槽位用；先停掉其中一个（slot stop），或者给槽位 %s 换一个落地",
+			slot.Landing, len(using), strings.Join(using, "、"), e.landingLimit(), slot.ID)
+	}
+	return nil
+}
+
+// proxyDelay 让网关里的核心经指定的代理访问 urls 中的一个，返回耗时（毫秒）。
+// 它走的是核心的控制接口，不经过分流规则，所以可以单独测中转这一跳。
+func (e *Engine) proxyDelay(ctx context.Context, rt *gatewayRuntime, proxy string, urls []string) (int, error) {
+	var last error
+	for _, u := range urls {
+		query := url.Values{"url": {u}, "timeout": {"5000"}}
+		out, err := e.sh(ctx, rt.name, fmt.Sprintf("curl -sS -m 12 --unix-socket %s 'http://localhost/proxies/%s/delay?%s'",
+			mihomo.SocketPath, url.PathEscape(proxy), query.Encode()))
+		if err != nil {
+			last = err
+			continue
+		}
+		var res struct {
+			Delay   int    `json:"delay"`
+			Message string `json:"message"`
+		}
+		if json.Unmarshal([]byte(strings.TrimSpace(out)), &res) == nil && res.Delay > 0 {
+			return res.Delay, nil
+		}
+		last = fmt.Errorf("访问 %s 没有成功", u)
+	}
+	return 0, last
+}
+
+// checkChain 分段检查链路的连通性：先看经整条链路（中转 → 落地）能否访问一个常见地址；
+// 不行再单独测中转，据此指出是哪一段不通。出口探测在它之后进行。
+func (e *Engine) checkChain(ctx context.Context, rt *gatewayRuntime, p *gatewayPlan, landing model.Node) error {
+	urls := p.gw.ConnectivityURLs()
+	var err error
+	for attempt := 0; attempt < 2; attempt++ { // 配置刚重载时第一次可能还没就绪
+		if _, err = e.proxyDelay(ctx, rt, mihomo.LandingName(landing.ID), urls); err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+	if p.transit == nil {
+		return fmt.Errorf("经落地 %s 访问不了 %s：落地连不上，或者它的协议、账号写得不对", landing.ID, strings.Join(urls, "、"))
+	}
+	if _, terr := e.proxyDelay(ctx, rt, mihomo.TransitName, urls); terr != nil {
+		return fmt.Errorf("中转 %s 这一跳就不通（经它访问不了 %s）；换一个中转，取自订阅的可以用 sub test 找能用的节点", p.transit.ID, strings.Join(urls, "、"))
+	}
+	hint := "换一个中转"
+	if p.transit.Source != nil {
+		hint = fmt.Sprintf("用 sub test %s --landing %s 按整条链路测速，换一个能接通的中转", p.transit.Source.Sub, landing.ID)
+	}
+	return fmt.Errorf("中转 %s 本身可用，但经它连不上落地 %s：这个中转可能不放行到落地的连接，或者落地不接受来自它的连接。%s；也可以让落地单跳直连（不带 --transit 的网关）",
+		p.transit.ID, landing.ID, hint)
 }
 
 // probeChain 经该槽所用链路在网关回环上的入口访问探测地址，返回出口信息。

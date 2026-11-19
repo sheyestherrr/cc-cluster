@@ -196,13 +196,13 @@ func (g Gateway) Validate() error {
 	if len(g.EchoURLs) == 0 {
 		return fmt.Errorf("网关 %s 至少需要一个出口探测地址", g.ID)
 	}
-	for _, e := range g.EchoURLs {
+	for _, e := range append(append([]string(nil), g.EchoURLs...), g.ConnectURLs...) {
 		u, err := url.Parse(e)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return fmt.Errorf("网关 %s 的出口探测地址 %q 不合法", g.ID, e)
+			return fmt.Errorf("网关 %s 的探测地址 %q 不合法", g.ID, e)
 		}
 		if strings.ContainsAny(e, " '\"\\$`") {
-			return fmt.Errorf("网关 %s 的出口探测地址 %q 含有不允许的字符", g.ID, e)
+			return fmt.Errorf("网关 %s 的探测地址 %q 含有不允许的字符", g.ID, e)
 		}
 	}
 	switch g.LogLevel {

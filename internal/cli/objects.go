@@ -86,6 +86,7 @@ func (a *app) nodeAdd(args []string) error {
 	fs.StringVar(&n.Lang, "lang", "", "落地所在地区的语言，例如 en_US.UTF-8；绑定它的槽位默认沿用")
 	sub := fs.String("sub", "", "从这个订阅里取节点（先用 sub add 登记订阅）")
 	subName := fs.String("name", "", "配合 --sub：订阅里的节点名称；不填时先测延迟，中转默认用延迟最低的，落地列出来让你选")
+	forLanding := fs.String("landing", "", "配合 --sub 选中转：接上这个落地节点按整条链路测速，只在能接通它的节点里挑")
 	id, err := parseWithID(fs, args)
 	if err != nil {
 		return err
@@ -102,8 +103,11 @@ func (a *app) nodeAdd(args []string) error {
 			return err
 		}
 		name := *subName
+		if *forLanding != "" && (name != "" || n.Role != model.RoleTransit) {
+			return errors.New("--landing 只在从订阅里挑中转（--role transit、不带 --name）时使用")
+		}
 		if name == "" {
-			if name, err = a.pickSubNode(ctx, *sub, n.Role); err != nil {
+			if name, err = a.pickSubNode(ctx, *sub, n.Role, *forLanding); err != nil {
 				return err
 			}
 		}
@@ -171,7 +175,8 @@ func (a *app) reportNode(st *store.Store, id string) error {
 
 // pickSubNode 从订阅里定下一个节点，返回它的名称。先测一遍延迟：
 // 中转默认用延迟最低的那个（终端里可以改选，非交互时直接采用）；落地决定出口，必须由人来选。
-func (a *app) pickSubNode(ctx context.Context, subID, role string) (string, error) {
+// landing 不为空时按"经节点再到这个落地"的整条链路测。
+func (a *app) pickSubNode(ctx context.Context, subID, role, landing string) (string, error) {
 	_, st, err := a.open(ctx, false)
 	if err != nil {
 		return "", err
@@ -184,7 +189,7 @@ func (a *app) pickSubNode(ctx context.Context, subID, role string) (string, erro
 	if !a.interactive && !auto {
 		return "", fmt.Errorf("需要用 --name 指定订阅里的节点名称；用 sub nodes %s 查看", subID)
 	}
-	delays, terr := a.testSub(ctx, subID, engine.DelayOptions{})
+	delays, terr := a.testSub(ctx, subID, engine.DelayOptions{Landing: landing})
 	if terr != nil {
 		if !a.interactive {
 			return "", fmt.Errorf("测延迟没有成功，无法自动挑选：%w；可以用 --name 直接指定节点", terr)
@@ -192,12 +197,16 @@ func (a *app) pickSubNode(ctx context.Context, subID, role string) (string, erro
 		fmt.Fprintf(a.errw, "测延迟没有成功（%v），按已有的记录列出\n", terr)
 		delays = engine.SubDelays(sub)
 	}
+	what := "延迟"
+	if landing != "" {
+		what = "接落地 " + landing + " 的整条链路"
+	}
 	best, hasBest := engine.Fastest(delays)
 	if !a.interactive {
 		if !hasBest {
-			return "", fmt.Errorf("订阅 %s 里没有测通的节点；用 sub refresh %s 刷新后再试，或用 --name 直接指定", subID, subID)
+			return "", fmt.Errorf("订阅 %s 里没有测通的节点（%s）；用 sub refresh %s 刷新后再试，或用 --name 直接指定", subID, what, subID)
 		}
-		fmt.Fprintf(a.out, "按延迟选用订阅 %s 的节点 %s（%s）\n", subID, best.Name, best.DelayText())
+		fmt.Fprintf(a.out, "按%s选用订阅 %s 的节点 %s（%s）\n", what, subID, best.Name, best.DelayText())
 		return best.Name, nil
 	}
 	items, def := make([]string, len(delays)), -1
@@ -207,9 +216,9 @@ func (a *app) pickSubNode(ctx context.Context, subID, role string) (string, erro
 			def = i
 		}
 	}
-	title := fmt.Sprintf("订阅 %s 的节点（按延迟排序）：", subID)
+	title := fmt.Sprintf("订阅 %s 的节点（按%s排序）：", subID, what)
 	if def >= 0 {
-		title = fmt.Sprintf("订阅 %s 的节点（按延迟排序，直接回车用延迟最低的）：", subID)
+		title = fmt.Sprintf("订阅 %s 的节点（按%s排序，直接回车用最快的）：", subID, what)
 	}
 	i, err := a.choose(title, items, def)
 	if err != nil {
@@ -316,7 +325,8 @@ func (a *app) cmdGateway(ctx context.Context, args []string) error {
 func (a *app) gatewayAdd(args []string) error {
 	fs := a.newFlags("gateway add", "gateway add <网关> [--transit 节点] [参数]")
 	g := model.Gateway{}
-	var dns, echo multi
+	var dns, echo, connect multi
+	fs.Var(&connect, "connect-url", "连通性检查访问的地址，可重复（默认是 Google 和 Cloudflare 的 204 地址）；出口探测之前先用它分段检查链路")
 	fs.StringVar(&g.Transit, "transit", "", "中转节点；不填表示单跳直连落地，此时该网关只能接一个槽")
 	fs.StringVar(&g.EgressNetwork, "egress-network", model.DefaultEgressNetwork, "出口所在的 Docker 网络；不存在时创建为普通 bridge 网络")
 	fs.StringVar(&g.Pool, "pool", model.DefaultPool, "分给各槽 /30 的私网地址池")
@@ -328,7 +338,7 @@ func (a *app) gatewayAdd(args []string) error {
 	if err != nil {
 		return err
 	}
-	g.ID, g.DNS, g.EchoURLs = id, dns, echo
+	g.ID, g.DNS, g.EchoURLs, g.ConnectURLs = id, dns, echo, connect
 	eng, _, err := a.open(context.Background(), false)
 	if err != nil {
 		return err

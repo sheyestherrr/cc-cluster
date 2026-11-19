@@ -63,14 +63,14 @@ func TestSubDelaysOrderAndFastest(t *testing.T) {
 
 func TestMeasureDelaysNeedsDocker(t *testing.T) {
 	e, _ := newTestEngine(t, nil, nil)
-	if _, err := e.measureDelays(context.Background(), nil, DelayOptions{URL: "https://example.com"}); err == nil {
+	if _, err := e.measureDelays(context.Background(), nil, nil, DelayOptions{URL: "https://example.com"}); err == nil {
 		t.Error("没有 Docker 连接时应当报错")
 	}
 }
 
 func TestRenderDelayProbe(t *testing.T) {
 	src := []map[string]any{{"type": "socks5", "server": "a.example", "port": 1080}, {"type": "http", "server": "b.example", "port": 80}}
-	cfg, names, err := mihomo.RenderDelayProbe(src)
+	cfg, names, err := mihomo.RenderDelayProbe(src, nil)
 	if err != nil || len(names) != 2 || names[0] != "n0" || names[1] != "n1" {
 		t.Fatalf("names = %v, err = %v", names, err)
 	}
@@ -87,5 +87,21 @@ func TestRenderDelayProbe(t *testing.T) {
 		if strings.Contains(text, banned) {
 			t.Errorf("测速配置不应有入口 %s", banned)
 		}
+	}
+
+	// 接上落地测整条链路：每个节点后面跟一个经它拨号的落地，测的是这些落地。
+	via := map[string]any{"type": "socks5", "server": "land.example", "port": 1080, "dialer-proxy": "someone-else"}
+	cfg, names, err = mihomo.RenderDelayProbe(src, via)
+	if err != nil || names[0] != "c0" || names[1] != "c1" {
+		t.Fatalf("names = %v, err = %v", names, err)
+	}
+	text = string(cfg)
+	for _, want := range []string{`"dialer-proxy":"n0"`, `"dialer-proxy":"n1"`, `"proxies":["c0","c1"]`, `"name":"n1"`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("链路测速配置里缺少 %s:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "someone-else") || via["dialer-proxy"] != "someone-else" {
+		t.Error("落地片段自带的拨号方式不应进入配置，也不应改动传入的片段")
 	}
 }

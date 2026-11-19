@@ -34,6 +34,16 @@ type Engine struct {
 	dk  *dockerapi.Client
 	cl  model.Cluster
 	out io.Writer
+
+	// LandingLimit 是同一个落地最多同时接线的槽位数；0 表示用 model.MaxSlotsPerLanding。
+	LandingLimit int
+}
+
+func (e *Engine) landingLimit() int {
+	if e.LandingLimit > 0 {
+		return e.LandingLimit
+	}
+	return model.MaxSlotsPerLanding
 }
 
 // New 创建 Engine。progress 接收面向用户的进度行，可以为 nil。

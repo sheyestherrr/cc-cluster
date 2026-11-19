@@ -69,8 +69,9 @@ func (a *app) cmdSub(ctx context.Context, args []string) error {
 		fs := a.newFlags("sub test", "sub test <订阅> [参数]")
 		var opt engine.DelayOptions
 		fs.StringVar(&opt.URL, "url", "", "测速时访问的地址（默认 "+engine.DefaultDelayURL+"）")
-		fs.DurationVar(&opt.Timeout, "timeout", engine.DefaultDelayTimeout, "单个节点的时限，超过算不通")
+		fs.DurationVar(&opt.Timeout, "timeout", 0, "单个节点的时限，超过算不通（默认 5s，接落地时 8s）")
 		fs.StringVar(&opt.Network, "egress-network", "", "从哪个 Docker 网络发起，应与网关的出口网络相同（默认 "+model.DefaultEgressNetwork+"）")
+		fs.StringVar(&opt.Landing, "landing", "", "接上这个落地节点测整条链路：节点自己能用不代表它肯转发到落地，挑中转时用它")
 		id, err := parseWithID(fs, rest)
 		if err != nil {
 			return err
@@ -92,6 +93,9 @@ func (a *app) cmdSub(ctx context.Context, args []string) error {
 			return err
 		}
 		fmt.Fprintf(a.out, "%d 个节点里 %d 个测通", len(delays), ok)
+		if opt.Landing != "" {
+			fmt.Fprintf(a.out, "（经节点再到落地 %s 的整条链路）", opt.Landing)
+		}
 		if best, has := engine.Fastest(delays); has {
 			fmt.Fprintf(a.out, "；延迟最低的是 %s（%s）", best.Name, best.DelayText())
 		}
