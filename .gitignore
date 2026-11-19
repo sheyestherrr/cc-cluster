@@ -1,6 +1,11 @@
 # Go 构建产物
 /bin/
 
+# 网页界面：依赖与构建产物不进版本库（internal/web/dist 里只保留占位的 README.md）
+/web/node_modules/
+/internal/web/dist/*
+!/internal/web/dist/README.md
+
 # 数据目录与运行期文件：里面有订阅地址、节点密码和各槽位的 HOME
 slots/
 state/
