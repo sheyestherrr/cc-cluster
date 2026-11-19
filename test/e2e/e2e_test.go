@@ -11,6 +11,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -146,6 +147,31 @@ func must(t *testing.T, err error) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func (e *env) hostTmuxVersion(bin string) string {
+	out, _ := exec.Command(bin, "-V").Output()
+	return strings.TrimSpace(string(out))
+}
+
+// waitFile 等一个文件出现并有内容，返回去掉首尾空白后的内容。
+func waitFile(t *testing.T, path string) string {
+	t.Helper()
+	for i := 0; i < 50; i++ {
+		if b, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(b))) > 0 {
+			return strings.TrimSpace(string(b))
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("等不到文件 %s", path)
+	return ""
+}
+
+func truncateForLog(s string) string {
+	if len(s) > 600 {
+		return s[:600] + "…"
+	}
+	return s
 }
 
 func (e *env) addSlot(id, landing string) {
@@ -638,6 +664,115 @@ func TestEndToEnd(t *testing.T) {
 		if len(left) != 0 {
 			t.Errorf("测速后不应留下助手容器: %+v", left)
 		}
+	})
+
+	t.Run("宿主tmux桥接", func(t *testing.T) {
+		tmuxBin, err := exec.LookPath("tmux")
+		if err != nil {
+			t.Skip("宿主的 PATH 里没有 tmux")
+		}
+		wimg := os.Getenv("CC_E2E_WORKER_IMAGE")
+		if wimg == "" {
+			wimg = model.DefaultWorkerImage
+		}
+		if has, err := e.dk.ImageExists(e.ctx, wimg); err != nil || !has {
+			t.Skipf("本地没有 worker 镜像 %s；先执行 make image-worker", wimg)
+		}
+		base := filepath.Dir(e.bin)
+		home, proj := filepath.Join(base, "tmux-home"), filepath.Join(base, "bridge-proj")
+		must(t, os.RemoveAll(proj))
+		must(t, os.MkdirAll(home, 0o700))
+		must(t, os.MkdirAll(proj, 0o755))
+		// 宿主的 tmux 不读用户自己的配置，HOME 也指到测试目录里。
+		e.eng.Tmux = engine.TmuxHost{Bin: tmuxBin, Conf: "/dev/null", Env: []string{"HOME=" + home, "SHELL=/bin/bash"}}
+		t.Cleanup(func() {
+			_ = e.eng.TmuxKill(e.ctx, "t")
+			_ = e.eng.SlotRemove(e.ctx, "t", true)
+		})
+
+		_, _, err = e.eng.AddSlot(e.ctx, model.Slot{
+			ID: "t", Gateway: "main", Landing: "la", Shell: "/bin/sh", UID: os.Getuid(), GID: os.Getgid(),
+			Image: wimg, TmuxBridge: true, TmuxShell: "bash",
+			Mounts: []model.Mount{{Source: proj, Target: proj}},
+		}, engine.SlotOptions{})
+		must(t, err)
+		res, err := e.eng.SlotUp(e.ctx, "t", engine.UpOptions{})
+		must(t, err)
+		worker := e.eng.WorkerContainer("t")
+		if !res.Bridge {
+			if out := e.exec(worker, "/bin/sh", "-c", "command -v tmux-mcp-rs tmux || echo missing"); strings.Contains(out, "missing") {
+				t.Skipf("worker 镜像 %s 里没有 tmux 或 tmux-mcp-rs；先执行 make image-worker 重建", wimg)
+			}
+			t.Fatal("桥接没有接通")
+		}
+		if res.ExitIP != ipLandA {
+			t.Errorf("开启桥接不应影响槽位的出口：%s", res.ExitIP)
+		}
+		t.Logf("宿主 %s；worker 里 %s", e.hostTmuxVersion(tmuxBin), e.exec(worker, "tmux", "-V"))
+
+		list := "tmux -S /run/tmux-host/sock list-sessions -F '#{session_name}'"
+		e.expect("槽内看到宿主的 session", `^main$`, e.exec(worker, "/bin/sh", "-c", list))
+		// 两个配置文件属于容器内的 root，槽内的用户改不了工具范围。
+		e.expect("配置文件的属主与权限", `^root 644$`, e.exec(worker, "stat", "-c", "%U %a", "/etc/tmux-mcp/config.toml"))
+		e.expect("槽内不能改写工具范围", `denied`, e.exec(worker, "/bin/sh", "-c", "echo x >> /etc/tmux-mcp/config.toml 2>&1 || echo denied"))
+
+		// 经 MCP 的标准输入输出握手：列出工具，再调用一次 list-sessions。
+		rpc := strings.Join([]string{
+			`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"e2e","version":"0"}}}`,
+			`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+			`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+			`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list-sessions","arguments":{}}}`,
+		}, "\n")
+		must(t, os.WriteFile(filepath.Join(proj, "rpc.jsonl"), []byte(rpc+"\n"), 0o644))
+		out := e.exec(worker, "/bin/sh", "-c", fmt.Sprintf(
+			"(cat %s/rpc.jsonl; sleep 4) | tmux-mcp-rs --socket /run/tmux-host/sock --config /etc/tmux-mcp/config.toml 2>/dev/null", proj))
+		for _, want := range []string{"execute-command", "send-keys", "capture-pane"} {
+			if !regexp.MustCompile(`"name":\s*"` + want + `"`).MatchString(out) {
+				t.Errorf("tmux-mcp 的工具列表里缺少 %s", want)
+			}
+		}
+		if regexp.MustCompile(`"name":\s*"(kill-session|kill-window|kill-pane|detach-client)"`).MatchString(out) {
+			t.Error("默认的工具范围不应包含 kill 类工具")
+		}
+		if !regexp.MustCompile(`"id":3[^\n]*main`).MatchString(out) && !regexp.MustCompile(`main[^\n]*"id":3`).MatchString(out) {
+			t.Errorf("经 tmux-mcp 调用 list-sessions 没有看到 main：%s", truncateForLog(out))
+		}
+
+		// 经桥接发出的命令是在宿主上执行的：留下的主机名是宿主的，不是 worker 的。
+		e.exec(worker, "/bin/sh", "-c", fmt.Sprintf("tmux -S /run/tmux-host/sock send-keys -t main 'hostname > %s/who' Enter", proj))
+		hostName, _ := os.Hostname()
+		who := waitFile(t, filepath.Join(proj, "who"))
+		if who != hostName || who == e.exec(worker, "hostname") {
+			t.Errorf("命令应在宿主上执行：文件里是 %q，宿主是 %q", who, hostName)
+		}
+
+		// 宿主的 server 重建后，worker 不用重建就能看到新的 socket。
+		before, err := e.dk.ContainerInspect(e.ctx, worker)
+		must(t, err)
+		must(t, e.eng.TmuxKill(e.ctx, "t"))
+		e.expect("server 结束后槽内连不上", `gone`, e.exec(worker, "/bin/sh", "-c", list+" 2>/dev/null || echo gone"))
+		started, err := e.eng.TmuxEnsure(e.ctx, "t", proj)
+		must(t, err)
+		if !started {
+			t.Error("server 结束后应重新启动")
+		}
+		e.expect("重建后槽内重新连上", `^main$`, e.exec(worker, "/bin/sh", "-c", list))
+		after, err := e.dk.ContainerInspect(e.ctx, worker)
+		must(t, err)
+		if before.ID != after.ID {
+			t.Error("worker 不应被重建")
+		}
+
+		// 停止槽位不结束宿主上的 tmux；它还在时不允许连 HOME 一起删除槽位。
+		must(t, e.eng.SlotStop(e.ctx, "t"))
+		if !e.eng.TmuxAlive(e.ctx, "t") {
+			t.Error("停止槽位不应结束宿主的 tmux")
+		}
+		if err := e.eng.SlotRemove(e.ctx, "t", true); err == nil || !strings.Contains(err.Error(), "tmux") {
+			t.Errorf("宿主 tmux 还在运行时应拒绝彻底删除槽位：%v", err)
+		}
+		must(t, e.eng.TmuxKill(e.ctx, "t"))
+		must(t, e.eng.SlotRemove(e.ctx, "t", true))
 	})
 
 	t.Run("操作记录", func(t *testing.T) {

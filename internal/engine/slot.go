@@ -119,6 +119,15 @@ func (e *Engine) AddSlot(ctx context.Context, sl model.Slot, opt SlotOptions) (o
 	if err := model.ValidateID("槽位", sl.ID); err != nil {
 		return sl, nil, err
 	}
+	if sl.TmuxBridge {
+		if sl.TmuxShell == "" {
+			sl.TmuxShell = HostShellType()
+		}
+		if len(e.TmuxSocket(sl.ID)) > maxSocketPath {
+			_, err := e.prepareTmuxDir(sl.ID) // 只为取得同一句说明
+			return sl, nil, err
+		}
+	}
 	gw, err := e.st.Gateway(sl.Gateway)
 	if err != nil {
 		return sl, nil, err
@@ -239,6 +248,8 @@ type UpResult struct {
 	Replumbed bool
 	// Exit 是链路探测得到的出口信息（地区、运营商、时区），可能只有 IP。
 	Exit exitInfo
+	// Bridge 报告宿主 tmux 桥接是否已接通；槽位没有开启桥接时为 false。
+	Bridge bool
 }
 
 // ExitSummary 返回出口的一行描述，例如 "203.0.113.8（US，AS64500 Example）"。
@@ -328,6 +339,9 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 		return res, err
 	}
 	res.Worker = wc.Name
+	if slot.TmuxBridge {
+		res.Bridge = e.bridgeUp(ctx, slot, wc.Name)
+	}
 
 	plumbed, err := e.isPlumbed(ctx, rt, link)
 	if err != nil {
@@ -394,13 +408,15 @@ func (e *Engine) slotDigest(slot model.Slot, ident model.Identity, p *gatewayPla
 const seedVersion = "1"
 
 // workerDigest 是 worker 容器的规格摘要：容器规格加上创建后写进容器的身份内容。
-func workerDigest(spec dockerapi.ContainerSpec, ident model.Identity) string {
+// extra 是另外写进容器文件层的文件（开启桥接时的配置）；为空时不计入，摘要与没有这一项时相同。
+func workerDigest(spec dockerapi.ContainerSpec, ident model.Identity, extra map[string][]byte) string {
 	b, _ := json.Marshal(struct {
 		Spec      dockerapi.ContainerSpec
 		MachineID string
 		DMI       map[string]string
 		Seed      string
-	}{spec, ident.MachineID, ident.DMI, seedVersion})
+		Extra     map[string][]byte `json:",omitempty"`
+	}{spec, ident.MachineID, ident.DMI, seedVersion, extra})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])[:32]
 }
@@ -441,8 +457,17 @@ func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.
 	if slot.FakeProc && slot.MemoryBytes > 0 {
 		p.MemInfo = filepath.Join(etc, "meminfo")
 	}
+	extra, err := bridgeFiles(slot)
+	if err != nil {
+		return none, fmt.Errorf("槽位 %s：%w", slot.ID, err)
+	}
+	if slot.TmuxBridge {
+		if p.TmuxDir, err = e.prepareTmuxDir(slot.ID); err != nil {
+			return none, err
+		}
+	}
 	spec := workerSpec(p)
-	digest := workerDigest(spec, ident)
+	digest := workerDigest(spec, ident, extra)
 	spec.Labels[labelSpec] = digest
 
 	c, ok, err := e.inspect(ctx, name)
@@ -473,7 +498,7 @@ func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.
 			return none, err
 		}
 		// 身份文件在第一次启动之前写好；写不进去就不留下一个半成品容器。
-		if err := e.seedWorker(ctx, name, slot, ident); err != nil {
+		if err := e.seedWorker(ctx, name, slot, ident, extra); err != nil {
 			_ = e.dk.ContainerRemove(ctx, name)
 			return none, fmt.Errorf("向 worker 容器 %s 写入身份文件失败：%w", name, err)
 		}
@@ -495,8 +520,8 @@ func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.
 }
 
 // seedWorker 把该槽的用户、组和 machine-id 写进刚创建、尚未启动的容器。
-// 文件进入容器自己的文件层，重启后仍在；重建容器时重新写入。
-func (e *Engine) seedWorker(ctx context.Context, name string, slot model.Slot, ident model.Identity) error {
+// 文件进入容器自己的文件层，重启后仍在；重建容器时重新写入。extra 是另外要写入的文件（路径相对容器根）。
+func (e *Engine) seedWorker(ctx context.Context, name string, slot model.Slot, ident model.Identity, extra map[string][]byte) error {
 	read := func(p string) ([]byte, error) {
 		b, err := e.dk.CopyFrom(ctx, name, p)
 		if dockerapi.IsNotFound(err) {
@@ -513,12 +538,16 @@ func (e *Engine) seedWorker(ctx context.Context, name string, slot model.Slot, i
 		return err
 	}
 	mid := []byte(ident.MachineID + "\n")
-	return e.dk.CopyTo(ctx, name, "/", map[string]dockerapi.File{
+	files := map[string]dockerapi.File{
 		"etc/passwd":              {Data: mergePasswd(passwd, ident, slot), Mode: 0o644},
 		"etc/group":               {Data: mergeGroup(group, ident, slot), Mode: 0o644},
 		"etc/machine-id":          {Data: mid, Mode: 0o444},
 		"var/lib/dbus/machine-id": {Data: mid, Mode: 0o444},
-	})
+	}
+	for p, data := range extra {
+		files[p] = dockerapi.File{Data: data, Mode: 0o644}
+	}
+	return e.dk.CopyTo(ctx, name, "/", files)
 }
 
 // settleWorker 在运行中的 worker 里以容器内的 root 身份执行 workerSettleScript。
@@ -907,6 +936,14 @@ func (e *Engine) SlotRemove(ctx context.Context, id string, purge bool) (err err
 	slot, err := e.st.Slot(id)
 	if err != nil {
 		return err
+	}
+	// 该槽的宿主 tmux 还在运行时：连 HOME 一起删会把它的 socket 也删掉，留下一个接不上的 server，所以先拦住；
+	// 只删登记时不动它（停止槽位与结束宿主上的进程是两件事），给出提示。
+	if e.TmuxAlive(ctx, id) {
+		if purge {
+			return fmt.Errorf("槽位 %s 的宿主 tmux 还在运行，里面可能有正在执行的程序；先用 cc-cluster tmux %s --kill 结束它，再删除", id, id)
+		}
+		e.logf("注意：槽位 %s 的宿主 tmux 仍在运行，没有随槽位删除；socket 在 %s", id, e.TmuxSocket(id))
 	}
 	if err := e.disconnect(ctx, slot, true); err != nil {
 		return err

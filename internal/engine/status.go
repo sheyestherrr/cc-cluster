@@ -31,6 +31,8 @@ type SlotStatus struct {
 	ExitWhere  string    // 出口的国家与运营商，探测地址给出时才有
 	AppliedAt  time.Time // 最近一次复测通过的时间
 	WorkerIP   string
+	// TmuxAlive 报告该槽的宿主 tmux 是否在运行；只在槽位开启了桥接时检查。
+	TmuxAlive bool
 }
 
 // SlotStatuses 返回全部槽位的现状。只读，不取锁。
@@ -72,6 +74,9 @@ func (e *Engine) slotStatus(ctx context.Context, sl model.Slot) (SlotStatus, err
 	}
 	if p, err := netip.ParsePrefix(sl.Subnet); err == nil {
 		s.WorkerIP = p.Addr().Next().Next().String()
+	}
+	if sl.TmuxBridge {
+		s.TmuxAlive = e.TmuxAlive(ctx, sl.ID)
 	}
 
 	if h, held, err := e.st.Hold(sl.ID); err != nil {

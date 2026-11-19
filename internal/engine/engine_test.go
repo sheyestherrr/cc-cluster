@@ -266,19 +266,25 @@ func TestWorkerSpecHardwareOverrides(t *testing.T) {
 
 func TestWorkerDigestTracksChanges(t *testing.T) {
 	p := testParams()
-	a := workerDigest(workerSpec(p), p.Ident)
-	if a != workerDigest(workerSpec(p), p.Ident) {
+	a := workerDigest(workerSpec(p), p.Ident, nil)
+	if a != workerDigest(workerSpec(p), p.Ident, nil) {
 		t.Fatal("相同输入应得到相同摘要")
 	}
 	q := p
 	q.Slot.Mounts = q.Slot.Mounts[:1]
-	if a == workerDigest(workerSpec(q), q.Ident) {
+	if a == workerDigest(workerSpec(q), q.Ident, nil) {
 		t.Fatal("挂载变化必须改变摘要")
 	}
 	q = p
 	q.Ident.MachineID = strings.Repeat("cd", 16)
-	if a == workerDigest(workerSpec(q), q.Ident) {
+	if a == workerDigest(workerSpec(q), q.Ident, nil) {
 		t.Fatal("machine-id 不在容器规格里，但写进了容器，也必须改变摘要")
+	}
+	if a != workerDigest(workerSpec(p), p.Ident, map[string][]byte{}) {
+		t.Fatal("没有额外文件时摘要不应变化：否则已有的 worker 会被无故要求重建")
+	}
+	if a == workerDigest(workerSpec(p), p.Ident, map[string][]byte{"etc/x": []byte("1")}) {
+		t.Fatal("写进容器的额外文件必须改变摘要")
 	}
 }
 

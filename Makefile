@@ -51,7 +51,7 @@ image-worker:
 # 端到端测试：需要 Docker 和网关镜像。全部使用 internal 网络与假节点，没有通往宿主外部的路径。
 e2e:
 	mkdir -p $(E2E_DIR)
-	CC_E2E_DIR=$(E2E_DIR) CC_E2E_GATEWAY_IMAGE=$(GATEWAY_IMG) $(GO) test -tags e2e -count=1 -timeout 15m -v ./test/e2e/
+	CC_E2E_DIR=$(E2E_DIR) CC_E2E_GATEWAY_IMAGE=$(GATEWAY_IMG) CC_E2E_WORKER_IMAGE=$(WORKER_IMG) $(GO) test -tags e2e -count=1 -timeout 15m -v ./test/e2e/
 
 clean:
 	rm -rf bin

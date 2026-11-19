@@ -259,6 +259,9 @@ func (s *Store) HomeDir(id string) string { return s.path("slots", id, "home") }
 // EtcDir 返回槽位里挂进 worker 的身份文件目录。
 func (s *Store) EtcDir(id string) string { return s.path("slots", id, "etc") }
 
+// TmuxDir 返回槽位的宿主 tmux socket 所在的目录；开启桥接时整个目录挂进 worker。
+func (s *Store) TmuxDir(id string) string { return s.path("slots", id, "tmux") }
+
 // SaveSlot 写入槽位并确保其子目录存在；create 为 true 时槽位已存在则返回 ErrExists。
 func (s *Store) SaveSlot(sl model.Slot, create bool) error {
 	p := filepath.Join(s.SlotDir(sl.ID), "slot.json")

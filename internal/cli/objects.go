@@ -529,6 +529,8 @@ func (a *app) slotAdd(args []string) error {
 	fs.StringVar(&opt.User, "user", "", "指定 worker 内的用户名；不填则随机挑一个并持久化")
 	fs.BoolVar(&s.FakeDMI, "fake-dmi", false, "用该槽身份里的机型信息覆盖 DMI（默认是把 DMI 遮成空的）")
 	fs.BoolVar(&s.FakeProc, "fake-proc", false, "让 /proc/cpuinfo 与 /proc/meminfo 按 --cpus / --memory 的限额显示（静态内容，不随用量变化）")
+	fs.BoolVar(&s.TmuxBridge, "tmux-bridge", false, "开启宿主 tmux 桥接：槽内的 Claude 可以经 tmux-mcp 操作宿主上该槽专用的 tmux（宿主命令不受该槽的网络约束）")
+	fs.StringVar(&s.TmuxTools, "tmux-tools", "", "桥接开放的工具范围，deny:项,项 或 allow:项,项；不填为 "+model.DefaultTmuxTools)
 	id, err := parseWithID(fs, args)
 	if err != nil {
 		return err
@@ -580,8 +582,14 @@ func (a *app) slotAdd(args []string) error {
 		fmt.Fprintf(a.errw, "提醒：%s\n", w)
 	}
 	fmt.Fprintf(a.out, "已登记槽位 %s（网关 %s，落地 %s，网段 %s）；执行 slot up %s 启动\n", out.ID, out.Gateway, out.Landing, out.Subnet, out.ID)
+	if out.TmuxBridge {
+		fmt.Fprintln(a.errw, bridgeNotice)
+	}
 	return nil
 }
+
+// bridgeNotice 在开启桥接时给出：这是一条信任边界，要让用户每次都看到。
+const bridgeNotice = "提醒：已开启宿主 tmux 桥接。槽内经它执行的命令在宿主上运行，用的是你的权限和宿主网络，不受该槽的网络约束；断网（hold）也拦不住它。"
 
 func (a *app) printSlots(ctx context.Context, eng *engine.Engine) error {
 	sts, err := eng.SlotStatuses(ctx)
@@ -595,8 +603,19 @@ func (a *app) printSlots(ctx context.Context, eng *engine.Engine) error {
 		if !s.AppliedAt.IsZero() {
 			at = s.AppliedAt.Local().Format("2006-01-02 15:04:05")
 		}
+		note := s.HoldReason
+		if s.Slot.TmuxBridge {
+			b := "宿主桥接"
+			if !s.TmuxAlive {
+				b += "（tmux 未运行）"
+			}
+			if note != "" {
+				note += "；"
+			}
+			note += b
+		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Slot.ID, s.State, s.Slot.Gateway, s.Slot.Landing,
-			orDash(s.ExitIP), orDash(s.ExitWhere), at, s.Identity.Hostname, orDash(s.HoldReason))
+			orDash(s.ExitIP), orDash(s.ExitWhere), at, s.Identity.Hostname, orDash(note))
 	}
 	return w.Flush()
 }

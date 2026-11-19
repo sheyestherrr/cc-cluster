@@ -317,6 +317,9 @@ type slotView struct {
 	CPUs       float64       `json:"cpus,omitempty"`
 	FakeDMI    bool          `json:"fake_dmi,omitempty"`
 	FakeProc   bool          `json:"fake_proc,omitempty"`
+	// TmuxBridge 为真时，槽内可以经宿主 tmux 执行不受该槽网络约束的宿主命令；页面要明确显示。
+	TmuxBridge bool `json:"tmux_bridge,omitempty"`
+	TmuxAlive  bool `json:"tmux_alive,omitempty"`
 	// EnterCommand 是在终端里进入这个槽位的命令；网页不提供终端。
 	EnterCommand string `json:"enter_command"`
 }
@@ -407,6 +410,7 @@ func (s *Server) state(c *call) (any, error) {
 			ExitIP: st.ExitIP, ExitWhere: st.ExitWhere, Hostname: st.Identity.Hostname,
 			User: st.Identity.UserName(), Home: st.Identity.Home(), TZ: tz,
 			Mounts: sl.Mounts, Memory: sl.MemoryBytes, CPUs: sl.CPUs, FakeDMI: sl.FakeDMI, FakeProc: sl.FakeProc,
+			TmuxBridge: sl.TmuxBridge, TmuxAlive: st.TmuxAlive,
 			EnterCommand: fmt.Sprintf("cc-cluster --data-dir %s enter %s", shellQuote(dataDir), sl.ID),
 		}
 		if v.Mounts == nil {
@@ -631,13 +635,14 @@ func (s *Server) slotAdd(c *call) (any, error) {
 		TZ       string   `json:"tz"`
 		FakeDMI  bool     `json:"fake_dmi"`
 		FakeProc bool     `json:"fake_proc"`
+		Tmux     bool     `json:"tmux_bridge"`
 	}
 	if err := c.body(&in); err != nil {
 		return nil, err
 	}
 	sl := model.Slot{
 		ID: in.ID, Gateway: in.Gateway, Landing: in.Landing, UID: os.Getuid(), GID: os.Getgid(),
-		CPUs: in.CPUs, TZ: in.TZ, FakeDMI: in.FakeDMI, FakeProc: in.FakeProc,
+		CPUs: in.CPUs, TZ: in.TZ, FakeDMI: in.FakeDMI, FakeProc: in.FakeProc, TmuxBridge: in.Tmux,
 	}
 	var err error
 	if sl.MemoryBytes, err = model.ParseBytes(in.Memory); err != nil {

@@ -37,6 +37,8 @@ type Engine struct {
 
 	// LandingLimit 是同一个落地最多同时接线的槽位数；0 表示用 model.MaxSlotsPerLanding。
 	LandingLimit int
+	// Tmux 描述怎样在宿主上运行 tmux（桥接用）；零值即可。
+	Tmux TmuxHost
 }
 
 func (e *Engine) landingLimit() int {

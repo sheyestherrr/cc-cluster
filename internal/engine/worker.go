@@ -37,7 +37,9 @@ type workerParams struct {
 	HomeDir string
 	// 下面三项是可选的硬件信息覆盖在宿主上的路径；为空表示不覆盖。
 	DMIDir, CPUInfo, MemInfo string
-	Labels                   map[string]string
+	// TmuxDir 是该槽的宿主 tmux socket 目录；为空表示没有开启桥接。
+	TmuxDir string
+	Labels  map[string]string
 }
 
 // workerSpec 构造 worker 容器。
@@ -93,6 +95,10 @@ func workerSpec(p workerParams) dockerapi.ContainerSpec {
 	}
 	if p.MemInfo != "" {
 		binds = append(binds, p.MemInfo+":/proc/meminfo:ro")
+	}
+	if p.TmuxDir != "" {
+		// 挂的是目录而不是 socket 文件：宿主的 tmux server 重建后，worker 里看到的仍是新的 socket。
+		binds = append(binds, p.TmuxDir+":"+tmuxMountPath)
 	}
 
 	hc := dockerapi.HostConfig{

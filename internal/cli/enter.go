@@ -195,6 +195,18 @@ func (a *app) enter(ctx context.Context, req enterRequest) error {
 		return err
 	}
 
+	// 开启了宿主桥接：确保该槽的宿主 tmux 在运行（第一个 session 的工作目录就是这次进入的目录）。
+	// 桥接起不来不妨碍进入槽位，只是槽内用不了 tmux 工具。
+	bridged := false
+	if sl.TmuxBridge {
+		if _, err := eng.TmuxEnsure(ctx, req.Slot, req.Dir); err != nil {
+			fmt.Fprintf(a.errw, "宿主 tmux 桥接不可用：%v\n", err)
+		} else {
+			bridged = true
+			fmt.Fprintf(a.errw, "宿主 tmux 桥接已开启：槽内经它执行的命令使用宿主的权限和宿主网络（cc-cluster tmux %s 可以接入观察）\n", req.Slot)
+		}
+	}
+
 	argv := []string{"docker", "exec", "-i"}
 	if a.interactive {
 		argv = append(argv, "-t")
@@ -202,7 +214,12 @@ func (a *app) enter(ctx context.Context, req enterRequest) error {
 	argv = append(argv, "-w", inside, worker)
 	switch {
 	case req.Claude:
-		argv = append(append(argv, "claude"), req.Command...)
+		argv = append(argv, "claude")
+		if bridged {
+			// 只在这一次启动里告诉 Claude Code 有这个 MCP 服务器，不改它自己的配置文件。
+			argv = append(argv, "--mcp-config", engine.TmuxMCPConfig)
+		}
+		argv = append(argv, req.Command...)
 	case len(req.Command) > 0:
 		argv = append(argv, req.Command...)
 	default:

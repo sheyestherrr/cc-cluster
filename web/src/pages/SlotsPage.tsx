@@ -224,6 +224,11 @@ function SlotRow({ s, busy, onUp, onRecreate, onStop, onHold, onRelease, onEnter
           <Tag title="网关">{s.gateway}</Tag>
           {s.tz && <Tag title="槽内时区">{s.tz}</Tag>}
           {s.state === "hold" && <Tag tone="danger" title={s.hold_reason}>已断网</Tag>}
+          {s.tmux_bridge && (
+            <Tag tone="warn" title={`宿主桥接已开启：槽内经它执行的命令在宿主上运行，使用宿主的权限和宿主网络，不受该槽的网络约束，断网也拦不住。${s.tmux_alive ? "宿主 tmux 正在运行。" : "宿主 tmux 没有在运行。"}`}>
+              宿主桥接
+            </Tag>
+          )}
           {s.state === "pending" && <Tag tone="warn" title="期望配置在上次接线之后变过，重新启动后生效">待应用</Tag>}
           {s.state === "offline" && <Tag tone="warn" title="容器在运行但没有接线，槽内没有网络">未接线</Tag>}
         </div>
@@ -279,7 +284,7 @@ function SlotRow({ s, busy, onUp, onRecreate, onStop, onHold, onRelease, onEnter
   );
 }
 
-const emptySlot = (): SlotInput => ({ id: "", gateway: "", landing: "", mounts: [], memory: "", cpus: 0, user: "", hostname: "", tz: "", fake_dmi: false, fake_proc: false });
+const emptySlot = (): SlotInput => ({ id: "", gateway: "", landing: "", mounts: [], memory: "", cpus: 0, user: "", hostname: "", tz: "", fake_dmi: false, fake_proc: false, tmux_bridge: false });
 
 function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; state: State; onClose: () => void; onCreated: (id: string, warnings: string[]) => void }) {
   const landings = state.nodes.filter((n) => n.role === "landing");
@@ -388,6 +393,10 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
             <Line label="CPU / 内存显示">
               <Switch checked={slot.fake_proc} onCheckedChange={(fake_proc) => setSlot({ ...slot, fake_proc })} label="按限额显示 CPU 与内存" />
               <span className="text-[11.5px] text-muted">{slot.fake_proc ? "/proc/cpuinfo 与 meminfo 按上面的限额显示（需要填 CPU 或内存）" : "显示宿主机的 CPU 与内存"}</span>
+            </Line>
+            <Line label="宿主桥接">
+              <Switch checked={slot.tmux_bridge} onCheckedChange={(tmux_bridge) => setSlot({ ...slot, tmux_bridge })} label="开启宿主 tmux 桥接" />
+              <span className="text-[11.5px] text-muted">{slot.tmux_bridge ? "槽内的 Claude 可以操作宿主上该槽专用的 tmux；其中的命令使用宿主的权限和宿主网络，不受该槽的网络约束" : "默认关闭：槽内碰不到宿主"}</span>
             </Line>
           </div>
         </section>

@@ -39,6 +39,7 @@ const usage = `cc-cluster：为 Claude Code 管理相互独立的工作槽位。
 日常使用：
   enter  [槽位] [目录]      进入槽位的 shell。目录默认是当前目录，不在挂载范围内时自动挂载
   claude [槽位] [目录]      同上，但直接启动 Claude Code（首次会提示在槽内安装）
+  tmux   <槽位>             接入该槽的宿主 tmux；--on / --off 开关宿主桥接，--kill 结束它
   status                    显示网关与槽位的现状
   web                       启动网页界面（只监听本机）
   panel                     打开交互面板
@@ -139,6 +140,8 @@ func (a *app) dispatch(ctx context.Context, cmd string, args []string) error {
 		return a.cmdStatus(ctx, args)
 	case "enter", "claude":
 		return a.cmdEnter(ctx, cmd, args)
+	case "tmux":
+		return a.cmdTmux(ctx, args)
 	case "node":
 		return a.cmdNode(args)
 	case "sub":

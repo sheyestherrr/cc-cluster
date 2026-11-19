@@ -171,6 +171,27 @@ type Slot struct {
 	// FakeProc 让 /proc/cpuinfo 与 /proc/meminfo 按该槽的 CPU / 内存限额显示；默认关闭。
 	// 覆盖后的内容是创建容器时生成的静态文件，不随实际用量变化。
 	FakeProc bool `json:"fake_proc,omitempty"`
+	// TmuxBridge 开启宿主 tmux 桥接：把该槽专用的 tmux socket 目录挂进 worker，
+	// 槽内的 tmux-mcp 经它操作宿主上的 tmux。默认关闭。
+	// 经桥接执行的命令使用宿主的权限和宿主网络，不受该槽的网络约束。
+	TmuxBridge bool `json:"tmux_bridge,omitempty"`
+	// TmuxTools 是开放给 tmux-mcp 的工具范围，写法与它的 TMUX_MCP_TOOLS 相同：
+	// "deny:项,项" 或 "allow:项,项"，项是工具名或 @组名。为空表示 DefaultTmuxTools。
+	TmuxTools string `json:"tmux_tools,omitempty"`
+	// TmuxShell 是宿主 pane 里的 shell 类型（bash、zsh 或 fish），tmux-mcp 靠它跟踪命令的结束与退出码。
+	// 开启桥接时按当时的 SHELL 记下；为空按 bash。
+	TmuxShell string `json:"tmux_shell,omitempty"`
+}
+
+// DefaultTmuxTools 是桥接默认的工具范围：除了结束 session / window / pane 和踢掉客户端以外的全部。
+const DefaultTmuxTools = "deny:@kill"
+
+// EffectiveTmuxTools 返回该槽实际使用的工具范围。
+func (s Slot) EffectiveTmuxTools() string {
+	if s.TmuxTools == "" {
+		return DefaultTmuxTools
+	}
+	return s.TmuxTools
 }
 
 // Identity 是槽位的稳定身份，首次生成后不再改动。

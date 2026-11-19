@@ -362,7 +362,42 @@ func (s Slot) Validate() error {
 	if s.FakeProc && s.CPUs == 0 && s.MemoryBytes == 0 {
 		return fmt.Errorf("槽位 %s：/proc 信息按限额显示，需要先设置 CPU 或内存上限", s.ID)
 	}
+	if s.TmuxTools != "" {
+		if _, _, err := ParseTmuxTools(s.TmuxTools); err != nil {
+			return fmt.Errorf("槽位 %s：%w", s.ID, err)
+		}
+	}
+	switch s.TmuxShell {
+	case "", "bash", "zsh", "fish":
+	default:
+		return fmt.Errorf("槽位 %s 的 tmux shell 类型 %q 不受支持：只能是 bash、zsh 或 fish", s.ID, s.TmuxShell)
+	}
 	return nil
+}
+
+var tmuxToolItem = regexp.MustCompile(`^@?[a-z][a-z0-9-]*$`)
+
+// ParseTmuxTools 解析桥接的工具范围 "deny:项,项" 或 "allow:项,项"。
+// 项是 tmux-mcp 的工具名或 @组名；项是否存在由 tmux-mcp 在启动时检查。
+// "deny:" 后面不带任何项表示不限制。
+func ParseTmuxTools(v string) (mode string, items []string, err error) {
+	mode, list, ok := strings.Cut(v, ":")
+	if !ok || (mode != "allow" && mode != "deny") {
+		return "", nil, fmt.Errorf("tmux 工具范围 %q 的写法应为 deny:项,项 或 allow:项,项", v)
+	}
+	for _, it := range strings.Split(list, ",") {
+		if it == "" {
+			continue
+		}
+		if !tmuxToolItem.MatchString(it) {
+			return "", nil, fmt.Errorf("tmux 工具范围里的 %q 不是工具名或 @组名", it)
+		}
+		items = append(items, it)
+	}
+	if mode == "allow" && len(items) == 0 {
+		return "", nil, fmt.Errorf("tmux 工具范围 %q 没有放行任何工具", v)
+	}
+	return mode, items, nil
 }
 
 // IsProxyEnv 报告一个环境变量名是否属于代理变量。

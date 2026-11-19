@@ -93,6 +93,8 @@ export interface Slot {
   cpus?: number;
   fake_dmi?: boolean;
   fake_proc?: boolean;
+  tmux_bridge?: boolean;
+  tmux_alive?: boolean;
   enter_command: string;
 }
 
@@ -195,6 +197,7 @@ export interface SlotInput {
   tz: string;
   fake_dmi: boolean;
   fake_proc: boolean;
+  tmux_bridge: boolean;
 }
 
 export const api = {
