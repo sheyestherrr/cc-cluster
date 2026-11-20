@@ -735,6 +735,50 @@ func TestEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("直出", func(t *testing.T) {
+		e.t = t
+		// 不用落地：订阅里的节点直接当出口。测试里的“节点”是假中转，目标看到的来源是它在远端网络的地址。
+		// 直出的网关由管理器按默认值创建；这里先建好同名的，让它用测试的网络与探测地址。
+		must(t, e.eng.AddGateway(model.Gateway{
+			ID: engine.DirectGatewayID, EgressNetwork: netEgress, Pool: "10.213.249.0/24",
+			DNS: []string{"tcp://" + ipTarget + ":53"}, EchoURLs: []string{"http://" + ipTarget + "/json"},
+			ConnectURLs: []string{"http://" + ipTarget + "/"},
+		}))
+		const seenDirect = `^OK SEEN 198\.51\.100\.2$`
+		for _, id := range []string{"d1", "d2"} {
+			gw, exit, err := e.eng.PrepareDirect(e.ctx, id, "s", "能用的节点")
+			must(t, err)
+			if gw != engine.DirectGatewayID || exit != id+"-exit" {
+				t.Fatalf("直出的网关与出口节点: %s %s", gw, exit)
+			}
+			_, _, err = e.eng.AddSlot(e.ctx, model.Slot{
+				ID: id, Gateway: gw, Landing: exit, Shell: "/bin/sh", UID: os.Getuid(), GID: os.Getgid(),
+				Mounts: []model.Mount{{Source: e.bin, Target: "/opt/e2e", ReadOnly: true}},
+			}, engine.SlotOptions{})
+			must(t, err)
+			e.up(id, ipTransitRemote)
+		}
+		// 不带中转的网关接了两个槽，各自从自己固定的节点出去。
+		e.expect("d1 从它的节点出去", seenDirect, e.w("d1", "get", ipTarget, "80"))
+		e.expect("d2 从它的节点出去", seenDirect, e.w("d2", "get", ipTarget, "80"))
+		e.expect("A 不受影响", seenA, e.w("a", "get", ipTarget, "80"))
+		if n, err := e.st.Node("d1-exit"); err != nil || !n.Direct || n.Role != model.RoleLanding || n.Source == nil {
+			t.Errorf("直出的出口节点应标记为直出并记下来源: %+v %v", n, err)
+		}
+		if _, _, err := e.eng.PrepareDirect(e.ctx, "d3", "s", "没有这个节点"); err == nil {
+			t.Error("订阅里没有的节点不能直出")
+		}
+		// 删除槽位时，它专用的出口节点一起删掉。
+		for _, id := range []string{"d1", "d2"} {
+			must(t, e.eng.SlotRemove(e.ctx, id, true))
+			if _, err := e.st.Node(id + "-exit"); err == nil {
+				t.Errorf("槽位 %s 删除后，它的出口节点应一起删掉", id)
+			}
+		}
+		must(t, e.eng.GatewayDown(e.ctx, engine.DirectGatewayID, false))
+		must(t, e.eng.RemoveGateway(e.ctx, engine.DirectGatewayID))
+	})
+
 	t.Run("宿主tmux桥接", func(t *testing.T) {
 		tmuxBin, err := exec.LookPath("tmux")
 		if err != nil {

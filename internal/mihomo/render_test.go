@@ -241,13 +241,26 @@ func TestRenderDedicatedGateway(t *testing.T) {
 		t.Fatalf("专用网关的解析应经本槽落地: %v", ns)
 	}
 
-	// 没有中转的网关接第二个槽必须被拒绝。
-	_, err = Render(Input{Gateway: g, Bindings: []Binding{
+	// 没有中转的网关也可以接多个槽：各自直连自己的出口。核心自己的解析此时不指定出口
+	//（不让一个槽的查询从另一个槽的出口出去）。
+	out, err = Render(Input{Gateway: g, Bindings: []Binding{
 		{SlotID: "a", Link: link(t, 0), Landing: landing("la", "198.51.100.20")},
 		{SlotID: "b", Link: link(t, 1), Landing: landing("lb", "198.51.100.30")},
 	}})
-	if err == nil {
-		t.Fatal("无中转的网关不能接两个槽")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg = decode(t, out.Config)
+	if len(out.FirstHops) != 2 {
+		t.Fatalf("两个出口都应是首跳: %v", out.FirstHops)
+	}
+	if ns := cfg["dns"].(map[string]any)["nameserver"].([]any); ns[0] != "https://1.1.1.1/dns-query" {
+		t.Fatalf("有几个出口时核心的解析不应指定出口: %v", ns)
+	}
+	for _, p := range cfg["proxies"].([]any) {
+		if _, has := p.(map[string]any)["dialer-proxy"]; has {
+			t.Fatal("直连的出口不应有 dialer-proxy")
+		}
 	}
 }
 

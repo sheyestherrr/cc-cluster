@@ -279,6 +279,7 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 // ---- 读取现状 ----
 
 type nodeView struct {
+	Direct       bool              `json:"direct,omitempty"`
 	ID           string            `json:"id"`
 	Role         string            `json:"role"`
 	Type         string            `json:"type"`
@@ -446,7 +447,7 @@ func (s *Server) state(c *call) (any, error) {
 		v := nodeView{
 			ID: n.ID, Role: n.Role, Type: typ, Server: n.Server(), Port: n.Port(),
 			ConnectIPv4: n.ConnectIPv4, ConnectAuto: n.ConnectAuto, FakeIP: engine.IsFakeIP(n.ConnectIPv4),
-			ExpectExitIP: n.ExpectExitIP, TZ: n.TZ, TZAuto: n.TZAuto, TZFallback: n.TZFallback, ExitReport: n.ExitReport,
+			ExpectExitIP: n.ExpectExitIP, TZ: n.TZ, TZAuto: n.TZAuto, TZFallback: n.TZFallback, ExitReport: n.ExitReport, Direct: n.Direct,
 			Source: n.Source, UsedBy: []string{},
 		}
 		for _, g := range gateways {
@@ -663,6 +664,9 @@ func (s *Server) slotAdd(c *call) (any, error) {
 		FakeDMI  bool     `json:"fake_dmi"`
 		FakeProc bool     `json:"fake_proc"`
 		Tmux     bool     `json:"tmux_bridge"`
+		// 直出时给出订阅和其中的节点名，网关与落地由服务端准备。
+		DirectSub  string `json:"direct_sub"`
+		DirectName string `json:"direct_name"`
 	}
 	if err := c.body(&in); err != nil {
 		return nil, err
@@ -686,9 +690,24 @@ func (s *Server) slotAdd(c *call) (any, error) {
 		dir := filepath.Clean(m)
 		sl.Mounts = append(sl.Mounts, model.Mount{Source: dir, Target: dir})
 	}
+	// 直出：不用落地，把订阅里的一个节点登记成这个槽专用的出口，并放进不带中转的网关。
+	direct := in.DirectSub != ""
+	if direct {
+		gw, landing, err := c.eng.PrepareDirect(c.ctx, sl.ID, in.DirectSub, in.DirectName)
+		if err != nil {
+			return nil, err
+		}
+		sl.Gateway, sl.Landing = gw, landing
+	}
 	_, warnings, err := c.eng.AddSlot(c.ctx, sl, engine.SlotOptions{Hostname: in.Hostname, User: in.User})
 	if err != nil {
+		if direct {
+			_ = c.eng.RemoveNode(sl.Landing)
+		}
 		return nil, err
+	}
+	if direct {
+		warnings = append(warnings, engine.DirectNotice)
 	}
 	return map[string]any{"warnings": orEmpty(warnings)}, nil
 }

@@ -374,7 +374,7 @@ func (a *app) gatewayAdd(args []string) error {
 	var dns, echo, connect, backups multi
 	fs.Var(&backups, "backup", "候选中转，可重复、按顺序：主用的不通时核心自动改用，恢复后切回；出口由落地决定，不随之改变")
 	fs.Var(&connect, "connect-url", "连通性检查访问的地址，可重复（默认是 Google 和 Cloudflare 的 204 地址）；出口探测之前先用它分段检查链路")
-	fs.StringVar(&g.Transit, "transit", "", "中转节点；不填表示单跳直连落地，此时该网关只能接一个槽")
+	fs.StringVar(&g.Transit, "transit", "", "中转节点；不填表示不经中转，各槽位直连自己的落地（或直出的节点）")
 	fs.StringVar(&g.EgressNetwork, "egress-network", model.DefaultEgressNetwork, "出口所在的 Docker 网络；不存在时创建为普通 bridge 网络")
 	fs.StringVar(&g.Pool, "pool", model.DefaultPool, "分给各槽 /30 的私网地址池")
 	fs.Var(&dns, "dns", "核心使用的 DNS 服务器，可重复；主机部分必须是 IP（默认 "+model.DefaultDNS+"）")
@@ -564,9 +564,10 @@ func (a *app) slotUnmount(args []string) error {
 }
 
 func (a *app) slotAdd(args []string) error {
-	fs := a.newFlags("slot add", "slot add <槽位> --gateway 网关 --landing 节点 [参数]")
+	fs := a.newFlags("slot add", "slot add <槽位> (--gateway 网关 --landing 节点 | --direct 订阅:节点名) [参数]")
 	s := model.Slot{UID: os.Getuid(), GID: os.Getgid()}
 	var mounts, envs multi
+	direct := fs.String("direct", "", "直出：不用落地，直接用订阅里的这个节点当出口（形如 订阅:节点名）。出口是多人共用的地址；节点固定，不自动更换")
 	fs.StringVar(&s.Gateway, "gateway", "", "所属网关")
 	fs.StringVar(&s.Landing, "landing", "", "绑定的落地节点")
 	fs.StringVar(&s.Image, "image", "", "worker 镜像；不填用 init 时设定的")
@@ -590,7 +591,10 @@ func (a *app) slotAdd(args []string) error {
 		return err
 	}
 	s.ID = id
-	if s.Gateway == "" || s.Landing == "" {
+	if *direct != "" && (s.Gateway != "" || s.Landing != "") {
+		return errors.New("--direct 不与 --gateway、--landing 同用：直出的网关和出口节点由管理器准备")
+	}
+	if *direct == "" && (s.Gateway == "" || s.Landing == "") {
 		fs.Usage()
 		return errUsage
 	}
@@ -628,9 +632,25 @@ func (a *app) slotAdd(args []string) error {
 	if err != nil {
 		return err
 	}
-	out, warnings, err := eng.AddSlot(context.Background(), s, opt)
+	ctx := context.Background()
+	if *direct != "" {
+		subID, name, ok := strings.Cut(*direct, ":")
+		if !ok || subID == "" || name == "" {
+			return errors.New("--direct 的格式应为 订阅:节点名；节点名用 sub test <订阅> 查看（已按延迟排序）")
+		}
+		if s.Gateway, s.Landing, err = eng.PrepareDirect(ctx, s.ID, subID, name); err != nil {
+			return err
+		}
+	}
+	out, warnings, err := eng.AddSlot(ctx, s, opt)
 	if err != nil {
+		if *direct != "" {
+			_ = eng.RemoveNode(s.Landing)
+		}
 		return err
+	}
+	if *direct != "" {
+		warnings = append(warnings, engine.DirectNotice)
 	}
 	for _, w := range warnings {
 		fmt.Fprintf(a.errw, "提醒：%s\n", w)

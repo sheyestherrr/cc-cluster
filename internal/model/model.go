@@ -78,6 +78,9 @@ type Node struct {
 	Source *NodeSource `json:"source,omitempty"`
 	// ExpectExitIP 是落地的预期出口地址；填了就必须与实测一致。
 	ExpectExitIP string `json:"expect_exit_ip,omitempty"`
+	// Direct 表示这是“直出”的出口：订阅里的一个节点直接当出口用，后面没有专门的落地。
+	// 它是多人共用的出口；被固定给一个槽位，不会自动换成别的节点。
+	Direct bool `json:"direct,omitempty"`
 	// TZ 与 Lang 是落地所在地区的时区和语言；绑定它的槽位没有自己指定时沿用，
 	// 让槽内的时区与出口地区一致。
 	TZ   string `json:"tz,omitempty"`
@@ -181,7 +184,7 @@ func (s Subscription) Find(name string) (SubProxy, bool) {
 // Gateway 是一个网关容器的期望配置。
 type Gateway struct {
 	ID string `json:"id"`
-	// Transit 是中转节点 ID；为空表示单跳（直连落地），此时该网关只能接一个槽。
+	// Transit 是中转节点 ID；为空表示不经中转，各槽位直连自己的落地。
 	Transit string `json:"transit,omitempty"`
 	// Backups 是候选中转，按顺序：主用的 Transit 不通时核心自动改用其中第一个通的，
 	// 主用的恢复后切回。换中转不改变出口（出口由落地决定）。没有 Transit 时必须为空。

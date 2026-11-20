@@ -80,9 +80,6 @@ const FakeIPRange = "100.64.0.1/10"
 // Render 生成网关的核心配置。
 func Render(in Input) (Output, error) {
 	gw := in.Gateway
-	if in.Transit == nil && len(in.Bindings) > 1 {
-		return Output{}, fmt.Errorf("网关 %s 没有中转，只能接一个槽（专用网关）；现有 %d 个", gw.ID, len(in.Bindings))
-	}
 	if in.Transit == nil && len(in.Backups) > 0 {
 		return Output{}, fmt.Errorf("网关 %s 没有主用的中转，不能有候选中转", gw.ID)
 	}
@@ -160,7 +157,14 @@ func Render(in Input) (Output, error) {
 				if b.Landing.ServerIsDomain() {
 					hosts[b.Landing.Server()] = hop.String()
 				}
-				dnsVia = name
+				// 没有中转时，核心自己的解析（映射答不了的 TXT、SRV 等）只有在全网关只有一个出口时
+				// 才经它发出；有几个出口时不指定：让一个槽的查询从另一个槽的出口出去是不对的，
+				// 那时这些查询失败（主路由表里没有通往 DNS 服务器的路由），不影响按域名访问。
+				if len(seenLanding) == 1 {
+					dnsVia = name
+				} else {
+					dnsVia = ""
+				}
 			}
 			proxies = append(proxies, proxyEntry(b.Landing, name, dialer))
 		}

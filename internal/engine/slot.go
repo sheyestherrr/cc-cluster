@@ -259,9 +259,6 @@ func (e *Engine) AddSlot(ctx context.Context, sl model.Slot, opt SlotOptions) (o
 		if o.Gateway != sl.Gateway {
 			continue
 		}
-		if gw.Transit == "" {
-			return sl, nil, fmt.Errorf("网关 %s 没有中转，只能接一个槽（已有 %s）；给新槽另建一个专用网关", gw.ID, o.ID)
-		}
 		if p, err := netip.ParsePrefix(o.Subnet); err == nil {
 			used = append(used, p)
 		}
@@ -1135,6 +1132,12 @@ func (e *Engine) SlotRemove(ctx context.Context, id string, purge bool) (err err
 	}
 	if err := e.st.DeleteSlot(id, purge); err != nil {
 		return err
+	}
+	// 直出槽位专用的出口节点随槽位一起删掉（它只为这个槽登记，见 PrepareDirect）。
+	if n, nerr := e.st.Node(slot.Landing); nerr == nil && n.Direct && n.ID == id+"-exit" {
+		if err := e.st.DeleteNode(n.ID); err != nil {
+			e.logf("提醒：没有删掉槽位 %s 的出口节点 %s：%v", id, n.ID, err)
+		}
 	}
 	// 网关在运行就立刻把这条来源规则去掉；不在运行时，下次启动自然按新配置生成。
 	if c, ok, err := e.inspect(ctx, e.GatewayContainer(slot.Gateway)); err != nil {

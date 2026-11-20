@@ -238,6 +238,63 @@ func (e *Engine) SubRemove(id string) (err error) {
 	return e.st.DeleteSub(id)
 }
 
+// DirectGatewayID 是“直出”槽位默认共用的那个不带中转的网关。
+const DirectGatewayID = "direct"
+
+// DirectNotice 是登记直出槽位时给用户的提醒。
+const DirectNotice = "这个槽位直接用订阅里的节点当出口：出口是多人共用的地址；节点已固定，不会自动换成别的，它不通时槽位就是没网，要换请手动改"
+
+// PrepareDirect 为“不用落地、直接用订阅里的一个节点当出口”的槽位做准备：把订阅 subID 里名为
+// name 的节点登记为该槽专用的出口节点（<槽位>-exit，标记为直出），并确保有一个不带中转的网关。
+// 返回网关与出口节点的 ID，调用方接着用它们登记槽位；登记失败时应把出口节点删掉。
+//
+// 直出的出口就是这个节点本身：它被固定下来，不会自动换成订阅里的别的节点。
+func (e *Engine) PrepareDirect(ctx context.Context, slotID, subID, name string) (gateway, landing string, err error) {
+	if err := model.ValidateID("槽位", slotID); err != nil {
+		return "", "", err
+	}
+	landing = slotID + "-exit"
+	if err := e.NodeFromSub(ctx, model.Node{ID: landing, Role: model.RoleLanding, Direct: true}, subID, name); err != nil {
+		return "", "", err
+	}
+	defer func() {
+		if err != nil {
+			_ = e.RemoveNode(landing)
+		}
+	}()
+	gws, err := e.st.Gateways()
+	if err != nil {
+		return "", "", err
+	}
+	used := map[string]bool{}
+	taken := map[string]bool{}
+	for _, g := range gws {
+		g.Normalize()
+		if g.ID == DirectGatewayID && g.Transit == "" {
+			return g.ID, landing, nil
+		}
+		used[g.Pool], taken[g.ID] = true, true
+	}
+	gateway = DirectGatewayID
+	for i := 2; taken[gateway]; i++ { // 这个名字被一个带中转的网关占了
+		gateway = fmt.Sprintf("%s-%d", DirectGatewayID, i)
+	}
+	pool := ""
+	for i := 249; i >= 200; i-- {
+		if p := fmt.Sprintf("10.213.%d.0/24", i); !used[p] {
+			pool = p
+			break
+		}
+	}
+	if pool == "" {
+		return "", "", errors.New("没有空闲的地址池可以给直出网关；先用 gateway add --pool 手动建一个不带中转的网关")
+	}
+	if err := e.AddGateway(model.Gateway{ID: gateway, Pool: pool}); err != nil {
+		return "", "", err
+	}
+	return gateway, landing, nil
+}
+
 // NodeFromSub 把订阅里名为 name 的节点登记为节点 n（n 的 ID、角色等已填好，片段由订阅提供）。
 func (e *Engine) NodeFromSub(ctx context.Context, n model.Node, subID, name string) error {
 	sub, err := e.st.Sub(subID)

@@ -372,7 +372,7 @@ func (a *app) wizardGateway(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	labels := []string{"不用中转：直连落地（专用网关，只能接一个槽）"}
+	labels := []string{"不用中转：各槽位直连自己的落地"}
 	var transits []model.Node
 	for _, n := range nodes {
 		if n.Role == model.RoleTransit {

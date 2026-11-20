@@ -52,7 +52,7 @@ cc-cluster sub add air --url-file ./sub.url         # Clash 格式的订阅；�
 cc-cluster sub test air --landing home-a            # 接上落地测整条链路：节点自己能用不代表它肯转发到落地
 cc-cluster node add hk --role transit --sub air --landing home-a    # 在能接通落地的节点里用延迟最低的
 
-# 网关：不带 --transit 即单跳直连落地，此时一个网关只能接一个槽位
+# 网关：不带 --transit 即不经中转，各槽位直连自己的落地
 cc-cluster gateway add main --transit hk
 
 # 槽位
