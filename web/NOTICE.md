@@ -11,13 +11,14 @@ Claude-Hydra 以 MIT 许可发布，许可全文附在本文件末尾。
 | `tailwind.config.cjs`、`postcss.config.cjs`、`tsconfig*.json`、`vite.config.ts` | 同名文件 | 去掉 Tauri 相关设置，产物输出到 Go 的嵌入目录 |
 | `src/index.css` | `src/index.css` | 原样 |
 | `src/lib/utils.ts`、`src/lib/theme.ts` | 同名文件 | 时间显示改为接受 ISO 时间；本地存储的键改名 |
-| `src/components/ui/*.tsx`、`src/components/Menu.tsx`、`src/components/PageHeader.tsx` | 同名文件 | 原样或只改了注释 |
+| `src/components/ui/*.tsx`、`src/components/Menu.tsx` | 同名文件 | 原样或只改了注释 |
+| `src/components/PageHeader.tsx` | `src/components/PageHeader.tsx` | 页头与分组原样；内容区加了“列表 + 右侧详情栏”的两栏布局和可选中的行，这部分是本项目自己写的 |
 | `src/components/AppShell.tsx` | `src/components/AppShell.tsx` | 去掉窗口控制、更新提示和应用图标，导航项换成本项目的 |
 | `src/pages/SlotsPage.tsx` | `src/pages/AccountsPage.tsx` | 沿用列表行与菜单的结构，内容换成槽位 |
 | `src/pages/NetworkPage.tsx` | `src/pages/EnvironmentsPage.tsx`、`src/components/EnvironmentDialog.tsx` | 沿用列表与表单的结构，内容换成网关、节点与订阅 |
 | `src/pages/SystemPage.tsx` | `src/pages/SettingsPage.tsx`、`src/pages/AboutPage.tsx` | 沿用分组与键值行的结构 |
 
-`src/lib/api.ts`、`src/App.tsx` 和各对话框的业务逻辑是本项目自己写的：上游经 Tauri 调用 Rust 后端，
+`src/lib/api.ts`、`src/App.tsx`、`src/components/ExitCard.tsx`（出口评估卡片）、各页面右侧的详情栏和各对话框的业务逻辑是本项目自己写的：上游经 Tauri 调用 Rust 后端，
 这里改为经 HTTP 调用 cc-cluster 的 Go 接口（`internal/web`）。上游的图标和名称没有使用。
 订阅的拉取与解析在 Go 一侧完成（`internal/subscription`），没有取用上游的 `clashNodes.ts`。
 

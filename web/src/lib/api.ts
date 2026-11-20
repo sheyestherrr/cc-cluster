@@ -111,6 +111,41 @@ export interface Gateway {
 
 export type Role = "transit" | "landing";
 
+/** 一项不利标记：by 是命中它的数据来源，of 是对这一项给出了判断的来源数。 */
+export interface ExitFlag {
+  name: string;
+  by: string[];
+  of: number;
+}
+
+/** 第三方对落地出口 IP 的评估，只用于展示。 */
+export interface ExitReport {
+  ip: string;
+  checked_at: string;
+  sources: string[];
+  country?: string;
+  country_code?: string;
+  region?: string;
+  city?: string;
+  timezone?: string;
+  asn?: number;
+  as_org?: string;
+  asn_kind?: string;
+  company?: string;
+  company_type?: string;
+  usage_type?: string;
+  user_type?: string;
+  connection_type?: string;
+  residential: boolean;
+  mobile: boolean;
+  abuser_score?: string;
+  trust_score?: number;
+  fraud_score?: number;
+  static_ip_score?: number;
+  user_count?: number;
+  flags: ExitFlag[];
+}
+
 export interface NodeInfo {
   id: string;
   role: Role;
@@ -123,6 +158,8 @@ export interface NodeInfo {
   expect_exit_ip?: string;
   tz?: string;
   tz_auto?: boolean;
+  tz_fallback?: boolean;
+  exit_report?: ExitReport;
   source?: { sub: string; name: string };
   used_by: string[];
 }
@@ -213,6 +250,7 @@ export const api = {
 
   addNode: (node: NodeInput) => post("nodes", node),
   resolveNode: (node: string) => post<{ connect_ipv4: string }>(`nodes/${id(node)}/resolve`),
+  nodeReport: (node: string) => post<ExitReport>(`nodes/${id(node)}/report`),
   removeNode: (node: string) => del(`nodes/${id(node)}`),
 
   addGateway: (gw: { id: string; transit: string; pool: string }) => post("gateways", gw),

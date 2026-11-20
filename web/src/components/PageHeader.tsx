@@ -22,9 +22,80 @@ export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
   );
 }
 
-/** Content column shared by every page. */
-export function Page({ children }: { children: React.ReactNode }) {
-  return <div className="view-in w-full max-w-[860px] pb-8">{children}</div>;
+/**
+ * Content column shared by every page.
+ *
+ * 给了 side 时变成两栏：左边是列表，右边是所选对象的详情，各自滚动；
+ * 窗口不够宽时详情排到列表下面。没有 side 时是一条限宽的单栏。
+ */
+export function Page({ children, side }: { children: React.ReactNode; side?: React.ReactNode }) {
+  if (side === undefined) return <div className="view-in w-full max-w-[860px] pb-8">{children}</div>;
+  return (
+    <div className="view-in w-full min-[1080px]:grid min-[1080px]:h-full min-[1080px]:grid-cols-[minmax(420px,5fr)_minmax(380px,6fr)]">
+      <div className="min-w-0 pb-8 min-[1080px]:overflow-y-auto">{children}</div>
+      <aside
+        aria-label="详情"
+        className="min-w-0 border-line px-5 pb-8 max-[1079px]:mx-5 max-[1079px]:border-t-[0.5px] max-[1079px]:px-0 max-[1079px]:pt-5 min-[1080px]:overflow-y-auto min-[1080px]:border-l-[0.5px]"
+      >
+        {side}
+      </aside>
+    </div>
+  );
+}
+
+/** 详情栏的抬头：名字、状态和主要操作。 */
+export function DetailHeader({ badge, title, status, actions }: { badge: React.ReactNode; title: string; status: React.ReactNode; actions?: React.ReactNode }) {
+  return (
+    <header className="flex min-h-[48px] items-center gap-3 pb-4">
+      {badge}
+      <div className="min-w-0 flex-1">
+        <h2 className="truncate text-[15px] font-semibold tracking-[-0.01em]">{title}</h2>
+        <div className="mt-0.5 flex items-center gap-1.5 text-[12px] text-muted">{status}</div>
+      </div>
+      {actions && <div className="flex shrink-0 items-center gap-1.5">{actions}</div>}
+    </header>
+  );
+}
+
+/** 详情栏里的各个分组：够宽时排成两列。 */
+export function DetailGrid({ children }: { children: React.ReactNode }) {
+  return <div className="grid animate-fade-in items-start gap-x-5 gap-y-5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr))]">{children}</div>;
+}
+
+/**
+ * 列表里可以被选中的一行用的属性。用鼠标点行上任何不是按钮的地方都算选中；
+ * 键盘用户经行里的标题（RowTitle，一个真正的按钮）选中。选中的行左边有一道标记。
+ */
+export function selectableRow(selected: boolean, onSelect: () => void) {
+  return {
+    onClick: (e: React.MouseEvent) => {
+      if (!(e.target as HTMLElement).closest("button, a, input, [role=menu]")) onSelect();
+    },
+    className: cn(
+      "group relative flex items-center gap-3 px-4 py-3",
+      "before:pointer-events-none before:absolute before:inset-y-2.5 before:left-0 before:w-[3px] before:rounded-r-full before:bg-brand before:transition-opacity before:duration-150 motion-reduce:before:transition-none",
+      selected ? "bg-card-2 before:opacity-100" : "before:opacity-0 hover:bg-card-2",
+    ),
+  };
+}
+
+/** 行的标题：点它选中这一行，在右边的详情栏里显示。 */
+export function RowTitle({ selected, onSelect, children }: { selected: boolean; onSelect: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onSelect}
+      aria-pressed={selected}
+      title="在右边显示详情"
+      className="min-w-0 truncate rounded-sm text-left text-[13.5px] font-medium text-fg active:!scale-100"
+    >
+      {children}
+    </button>
+  );
+}
+
+/** 没有可显示的对象时，详情栏里的一句说明。 */
+export function DetailEmpty({ children }: { children: React.ReactNode }) {
+  return <div className="flex h-full min-h-[160px] items-center justify-center px-6 text-center text-[12.5px] leading-5 text-muted">{children}</div>;
 }
 
 /** A labelled group: small uppercase label above a grouped list card. */
@@ -65,11 +136,13 @@ export function Line({ label, children }: { label: string; children: React.React
   );
 }
 
-export function KeyValue({ k, v }: { k: string; v?: string | null }) {
+export function KeyValue({ k, v, plain, children }: { k: string; v?: string | null; plain?: boolean; children?: React.ReactNode }) {
   return (
     <div className="flex gap-4 px-4 py-2.5 text-[12.5px]">
-      <span className="w-24 shrink-0 text-muted">{k}</span>
-      <span className="selectable min-w-0 break-all font-mono text-[11.5px] leading-[18px] text-fg-2">{v || "—"}</span>
+      <span className="w-20 shrink-0 text-muted">{k}</span>
+      {children ?? (
+        <span className={cn("selectable min-w-0 break-all text-fg-2", plain ? "leading-[18px]" : "font-mono text-[11.5px] leading-[18px]")}>{v || "—"}</span>
+      )}
     </div>
   );
 }

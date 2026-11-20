@@ -3,8 +3,9 @@
 import { Gauge, Globe2, Loader2, LogOut, MoreHorizontal, Play, Plus, Power, RefreshCw, Rss, Router, Trash2, Waypoints } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useState } from "react";
+import { ExitCard } from "@/components/ExitCard";
 import { Menu, type MenuEntry } from "@/components/Menu";
-import { ErrorBox, Line, Page, PageHeader, Tag } from "@/components/PageHeader";
+import { DetailEmpty, DetailGrid, DetailHeader, ErrorBox, KeyValue, Line, Page, PageHeader, RowTitle, Tag, selectableRow } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
@@ -20,8 +21,24 @@ interface Props {
 
 type Failure = { text: string; log: string[] } | null;
 type Removing = { kind: "gateway" | "node" | "sub"; id: string; note: string } | null;
+type Selection = { kind: "gateway" | "node" | "sub"; id: string };
 
 const roleText: Record<Role, string> = { transit: "中转", landing: "落地" };
+
+const gatewayStatus = (g: Gateway) =>
+  g.container === "running" ? (g.core_ready ? "运行中" : "核心未就绪") : g.container === "absent" ? "未创建" : g.container === "unknown" ? "状态未知" : "已停止";
+
+/** 详情栏里显示哪个对象：选中的那个；没选过或它已被删除时，优先显示一个落地。 */
+function pick(state: State, sel: Selection | null): Selection | null {
+  const exists = (s: Selection) =>
+    s.kind === "gateway" ? state.gateways.some((g) => g.id === s.id) : s.kind === "node" ? state.nodes.some((n) => n.id === s.id) : state.subs.some((x) => x.id === s.id);
+  if (sel && exists(sel)) return sel;
+  const node = state.nodes.find((n) => n.role === "landing") ?? state.nodes[0];
+  if (node) return { kind: "node", id: node.id };
+  if (state.gateways[0]) return { kind: "gateway", id: state.gateways[0].id };
+  if (state.subs[0]) return { kind: "sub", id: state.subs[0].id };
+  return null;
+}
 
 export function NetworkPage({ state, loadError, refresh }: Props) {
   const toast = useToast();
@@ -30,6 +47,7 @@ export function NetworkPage({ state, loadError, refresh }: Props) {
   const [dialog, setDialog] = useState<"gateway" | "node" | "sub" | null>(null);
   const [browsing, setBrowsing] = useState<string | null>(null);
   const [removing, setRemoving] = useState<Removing>(null);
+  const [sel, setSel] = useState<Selection | null>(null);
 
   const run = async (key: string, label: string, action: () => Promise<unknown>, done?: string | ((r: unknown) => string)) => {
     setBusy((b) => ({ ...b, [key]: label }));
@@ -61,9 +79,30 @@ export function NetworkPage({ state, loadError, refresh }: Props) {
   };
 
   const empty = !!state && !state.gateways.length && !state.nodes.length && !state.subs.length;
+  const current = state ? pick(state, sel) : null;
+  const isCurrent = (kind: Selection["kind"], id: string) => current?.kind === kind && current.id === id;
+  const select = (kind: Selection["kind"], id: string) => () => setSel({ kind, id });
+
+  let side: React.ReactNode = <DetailEmpty>{state ? "添加节点或网关后，这里显示所选对象的详情；落地还会显示出口 IP 的评估。" : "读取中…"}</DetailEmpty>;
+  if (state && current?.kind === "node") {
+    const n = state.nodes.find((x) => x.id === current.id)!;
+    side = (
+      <NodeDetail
+        key={`node:${n.id}`}
+        n={n}
+        state={state}
+        busy={busy[`node:${n.id}`]}
+        onReport={() => run(`node:${n.id}`, "检测中", () => api.nodeReport(n.id), `已更新 ${n.id} 的出口评估`)}
+      />
+    );
+  } else if (state && current?.kind === "gateway") {
+    side = <GatewayDetail key={`gateway:${current.id}`} g={state.gateways.find((x) => x.id === current.id)!} state={state} />;
+  } else if (state && current?.kind === "sub") {
+    side = <SubDetail key={`sub:${current.id}`} s={state.subs.find((x) => x.id === current.id)!} state={state} onBrowse={() => setBrowsing(current.id)} />;
+  }
 
   return (
-    <Page>
+    <Page side={side}>
       <PageHeader
         title="节点与网关"
         subtitle="落地是槽位的出口，中转是多个槽位共用的第一跳；网关容器把槽位的流量经中转送到各自的落地。"
@@ -96,6 +135,8 @@ export function NetworkPage({ state, loadError, refresh }: Props) {
                 <GatewayRow
                   key={g.id}
                   g={g}
+                  selected={isCurrent("gateway", g.id)}
+                  onSelect={select("gateway", g.id)}
                   busy={busy[`gateway:${g.id}`]}
                   onUp={() => run(`gateway:${g.id}`, "启动中", () => api.gatewayUp(g.id), `网关 ${g.id} 已就绪`)}
                   onDown={(force) => run(`gateway:${g.id}`, "停止中", () => api.gatewayDown(g.id, force), `已停止网关 ${g.id}`)}
@@ -114,6 +155,8 @@ export function NetworkPage({ state, loadError, refresh }: Props) {
                 <NodeRow
                   key={n.id}
                   n={n}
+                  selected={isCurrent("node", n.id)}
+                  onSelect={select("node", n.id)}
                   busy={busy[`node:${n.id}`]}
                   onResolve={() => run(`node:${n.id}`, "解析中", () => api.resolveNode(n.id), (r) => `${n.id} 的首跳地址：${(r as { data: { connect_ipv4: string } }).data.connect_ipv4}`)}
                   onDelete={() => setRemoving({ kind: "node", id: n.id, note: n.used_by.length ? `它正被 ${n.used_by.join("、")} 使用，需要先解除。` : "此节点没有被使用。" })}
@@ -131,6 +174,8 @@ export function NetworkPage({ state, loadError, refresh }: Props) {
                 <SubRow
                   key={s.id}
                   s={s}
+                  selected={isCurrent("sub", s.id)}
+                  onSelect={select("sub", s.id)}
                   busy={busy[`sub:${s.id}`]}
                   onBrowse={() => setBrowsing(s.id)}
                   onRefresh={() =>
@@ -174,7 +219,12 @@ export function NetworkPage({ state, loadError, refresh }: Props) {
   );
 }
 
-function RowShell({ icon: Icon, title, tags, detail, side, busy, action, menu }: {
+interface Selectable {
+  selected: boolean;
+  onSelect: () => void;
+}
+
+function RowShell({ icon: Icon, title, tags, detail, side, busy, action, menu, selected, onSelect }: Selectable & {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   tags?: React.ReactNode;
@@ -185,18 +235,18 @@ function RowShell({ icon: Icon, title, tags, detail, side, busy, action, menu }:
   menu: (MenuEntry | "sep")[];
 }) {
   return (
-    <div className="group flex items-center gap-3 px-4 py-3 hover:bg-card-2">
+    <div {...selectableRow(selected, onSelect)}>
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-pill text-fg-2">
         <Icon className="h-4 w-4" />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-[13.5px] font-medium">{title}</span>
+          <RowTitle selected={selected} onSelect={onSelect}>{title}</RowTitle>
           {tags}
         </div>
         <div className="selectable truncate text-[11.5px] text-muted">{detail}</div>
       </div>
-      {side && <span className="hidden max-w-[220px] shrink-0 truncate text-[11.5px] text-muted min-[820px]:inline">{side}</span>}
+      {side && <span className="hidden max-w-[160px] shrink-0 truncate text-[11.5px] text-muted min-[1500px]:inline">{side}</span>}
       {busy ? (
         <span className="flex h-7 items-center gap-1.5 px-2 text-[12.5px] text-muted">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -215,11 +265,12 @@ function RowShell({ icon: Icon, title, tags, detail, side, busy, action, menu }:
   );
 }
 
-function GatewayRow({ g, busy, onUp, onDown, onDelete }: { g: Gateway; busy?: string; onUp: () => void; onDown: (force: boolean) => void; onDelete: () => void }) {
+function GatewayRow({ g, busy, onUp, onDown, onDelete, ...sel }: Selectable & { g: Gateway; busy?: string; onUp: () => void; onDown: (force: boolean) => void; onDelete: () => void }) {
   const running = g.container === "running";
   const status = running ? "运行中" : g.container === "absent" ? "未创建" : g.container === "unknown" ? "状态未知" : "已停止";
   return (
     <RowShell
+      {...sel}
       icon={Router}
       title={g.id}
       tags={
@@ -252,19 +303,30 @@ function GatewayRow({ g, busy, onUp, onDown, onDelete }: { g: Gateway; busy?: st
   );
 }
 
-function NodeRow({ n, busy, onResolve, onDelete }: { n: NodeInfo; busy?: string; onResolve: () => void; onDelete: () => void }) {
+/** 出口评估的一句话，放在落地那一行里。 */
+function reportBrief(n: NodeInfo): string {
+  const r = n.exit_report;
+  if (!r) return "";
+  const where = [r.country_code || r.country, r.city].filter(Boolean).join(" ");
+  const flags = r.flags.length ? r.flags.map((f) => f.name).join("、") : "无不利标记";
+  return [`出口 ${r.ip}`, where, r.trust_score !== undefined ? `信任分 ${r.trust_score}` : "", flags].filter(Boolean).join(" · ");
+}
+
+function NodeRow({ n, busy, onResolve, onDelete, ...sel }: Selectable & { n: NodeInfo; busy?: string; onResolve: () => void; onDelete: () => void }) {
   const parts = [`${n.type} · ${n.server}:${n.port}`];
-  if (n.connect_ipv4) parts.push(`首跳 ${n.connect_ipv4}${n.fake_ip ? "（本机网络的 fake-ip 映射）" : ""}`);
-  if (n.tz) parts.push(`时区 ${n.tz}${n.tz_auto ? "（按出口自动设置）" : ""}`);
-  if (n.expect_exit_ip) parts.push(`预期出口 ${n.expect_exit_ip}`);
+  const brief = reportBrief(n);
+  if (brief) parts.push(brief);
+  else if (n.connect_ipv4) parts.push(`首跳 ${n.connect_ipv4}`);
   return (
     <RowShell
+      {...sel}
       icon={n.role === "landing" ? Globe2 : Waypoints}
       title={n.id}
       tags={
         <>
           <Tag tone={n.role === "landing" ? "env" : undefined}>{roleText[n.role]}</Tag>
           {n.source && <Tag title={`取自订阅 ${n.source.sub}`}>{n.source.name}</Tag>}
+          {n.tz_fallback && <Tag tone="warn" title="没有探测到出口所在的时区，暂用兜底值">时区兜底</Tag>}
         </>
       }
       detail={parts.join(" · ")}
@@ -279,9 +341,10 @@ function NodeRow({ n, busy, onResolve, onDelete }: { n: NodeInfo; busy?: string;
   );
 }
 
-function SubRow({ s, busy, onBrowse, onRefresh, onDelete }: { s: Sub; busy?: string; onBrowse: () => void; onRefresh: () => void; onDelete: () => void }) {
+function SubRow({ s, busy, onBrowse, onRefresh, onDelete, ...sel }: Selectable & { s: Sub; busy?: string; onBrowse: () => void; onRefresh: () => void; onDelete: () => void }) {
   return (
     <RowShell
+      {...sel}
       icon={Rss}
       title={s.id}
       detail={`${s.count} 个节点 · ${s.tested_at ? `${s.usable} 个测通（${relativeTime(s.tested_at)}测）` : "还没测过延迟"} · ${relativeTime(s.fetched_at)}拉取`}
@@ -293,6 +356,149 @@ function SubRow({ s, busy, onBrowse, onRefresh, onDelete }: { s: Sub; busy?: str
         { label: "删除…", icon: Trash2, danger: true, onSelect: onDelete },
       ]}
     />
+  );
+}
+
+function IconBadge({ icon: Icon }: { icon: React.ComponentType<{ className?: string }> }) {
+  return (
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-pill text-fg-2" aria-hidden>
+      <Icon className="h-[18px] w-[18px]" />
+    </span>
+  );
+}
+
+/** 详情栏：一个节点。落地显示出口评估，中转只有连接信息。 */
+function NodeDetail({ n, state, busy, onReport }: { n: NodeInfo; state: State; busy?: string; onReport: () => void }) {
+  const landing = n.role === "landing";
+  const slots = state.slots.filter((s) => s.landing === n.id);
+  // 出口评估要经链路查询：得有一个用着这个落地的槽位，它的网关在运行。
+  const reachable = slots.some((s) => {
+    const g = state.gateways.find((x) => x.id === s.gateway);
+    return g?.container === "running" && g.core_ready;
+  });
+  const wired = slots.find((s) => (s.state === "ready" || s.state === "pending") && s.exit_ip);
+  return (
+    <>
+      <DetailHeader
+        badge={<IconBadge icon={landing ? Globe2 : Waypoints} />}
+        title={n.id}
+        status={<span className="truncate">{roleText[n.role]} · {n.type}{n.used_by.length ? ` · ${n.used_by.join("、")}在用` : " · 未使用"}</span>}
+      />
+      <DetailGrid>
+        {landing && (
+          <ExitCard
+            report={n.exit_report}
+            currentIP={wired?.exit_ip}
+            busy={busy === "检测中"}
+            onRefresh={onReport}
+            disabledWhy={reachable ? undefined : slots.length ? "查询要经链路发出：先启动一个使用这个落地的槽位" : "查询要经链路发出：先登记并启动一个使用这个落地的槽位"}
+          />
+        )}
+        <section>
+          <div className="group-label">连接</div>
+          <div className="list-card">
+            <KeyValue k="服务器" v={`${n.server}:${n.port}`} />
+            <KeyValue k="协议" v={n.type} />
+            {n.connect_ipv4 && (
+              <KeyValue k="首跳地址" plain>
+                <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <span className="selectable font-mono text-[11.5px] text-fg-2">{n.connect_ipv4}</span>
+                  {n.fake_ip && <Tag title="本机所在的网络在用 fake-ip 透明代理，系统解析到的是它的映射地址">fake-ip 映射</Tag>}
+                  {n.connect_auto && <Tag title="服务器地址是域名，由管理器在本机解析并记下；地址变了可以在菜单里重新解析">自动解析</Tag>}
+                </span>
+              </KeyValue>
+            )}
+            {n.source && <KeyValue k="来自订阅" v={`${n.source.sub} · ${n.source.name}`} plain />}
+          </div>
+        </section>
+        {landing && (
+          <section>
+            <div className="group-label">绑定它的槽位沿用</div>
+            <div className="list-card">
+              <KeyValue k="时区" plain>
+                <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <span className="selectable font-mono text-[11.5px] text-fg-2">{n.tz || "还没有（首次启动槽位时按出口探测）"}</span>
+                  {n.tz_fallback && <Tag tone="warn" title="带时区的探测地址都没有应答，暂用兜底值；下次启动槽位会再探测">兜底值</Tag>}
+                  {n.tz_auto && !n.tz_fallback && <Tag title="按出口探测到的所在地自动设置">随出口</Tag>}
+                </span>
+              </KeyValue>
+              <KeyValue k="预期出口" v={n.expect_exit_ip || "不检查"} plain={!n.expect_exit_ip} />
+              <KeyValue k="槽位" v={slots.length ? slots.map((s) => s.id).join("、") : "没有槽位在用"} plain />
+            </div>
+          </section>
+        )}
+      </DetailGrid>
+    </>
+  );
+}
+
+/** 详情栏：一个网关。 */
+function GatewayDetail({ g, state }: { g: Gateway; state: State }) {
+  const running = g.container === "running";
+  const transit = state.nodes.find((n) => n.id === g.transit);
+  return (
+    <>
+      <DetailHeader
+        badge={<IconBadge icon={Router} />}
+        title={g.id}
+        status={
+          <>
+            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", running && g.core_ready ? "bg-ok shadow-[0_0_0_3px_rgb(var(--ok-soft))]" : "bg-faint")} />
+            <span>{gatewayStatus(g)}</span>
+          </>
+        }
+      />
+      <DetailGrid>
+        <section>
+          <div className="group-label">转发</div>
+          <div className="list-card">
+            <KeyValue k="中转" plain>
+              <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-fg-2">
+                {g.transit ? <span className="selectable font-mono text-[11.5px]">{g.transit}</span> : "不经中转"}
+                {!g.transit && <Tag title="直接连落地；只能接一个槽位">单跳</Tag>}
+                {transit && <span className="text-muted">{transit.type} · {transit.server}:{transit.port}</span>}
+              </span>
+            </KeyValue>
+            <KeyValue k="配置" v={!running ? "网关没有在运行" : g.config_current ? "与当前的节点和槽位设置一致" : "节点或槽位的设置变过，重新启动网关或槽位后生效"} plain />
+            <KeyValue k="槽位" v={g.slots.length ? g.slots.join("、") : "没有槽位"} plain />
+          </div>
+        </section>
+        <section>
+          <div className="group-label">网络</div>
+          <div className="list-card">
+            <KeyValue k="出口网络" v={g.egress_network} />
+            <KeyValue k="地址池" v={g.pool} />
+            <KeyValue k="槽内解析" v="域名交给落地解析，槽内看到的是 100.64.0.0/10 里的映射地址" plain />
+          </div>
+        </section>
+      </DetailGrid>
+    </>
+  );
+}
+
+/** 详情栏：一个订阅。 */
+function SubDetail({ s, state, onBrowse }: { s: Sub; state: State; onBrowse: () => void }) {
+  const used = state.nodes.filter((n) => n.source?.sub === s.id);
+  return (
+    <>
+      <DetailHeader
+        badge={<IconBadge icon={Rss} />}
+        title={s.id}
+        status={<span className="truncate">订阅 · {s.count} 个节点</span>}
+        actions={<Button variant="outline" size="sm" onClick={onBrowse}>选节点…</Button>}
+      />
+      <DetailGrid>
+        <section>
+          <div className="group-label">节点</div>
+          <div className="list-card">
+            <KeyValue k="数量" v={`${s.count} 个`} plain />
+            <KeyValue k="延迟" v={s.tested_at ? `${s.usable} 个测通（${relativeTime(s.tested_at)}测）` : "还没测过"} plain />
+            <KeyValue k="拉取" v={`${relativeTime(s.fetched_at)}`} plain />
+            <KeyValue k="已选用" v={used.length ? used.map((n) => `${n.id}（${n.source!.name}）`).join("、") : "还没有从它里面选用节点"} plain />
+          </div>
+        </section>
+      </DetailGrid>
+    </>
   );
 }
 

@@ -1,9 +1,10 @@
 // 改编自 Claude-Hydra（MIT）app/src/pages/AccountsPage.tsx，v1.1.6：
 // 沿用列表行、行内菜单与删除确认的结构，内容换成 cc-cluster 的槽位。
-import { Ban, Copy, Loader2, MoreHorizontal, Play, Plus, Power, RefreshCw, RotateCw, ShieldCheck, Terminal, Trash2 } from "lucide-react";
+import { Ban, ChevronRight, Copy, Loader2, MoreHorizontal, Play, Plus, Power, RefreshCw, RotateCw, ShieldCheck, Terminal, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { ExitCard } from "@/components/ExitCard";
 import { Menu } from "@/components/Menu";
-import { ErrorBox, Line, Page, PageHeader, Tag } from "@/components/PageHeader";
+import { DetailEmpty, DetailGrid, DetailHeader, ErrorBox, KeyValue, Line, Page, PageHeader, RowTitle, Tag, selectableRow } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/input";
@@ -39,6 +40,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork }: Props) {
   const [entering, setEntering] = useState<Slot | null>(null);
   const [deleting, setDeleting] = useState<Slot | null>(null);
   const [purge, setPurge] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
 
   const run = async (s: Slot, label: string, action: () => Promise<unknown>, done?: string | ((r: unknown) => string)) => {
     setBusy((b) => ({ ...b, [s.id]: label }));
@@ -62,9 +64,31 @@ export function SlotsPage({ state, loadError, refresh, goNetwork }: Props) {
 
   const slots = state?.slots ?? null;
   const canAdd = !!state && state.gateways.length > 0 && state.nodes.some((n) => n.role === "landing");
+  // 详情栏显示选中的槽位；没选过或选中的已被删除时显示第一个。
+  const current = slots?.find((s) => s.id === selected) ?? slots?.[0] ?? null;
+  const stop = (s: Slot) => run(s, "停止中", () => api.slotStop(s.id), `已停止 ${s.id}`);
+  const release = (s: Slot) => run(s, "解除中", () => api.slotRelease(s.id), `已解除 ${s.id} 的手动断网，启动后恢复网络`);
+
+  const side = !state ? (
+    <DetailEmpty>读取中…</DetailEmpty>
+  ) : !current ? (
+    <DetailEmpty>新建槽位后，这里显示它的出口评估、链路和槽内环境。</DetailEmpty>
+  ) : (
+    <SlotDetail
+      key={current.id}
+      s={current}
+      state={state}
+      busy={busy[current.id]}
+      onUp={() => up(current)}
+      onStop={() => stop(current)}
+      onRelease={() => release(current)}
+      onEnter={() => setEntering(current)}
+      onReport={() => run(current, "检测中", () => api.nodeReport(current.landing), `已更新 ${current.landing} 的出口评估`)}
+    />
+  );
 
   return (
-    <Page>
+    <Page side={side}>
       <PageHeader
         title="槽位"
         subtitle="每个槽位是一个没有网络的工作容器，全部流量由网关透明转发到它绑定的落地。"
@@ -104,11 +128,13 @@ export function SlotsPage({ state, loadError, refresh, goNetwork }: Props) {
                 key={s.id}
                 s={s}
                 busy={busy[s.id]}
+                selected={current?.id === s.id}
+                onSelect={() => setSelected(s.id)}
                 onUp={() => up(s)}
                 onRecreate={() => up(s, true)}
-                onStop={() => run(s, "停止中", () => api.slotStop(s.id), `已停止 ${s.id}`)}
+                onStop={() => stop(s)}
                 onHold={() => run(s, "断网中", () => api.slotHold(s.id, "在网页上手动断网"), `已断开 ${s.id} 的网络`)}
-                onRelease={() => run(s, "解除中", () => api.slotRelease(s.id), `已解除 ${s.id} 的手动断网，启动后恢复网络`)}
+                onRelease={() => release(s)}
                 onEnter={() => setEntering(s)}
                 onDelete={() => {
                   setPurge(false);
@@ -198,6 +224,8 @@ export function SlotsPage({ state, loadError, refresh, goNetwork }: Props) {
 interface RowProps {
   s: Slot;
   busy?: string;
+  selected: boolean;
+  onSelect: () => void;
   onUp: () => void;
   onRecreate: () => void;
   onStop: () => void;
@@ -207,22 +235,24 @@ interface RowProps {
   onDelete: () => void;
 }
 
-function SlotRow({ s, busy, onUp, onRecreate, onStop, onHold, onRelease, onEnter, onDelete }: RowProps) {
+function StateDot({ s }: { s: Slot }) {
+  const wired = s.state === "ready" || s.state === "pending";
+  return <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", wired ? "bg-ok shadow-[0_0_0_3px_rgb(var(--ok-soft))]" : s.state === "hold" ? "bg-danger" : "bg-faint")} />;
+}
+
+function SlotRow({ s, busy, selected, onSelect, onUp, onRecreate, onStop, onHold, onRelease, onEnter, onDelete }: RowProps) {
   const wired = s.state === "ready" || s.state === "pending";
   const running = wired || s.state === "offline";
-  const limits = [s.cpus ? `${s.cpus} 核` : "", formatBytes(s.memory_bytes)].filter(Boolean).join(" · ");
   return (
-    <div className="group flex items-center gap-3 px-4 py-3 hover:bg-card-2">
+    <div {...selectableRow(selected, onSelect)}>
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] text-[13px] font-bold text-white" style={{ backgroundColor: PALETTE[colorIndex(s.id)] }} aria-hidden>
         {badgeLetter(s.id)}
       </span>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-[13.5px] font-medium">{s.id}</span>
+          <RowTitle selected={selected} onSelect={onSelect}>{s.id}</RowTitle>
           <Tag tone="env" title="落地节点">{s.landing}</Tag>
-          <Tag title="网关">{s.gateway}</Tag>
-          {s.tz && <Tag title="槽内时区">{s.tz}</Tag>}
           {s.state === "hold" && <Tag tone="danger" title={s.hold_reason}>已断网</Tag>}
           {s.tmux_bridge && (
             <Tag tone="warn" title={`宿主桥接已开启：槽内经它执行的命令在宿主上运行，使用宿主的权限和宿主网络，不受该槽的网络约束，断网也拦不住。${s.tmux_alive ? "宿主 tmux 正在运行。" : "宿主 tmux 没有在运行。"}`}>
@@ -233,7 +263,7 @@ function SlotRow({ s, busy, onUp, onRecreate, onStop, onHold, onRelease, onEnter
           {s.state === "offline" && <Tag tone="warn" title="容器在运行但没有接线，槽内没有网络">未接线</Tag>}
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-muted">
-          <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", wired ? "bg-ok shadow-[0_0_0_3px_rgb(var(--ok-soft))]" : s.state === "hold" ? "bg-danger" : "bg-faint")} />
+          <StateDot s={s} />
           <span className="shrink-0">{stateText[s.state]}</span>
           {s.exit_ip && (
             <>
@@ -243,8 +273,6 @@ function SlotRow({ s, busy, onUp, onRecreate, onStop, onHold, onRelease, onEnter
               </span>
             </>
           )}
-          <span className="shrink-0 text-faint">·</span>
-          <span className="min-w-0 truncate" title={`用户 ${s.user}，主机名 ${s.hostname}${limits ? `，${limits}` : ""}`}>{s.user}@{s.hostname}</span>
         </div>
       </div>
 
@@ -255,12 +283,9 @@ function SlotRow({ s, busy, onUp, onRecreate, onStop, onHold, onRelease, onEnter
             {busy}
           </span>
         ) : (
-          <>
-            {wired && <Button variant="ghost" size="sm" onClick={onEnter}><Terminal />进入</Button>}
-            <Button variant="outline" size="sm" className="min-w-[72px]" onClick={running ? onStop : s.state === "hold" ? onRelease : onUp} disabled={s.state === "unknown"}>
-              {running ? <><Power />停止</> : s.state === "hold" ? <><ShieldCheck />解除</> : <><Play className="!h-3 !w-3" />启动</>}
-            </Button>
-          </>
+          <Button variant="outline" size="sm" className="min-w-[72px]" onClick={running ? onStop : s.state === "hold" ? onRelease : onUp} disabled={s.state === "unknown"}>
+            {running ? <><Power />停止</> : s.state === "hold" ? <><ShieldCheck />解除</> : <><Play className="!h-3 !w-3" />启动</>}
+          </Button>
         )}
         <Menu
           trigger={(toggle) => (
@@ -281,6 +306,152 @@ function SlotRow({ s, busy, onUp, onRecreate, onStop, onHold, onRelease, onEnter
         />
       </div>
     </div>
+  );
+}
+
+/** 链路上的一站。 */
+function Hop({ label, name, tone }: { label: string; name: string; tone?: "brand" | "ok" }) {
+  return (
+    <span className="flex min-w-0 flex-col">
+      <span className="text-[10.5px] leading-4 text-muted">{label}</span>
+      <span
+        className={cn(
+          "selectable max-w-[180px] truncate rounded-md px-1.5 py-0.5 font-mono text-[11.5px] leading-[18px]",
+          tone === "brand" ? "bg-brand-soft text-brand" : tone === "ok" ? "bg-ok-soft text-ok" : "bg-pill text-fg-2",
+        )}
+        title={name}
+      >
+        {name}
+      </span>
+    </span>
+  );
+}
+
+interface DetailProps {
+  s: Slot;
+  state: State;
+  busy?: string;
+  onUp: () => void;
+  onStop: () => void;
+  onRelease: () => void;
+  onEnter: () => void;
+  onReport: () => void;
+}
+
+/** 右边的详情栏：出口评估、链路、槽内环境和挂载。 */
+function SlotDetail({ s, state, busy, onUp, onStop, onRelease, onEnter, onReport }: DetailProps) {
+  const wired = s.state === "ready" || s.state === "pending";
+  const running = wired || s.state === "offline";
+  const landing = state.nodes.find((n) => n.id === s.landing);
+  const gateway = state.gateways.find((g) => g.id === s.gateway);
+  const gatewayUp = gateway?.container === "running" && gateway.core_ready;
+  const limits = [s.cpus ? `${s.cpus} 核` : "", formatBytes(s.memory_bytes)].filter(Boolean).join(" · ");
+  const fakes = [s.fake_dmi ? "机型信息" : "", s.fake_proc ? "CPU 与内存" : ""].filter(Boolean).join("、");
+  const inheritsTZ = !!s.tz && s.tz === landing?.tz;
+  const arrow = <ChevronRight className="mt-4 h-3.5 w-3.5 shrink-0 text-faint" aria-hidden />;
+
+  return (
+    <>
+      <DetailHeader
+        badge={
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[14px] font-bold text-white" style={{ backgroundColor: PALETTE[colorIndex(s.id)] }} aria-hidden>
+            {badgeLetter(s.id)}
+          </span>
+        }
+        title={s.id}
+        status={
+          <>
+            <StateDot s={s} />
+            <span>{stateText[s.state]}</span>
+            {wired && s.applied_at && <span className="truncate">· {relativeTime(s.applied_at)}从槽内复测通过</span>}
+            {s.state === "hold" && s.hold_reason && <span className="truncate">· {s.hold_reason}</span>}
+          </>
+        }
+        actions={
+          busy ? (
+            <span className="flex h-7 items-center gap-1.5 px-2 text-[12.5px] text-muted"><Loader2 className="h-3.5 w-3.5 animate-spin" />{busy}</span>
+          ) : (
+            <>
+              {wired && <Button variant="outline" size="sm" onClick={onEnter}><Terminal />进入</Button>}
+              <Button variant={running ? "outline" : "default"} size="sm" className="min-w-[72px]" onClick={running ? onStop : s.state === "hold" ? onRelease : onUp} disabled={s.state === "unknown"}>
+                {running ? <><Power />停止</> : s.state === "hold" ? <><ShieldCheck />解除断网</> : <><Play className="!h-3 !w-3" />启动</>}
+              </Button>
+            </>
+          )
+        }
+      />
+
+      <DetailGrid>
+        <ExitCard
+          report={landing?.exit_report}
+          currentIP={wired ? s.exit_ip : undefined}
+          busy={busy === "检测中"}
+          onRefresh={onReport}
+          disabledWhy={gatewayUp ? undefined : "查询要经链路发出：网关没有在运行，先启动这个槽位"}
+        />
+
+        <section>
+          <div className="group-label">链路</div>
+          <div className="list-card">
+            <div className="flex flex-wrap items-start gap-x-1.5 gap-y-2 px-4 py-3">
+              <Hop label="槽位" name={s.id} />
+              {arrow}
+              <Hop label="网关" name={s.gateway} />
+              {gateway?.transit && <>{arrow}<Hop label="中转" name={gateway.transit} /></>}
+              {arrow}
+              <Hop label="落地" name={s.landing} tone="brand" />
+              {wired && s.exit_ip && <>{arrow}<Hop label="出口" name={s.exit_ip} tone="ok" /></>}
+            </div>
+            <KeyValue k="网关" plain>
+              <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-fg-2">
+                {!gateway ? "已不存在" : gatewayUp ? "运行中" : gateway.container === "running" ? "核心未就绪" : "没有在运行"}
+                {gateway && !gateway.transit && <Tag title="不经中转，直接连落地">单跳</Tag>}
+                {gateway && gatewayUp && !gateway.config_current && <Tag tone="warn" title="节点或槽位的设置变过，重新启动槽位后生效">配置待更新</Tag>}
+              </span>
+            </KeyValue>
+            <KeyValue k="落地" v={landing ? `${landing.type} · ${landing.server}:${landing.port}` : "已不存在"} />
+            {landing?.expect_exit_ip && <KeyValue k="预期出口" v={landing.expect_exit_ip} />}
+          </div>
+        </section>
+
+        <section>
+          <div className="group-label">槽内环境</div>
+          <div className="list-card">
+            <KeyValue k="用户" v={`${s.user}@${s.hostname}`} />
+            <KeyValue k="HOME" v={s.home} />
+            <KeyValue k="时区" plain>
+              <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-fg-2">
+                <span className="selectable font-mono text-[11.5px]">{s.tz || "UTC（没有设置）"}</span>
+                {inheritsTZ && landing?.tz_fallback && <Tag tone="warn" title="带时区的探测地址都没有应答，暂用兜底值；下次启动会再探测，也可以给落地指定时区">兜底值</Tag>}
+                {inheritsTZ && landing?.tz_auto && !landing.tz_fallback && <Tag title="按出口探测到的所在地自动设置，记在落地上">随出口</Tag>}
+              </span>
+            </KeyValue>
+            <KeyValue k="资源上限" v={limits || "不限制"} plain />
+            <KeyValue k="硬件信息" v={fakes ? `按该槽的设置显示：${fakes}` : "机型信息被遮蔽，CPU 与内存是宿主的"} plain />
+            {s.tmux_bridge && (
+              <KeyValue k="宿主桥接" plain>
+                <span className="min-w-0 leading-[18px] text-warn">
+                  已开启，宿主 tmux {s.tmux_alive ? "正在运行" : "没有在运行"}。经它执行的命令在宿主上运行，不走这个出口。
+                </span>
+              </KeyValue>
+            )}
+          </div>
+        </section>
+
+        <section>
+          <div className="group-label">挂载的目录</div>
+          <div className="list-card">
+            {s.mounts.length === 0 && <div className="px-4 py-3 text-[12.5px] text-muted">没有挂载项目目录；在项目目录里运行进入命令时会询问是否挂载。</div>}
+            {s.mounts.map((m) => (
+              <div key={m.target} className="selectable flex items-center gap-2 px-4 py-2.5 font-mono text-[11.5px] leading-[18px] text-fg-2">
+                <span className="min-w-0 break-all">{m.source === m.target ? m.source : `${m.source} → ${m.target}`}</span>
+                {m.read_only && <Tag>只读</Tag>}
+              </div>
+            ))}
+          </div>
+        </section>
+      </DetailGrid>
+    </>
   );
 }
 
