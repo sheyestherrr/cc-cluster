@@ -53,12 +53,19 @@ cc-cluster sub test air --landing home-a            # 接上落地测整条链�
 cc-cluster node add hk --role transit --sub air --landing home-a    # 在能接通落地的节点里用延迟最低的
 
 # 网关：不带 --transit 即不经中转，各槽位直连自己的落地
-cc-cluster gateway add main --transit hk
+cc-cluster gateway add main --transit hk --backup sg      # --backup 是候选中转：主用的不通时自动改用，出口不变
+cc-cluster gateway set-transit main sg hk                 # 在线更换：第一个是主用的，其余是候选
 
 # 槽位
 cc-cluster slot add alice --gateway main --landing home-a --memory 8g --cpus 4
 cc-cluster slot up alice          # 对齐网关 → 分段检查链路 → 探测出口 → 启动无网的 worker → 接线 → 从 worker 位置复测出口
 cc-cluster status
+
+# 没有落地：直接用订阅里的一个节点当出口（直出）。节点被固定，不会自动更换
+cc-cluster slot add bob --direct "air:节点名" && cc-cluster slot up bob
+
+# 持续检测（网页开着时自动进行）：出口变了就给该槽断网并保持
+cc-cluster watch                  # --once 只测一遍并列出结果
 
 # 在项目目录里进入槽位：目录不在挂载范围内时询问并挂载，槽内路径与宿主相同
 cd /data/projects/foo && cc-cluster enter alice
@@ -70,6 +77,7 @@ cc-cluster slot release alice && cc-cluster slot up alice
 
 几点说明：
 
+- 出口有两种来源，规则不同。**用自己的落地**：流量只从落地出去，落地连不上就是没网，不会改从中转出去；中转只是第一跳，可以登记候选并自动切换。**直出**（订阅里的节点直接当出口）：出口是多人共用的地址，节点固定、不自动切换，不通就是没网，要换只能手动。两种情况下，持续检测发现出口地址变了都会给该槽断网并保持，等你 `slot release` 后重新 `slot up`。
 - 落地没有设置时区时，首次启动槽位会按探测到的出口所在地设置（依次问 `ipinfo.io`、`ipwho.is`、`ipapi.co`，Cloudflare 的 trace 保底），之后不再自动变动；都拿不到时区时暂用 `America/Los_Angeles` 并提醒，下次启动再探测。也可以用 `node add --tz` 或 `slot add --tz` 指定。
 - 启动槽位时会顺带经该槽的链路查一次第三方对出口 IP 的评估（机房 / 代理 / 滥用标记与评分），只用于展示，取不到不影响使用；`cc-cluster node report <落地>` 重新查询并多问一个汇总来源，网页的槽位与落地详情里显示同一份结果。各家的判断分开列出，它们不代表任何具体服务的结论。
 - 槽内解析域名得到的是 `100.64.0.0/10` 里的映射地址（fake-ip）：域名交给落地那一侧解析，外部看到的解析器在落地所在地。
