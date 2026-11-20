@@ -70,9 +70,11 @@ cc-cluster slot release alice && cc-cluster slot up alice
 
 几点说明：
 
-- 落地没有设置时区时，首次启动槽位会按探测到的出口所在地设置（探测地址默认是 `ipinfo.io`），之后不再自动变动；也可以用 `node add --tz` 或 `slot add --tz` 指定。
+- 落地没有设置时区时，首次启动槽位会按探测到的出口所在地设置（依次问 `ipinfo.io`、`ipwho.is`、`ipapi.co`，Cloudflare 的 trace 保底），之后不再自动变动；都拿不到时区时暂用 `America/Los_Angeles` 并提醒，下次启动再探测。也可以用 `node add --tz` 或 `slot add --tz` 指定。
+- 启动槽位时会顺带经该槽的链路查一次第三方对出口 IP 的评估（机房 / 代理 / 滥用标记与评分），只用于展示，取不到不影响使用；`cc-cluster node report <落地>` 重新查询并多问一个汇总来源，网页的槽位与落地详情里显示同一份结果。各家的判断分开列出，它们不代表任何具体服务的结论。
+- 槽内解析域名得到的是 `100.64.0.0/10` 里的映射地址（fake-ip）：域名交给落地那一侧解析，外部看到的解析器在落地所在地。
 - 同一个落地最多同时给 5 个槽位接线。哪个槽位用哪个落地由你配置。
-- 每个槽位有自己的用户名、HOME、hostname 和 machine-id，槽内没有 `/.dockerenv`。`slot add --fake-dmi` 与 `--fake-proc` 可以另外覆盖机型信息和 `/proc` 里的 CPU、内存显示，默认关闭。
+- 每个槽位有自己的用户名、HOME、hostname 和 machine-id，槽内没有 `/.dockerenv`。`slot add --fake-dmi` 与 `--fake-proc` 可以另外覆盖机型信息和 `/proc` 里的 CPU、内存显示，默认关闭；`--fake-proc` 设了 CPU 限额时还会把槽位绑到相应数量的核上，让 `nproc` 一类的结果与之一致（`/proc/stat` 仍是宿主的核数）。
 - 默认的 worker 镜像不预装 Claude CLI：首次用 `claude` 进入时会询问是否在槽内安装，它装进该槽的 HOME 并随 HOME 持久化，安装与更新产生的访问都从该槽的出口发出。
 - worker 或网关重启后，线不会自动接回：重新执行 `slot up`。在那之前该槽保持没网。
 
@@ -90,7 +92,7 @@ cc-cluster tmux alice --kill               # 结束它，连同其中的程序
 
 每个槽位在宿主上有一个专用的 tmux，槽内经 [tmux-mcp](https://github.com/bnomei/tmux-mcp) 操作它，默认不开放结束 session / window / pane 的工具（`--tools` 可改）。停止或删除槽位不会结束宿主的 tmux。
 
-**经桥接执行的命令是宿主上的命令：用的是你的权限和宿主网络，不走该槽的出口，手动断网也拦不住。** 只给需要它的槽位开启。宿主 pane 里是你自己的登录 shell，执行过的命令会进你的 shell 历史。
+**经桥接执行的命令是宿主上的命令：用的是你的权限和宿主网络，不走该槽的出口，手动断网也拦不住。** 只给需要它的槽位开启。宿主 pane 里是你自己的登录 shell，会读你的启动文件；历史单独记在该槽目录下的 `tmux-history`（靠 `HISTFILE` 环境变量，启动文件里自己重设了它或用 fish 时不生效）。
 
 tmux 的客户端和 server 要同一版本才连得上：`make image-worker` 按宿主 `tmux -V` 的版本在镜像里编译 tmux，所以镜像要在使用它的机器上构建，宿主升级 tmux 后重建镜像并 `slot up --recreate`。宿主需要 tmux 3.0 以上；macOS 上不可用。
 
