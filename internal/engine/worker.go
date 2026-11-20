@@ -37,6 +37,10 @@ type workerParams struct {
 	HomeDir string
 	// 下面三项是可选的硬件信息覆盖在宿主上的路径；为空表示不覆盖。
 	DMIDir, CPUInfo, MemInfo string
+	// CPUOnline 是写着在线核范围的文件在宿主上的路径，与 CPUInfo 同时给出；
+	// 给出时容器被绑到前 FakeCPUs 个核上，/sys 里的在线核范围用这个文件盖住。
+	CPUOnline string
+	FakeCPUs  int
 	// TmuxDir 是该槽的宿主 tmux socket 目录；为空表示没有开启桥接。
 	TmuxDir string
 	Labels  map[string]string
@@ -96,6 +100,16 @@ func workerSpec(p workerParams) dockerapi.ContainerSpec {
 	if p.MemInfo != "" {
 		binds = append(binds, p.MemInfo+":/proc/meminfo:ro")
 	}
+	cpuset := ""
+	if p.CPUOnline != "" && p.FakeCPUs > 0 {
+		// 只盖住 /proc/cpuinfo 的话，nproc、sysconf 和调度亲和性仍是宿主的核数。
+		// 绑核让亲和性变成 N 个，这三个文件让按 /sys 数核的程序也得到 N。
+		// /proc/stat 是动态的，不盖：换成静态文件的话 CPU 时间不再变化。
+		cpuset = cpuRange(p.FakeCPUs)
+		for _, f := range cpuRangeFiles {
+			binds = append(binds, p.CPUOnline+":"+f+":ro")
+		}
+	}
 	if p.TmuxDir != "" {
 		// 挂的是目录而不是 socket 文件：宿主的 tmux server 重建后，worker 里看到的仍是新的 socket。
 		// 槽内的路径与宿主相同，原因见 tmux.go 开头。
@@ -122,6 +136,7 @@ func workerSpec(p workerParams) dockerapi.ContainerSpec {
 		DNSSearch:   []string{"."},
 		Memory:      p.Slot.MemoryBytes,
 		NanoCPUs:    int64(p.Slot.CPUs * 1e9),
+		CpusetCpus:  cpuset,
 		PidsLimit:   p.Slot.PidsLimit,
 		Init:        dockerapi.Bool(true),
 		MaskedPaths: masked,
@@ -138,6 +153,21 @@ func workerSpec(p workerParams) dockerapi.ContainerSpec {
 		Labels:     p.Labels,
 		HostConfig: hc,
 	}
+}
+
+// /sys 里给出核范围的三个文件；glibc 的 sysconf、lscpu 等按它们数核。
+var cpuRangeFiles = []string{
+	"/sys/devices/system/cpu/online",
+	"/sys/devices/system/cpu/possible",
+	"/sys/devices/system/cpu/present",
+}
+
+// cpuRange 返回前 n 个核的范围写法："0" 或 "0-3"。
+func cpuRange(n int) string {
+	if n <= 1 {
+		return "0"
+	}
+	return "0-" + strconv.Itoa(n-1)
 }
 
 // 镜像里没有 passwd / group 时使用的最小内容。

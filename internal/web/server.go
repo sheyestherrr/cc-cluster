@@ -130,6 +130,7 @@ func (s *Server) Handler(port int) http.Handler {
 		ip, err := c.eng.ResolveNode(c.ctx, c.id)
 		return map[string]string{"connect_ipv4": ip}, err
 	})
+	api("POST /api/nodes/{id}/report", true, func(c *call) (any, error) { return c.eng.RefreshExitReport(c.ctx, c.id) })
 	api("DELETE /api/nodes/{id}", false, func(c *call) (any, error) { return nil, c.eng.RemoveNode(c.id) })
 
 	api("POST /api/gateways", false, s.gatewayAdd)
@@ -276,6 +277,8 @@ type nodeView struct {
 	ExpectExitIP string            `json:"expect_exit_ip,omitempty"`
 	TZ           string            `json:"tz,omitempty"`
 	TZAuto       bool              `json:"tz_auto,omitempty"`
+	TZFallback   bool              `json:"tz_fallback,omitempty"`
+	ExitReport   *model.ExitReport `json:"exit_report,omitempty"`
 	Source       *model.NodeSource `json:"source,omitempty"`
 	UsedBy       []string          `json:"used_by"`
 }
@@ -427,7 +430,8 @@ func (s *Server) state(c *call) (any, error) {
 		v := nodeView{
 			ID: n.ID, Role: n.Role, Type: typ, Server: n.Server(), Port: n.Port(),
 			ConnectIPv4: n.ConnectIPv4, ConnectAuto: n.ConnectAuto, FakeIP: engine.IsFakeIP(n.ConnectIPv4),
-			ExpectExitIP: n.ExpectExitIP, TZ: n.TZ, TZAuto: n.TZAuto, Source: n.Source, UsedBy: []string{},
+			ExpectExitIP: n.ExpectExitIP, TZ: n.TZ, TZAuto: n.TZAuto, TZFallback: n.TZFallback, ExitReport: n.ExitReport,
+			Source: n.Source, UsedBy: []string{},
 		}
 		for _, g := range gateways {
 			if g.Transit == n.ID {

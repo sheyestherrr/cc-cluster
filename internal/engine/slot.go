@@ -315,7 +315,11 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 	if err := e.checkChain(ctx, rt, p, landing); err != nil {
 		return res, fmt.Errorf("槽位 %s 的链路不通，未接线：%w", id, err)
 	}
-	exit, err := e.probeChain(ctx, rt, link, p.gw.EchoURLs)
+	// 落地还没有真实的时区（没设过，或者只有兜底值）时，按探测到的出口所在时区设置并记下，
+	// 之后不再随探测结果变动：worker 的时区是容器规格的一部分，变了就要重建。
+	wantTZ := landing.TZ == "" || landing.TZFallback
+	needTZ := wantTZ && slot.TZ == ""
+	exit, err := e.probeChain(ctx, rt, link, p.gw.EchoURLs, needTZ)
 	if err != nil {
 		return res, fmt.Errorf("槽位 %s 的链路能连通，但出口探测没有成功，未接线：%w", id, err)
 	}
@@ -323,16 +327,27 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 	if landing.ExpectExitIP != "" && chainIP != landing.ExpectExitIP {
 		return res, fmt.Errorf("槽位 %s 的链路出口是 %s，与落地 %s 绑定的 %s 不符，未接线", id, chainIP, landing.ID, landing.ExpectExitIP)
 	}
-	// 落地没有设置时区时，按探测到的出口所在时区设置一次并记下，之后不再随探测结果变动：
-	// worker 的时区是容器规格的一部分，变了就要重建。
-	if landing.TZ == "" && exit.TZ != "" {
-		landing.TZ, landing.TZAuto = exit.TZ, true
+	switch {
+	case wantTZ && exit.TZ != "":
+		landing.TZ, landing.TZAuto, landing.TZFallback = exit.TZ, true, false
 		if err := e.st.SaveNode(landing, false); err != nil {
 			return res, err
 		}
 		p.landings[id] = landing
 		e.logf("落地 %s 的时区按出口探测结果设为 %s", landing.ID, exit.TZ)
+	case needTZ && landing.TZ == "":
+		// 带时区的探测地址都没有应答（多半是被限流）。用兜底值，并标出来，下次再探测。
+		landing.TZ, landing.TZAuto, landing.TZFallback = model.FallbackTZ, true, true
+		if err := e.st.SaveNode(landing, false); err != nil {
+			return res, err
+		}
+		p.landings[id] = landing
+		e.logf("提醒：没有探测到出口所在的时区，落地 %s 暂用兜底值 %s；下次启动会再探测，也可以用 --tz 给落地指定", landing.ID, model.FallbackTZ)
+	case needTZ:
+		e.logf("提醒：仍然没有探测到出口所在的时区，落地 %s 继续用兜底值 %s", landing.ID, landing.TZ)
 	}
+	e.refreshExitReport(ctx, rt, link, &landing, chainIP, false)
+	p.landings[id] = landing
 
 	wc, err := e.ensureWorker(ctx, slot, ident, landing, opt.Recreate)
 	if err != nil {
@@ -453,6 +468,7 @@ func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.
 	}
 	if slot.FakeProc && slot.CPUs > 0 {
 		p.CPUInfo = filepath.Join(etc, "cpuinfo")
+		p.CPUOnline, p.FakeCPUs = filepath.Join(etc, "cpu-online"), int(math.Ceil(slot.CPUs))
 	}
 	if slot.FakeProc && slot.MemoryBytes > 0 {
 		p.MemInfo = filepath.Join(etc, "meminfo")
@@ -589,7 +605,10 @@ func (e *Engine) writeHardwareFiles(ctx context.Context, image string, slot mode
 		return fmt.Errorf("读取 /proc/cpuinfo 与 /proc/meminfo 失败（退出码 %d）", res.ExitCode)
 	}
 	if p.CPUInfo != "" {
-		if _, err := e.st.WriteSlotFile(slot.ID, filepath.Base(p.CPUInfo), limitCPUInfo([]byte(res.Stdout[:i]), int(math.Ceil(slot.CPUs)))); err != nil {
+		if _, err := e.st.WriteSlotFile(slot.ID, filepath.Base(p.CPUInfo), limitCPUInfo([]byte(res.Stdout[:i]), p.FakeCPUs)); err != nil {
+			return err
+		}
+		if _, err := e.st.WriteSlotFile(slot.ID, filepath.Base(p.CPUOnline), []byte(cpuRange(p.FakeCPUs)+"\n")); err != nil {
 			return err
 		}
 	}
@@ -677,17 +696,26 @@ type exitInfo struct {
 	Country string
 	Org     string
 	URL     string // 给出这个结果的探测地址
+	plain   bool   // 应答是纯文本，只有 IP
 }
 
-// parseExit 解析探测地址的应答：JSON（带 ip 字段，可带 timezone 等）或者含有 IPv4 地址的纯文本。
+// parseExit 解析探测地址的应答：JSON（带 ip 字段，可带时区等）或者含有 IPv4 地址的纯文本。
+// JSON 的字段名按几家常见的写法都认：时区可以是字符串，也可以是带 id 的对象；
+// 国家优先取两个字母的代码；运营商可以在 org、organization 或 connection 里。
 func parseExit(body string) (exitInfo, bool) {
 	var info exitInfo
 	if trimmed := strings.TrimSpace(body); strings.HasPrefix(trimmed, "{") {
 		var j struct {
-			IP       string `json:"ip"`
-			Timezone string `json:"timezone"`
-			Country  string `json:"country"`
-			Org      string `json:"org"`
+			IP           string          `json:"ip"`
+			Timezone     json.RawMessage `json:"timezone"`
+			Country      string          `json:"country"`
+			CountryCode  string          `json:"country_code"`
+			Org          string          `json:"org"`
+			Organization string          `json:"organization"`
+			Connection   struct {
+				Org string `json:"org"`
+				ISP string `json:"isp"`
+			} `json:"connection"`
 		}
 		if json.Unmarshal([]byte(trimmed), &j) != nil {
 			return info, false
@@ -696,16 +724,61 @@ func parseExit(body string) (exitInfo, bool) {
 		if !ok {
 			return info, false
 		}
-		info.IP, info.Country, info.Org = ip, truncate(j.Country, 16), truncate(j.Org, 80)
+		info.IP = ip
+		info.Country = truncate(firstNonEmpty(j.CountryCode, j.Country), 16)
+		info.Org = truncate(firstNonEmpty(j.Org, j.Organization, j.Connection.Org, j.Connection.ISP), 80)
+		var tz string
+		if json.Unmarshal(j.Timezone, &tz) != nil {
+			var obj struct {
+				ID string `json:"id"`
+			}
+			if json.Unmarshal(j.Timezone, &obj) == nil {
+				tz = obj.ID
+			}
+		}
 		// 时区会进入容器的环境变量和启动脚本，写法不对的一律不用。
-		if model.CheckTZ(j.Timezone) == nil {
-			info.TZ = j.Timezone
+		if model.CheckTZ(tz) == nil {
+			info.TZ = tz
 		}
 		return info, true
 	}
+	// Cloudflare 的 trace：每行一个 名=值，其中 ip 是出口，loc 是两个字母的国家代码。
+	if kv := traceFields(body); kv["ip"] != "" {
+		if ip, ok := parseExitIP(kv["ip"]); ok {
+			info.IP, info.plain = ip, true
+			if countryCodeRe.MatchString(kv["loc"]) {
+				info.Country = kv["loc"]
+			}
+			return info, true
+		}
+	}
 	ip, ok := parseExitIP(body)
-	info.IP = ip
+	info.IP, info.plain = ip, true
 	return info, ok
+}
+
+var countryCodeRe = regexp.MustCompile(`^[A-Z]{2}$`)
+
+// traceFields 把 名=值 逐行排列的应答拆成映射；不是这种格式时返回空映射。
+func traceFields(body string) map[string]string {
+	kv := map[string]string{}
+	for _, line := range strings.Split(body, "\n") {
+		k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok || k == "" || strings.ContainsAny(k, " \t{") {
+			continue
+		}
+		kv[k] = v
+	}
+	return kv
+}
+
+func firstNonEmpty(vs ...string) string {
+	for _, v := range vs {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // checkLandingLoad 限制同一个落地同时接线的槽位数。哪个槽位用哪个落地由用户配置，
@@ -789,20 +862,38 @@ func (e *Engine) checkChain(ctx context.Context, rt *gatewayRuntime, p *gatewayP
 }
 
 // probeChain 经该槽所用链路在网关回环上的入口访问探测地址，返回出口信息。
-func (e *Engine) probeChain(ctx context.Context, rt *gatewayRuntime, link netplan.Link, urls []string) (exitInfo, error) {
+//
+// needTZ 为 false 时取第一个给出 IPv4 的结果。为 true 时（槽位和落地都还没有时区）
+// 继续往后找一个带时区的；找不到就用第一个结果，那时只有 IP。纯文本的后备地址排在最后，
+// 轮到它们就不再往下试：它们都不带时区。
+func (e *Engine) probeChain(ctx context.Context, rt *gatewayRuntime, link netplan.Link, urls []string, needTZ bool) (exitInfo, error) {
 	var last error
 	for attempt := 0; attempt < 3; attempt++ {
+		var first exitInfo
 		for _, u := range urls {
 			out, err := e.sh(ctx, rt.name, fmt.Sprintf("curl -sS -m 10 -x socks5h://127.0.0.1:%d '%s'", link.ProbePort(), u))
 			if err != nil {
 				last = err
 				continue
 			}
-			if info, ok := parseExit(out); ok {
-				info.URL = u
+			info, ok := parseExit(out)
+			if !ok {
+				last = fmt.Errorf("%s 的应答里没有 IPv4 地址", u)
+				continue
+			}
+			info.URL = u
+			if info.TZ != "" || !needTZ {
 				return info, nil
 			}
-			last = fmt.Errorf("%s 的应答里没有 IPv4 地址", u)
+			if first.IP == "" {
+				first = info
+			}
+			if info.plain {
+				break
+			}
+		}
+		if first.IP != "" {
+			return first, nil
 		}
 		select {
 		case <-ctx.Done():

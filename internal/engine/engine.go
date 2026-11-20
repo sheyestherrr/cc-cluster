@@ -39,6 +39,8 @@ type Engine struct {
 	LandingLimit int
 	// Tmux 描述怎样在宿主上运行 tmux（桥接用）；零值即可。
 	Tmux TmuxHost
+	// NoExitReport 关掉启动槽位时对出口 IP 评估的查询（它会访问两个外部接口）。
+	NoExitReport bool
 }
 
 func (e *Engine) landingLimit() int {

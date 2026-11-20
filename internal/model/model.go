@@ -32,15 +32,21 @@ const (
 	LegacyUser = "dev"
 )
 
-// DefaultEchoURLs 是出口探测地址，逐个尝试，取第一个给出 IPv4 的结果。
-// 排在最前的 ipinfo.io 返回 JSON，除出口 IP 外还带所在时区、国家和运营商；
-// 落地没有设置时区时就用它给出的时区。其余几个只返回 IP，作为后备。
+// DefaultEchoURLs 是出口探测地址，逐个尝试。
+// 前三个返回 JSON，除出口 IP 外还带所在时区、国家和运营商；落地没有设置时区时就用它们
+// 给出的时区。多人共用的出口上 ipinfo.io 常被限流，所以后面还有两个同类的来源。
+// 最后一个是 Cloudflare 的 trace：基本不限流，给出 IP 和国家代码但没有时区，
+// 前三个都失败时靠它让槽位仍能启动，时区用 FallbackTZ。
 var DefaultEchoURLs = []string{
 	"https://ipinfo.io/json",
-	"https://api.ipify.org",
-	"https://ifconfig.me/ip",
-	"https://icanhazip.com",
+	"https://ipwho.is/",
+	"https://ipapi.co/json/",
+	"https://www.cloudflare.com/cdn-cgi/trace",
 }
+
+// FallbackTZ 是所有探测地址都给不出时区、槽位和落地也都没有指定时用的时区。
+// 它只是兜底：记在落地上时带 TZFallback 标记，之后探测到真实时区就换掉。
+const FallbackTZ = "America/Los_Angeles"
 
 // DefaultConnectURLs 是检查链路连通性时访问的地址：应答只有一个状态码，各地都能访问。
 // 出口探测之前先用它们分段检查，链路不通时可以指出是中转还是落地这一段的问题。
@@ -78,6 +84,60 @@ type Node struct {
 	Lang string `json:"lang,omitempty"`
 	// TZAuto 表示 TZ 是首次启动槽位时按出口探测结果自动设置的。
 	TZAuto bool `json:"tz_auto,omitempty"`
+	// TZFallback 表示 TZ 是探测不到时区时填的兜底值（FallbackTZ），之后探测到真实时区就换掉。
+	TZFallback bool `json:"tz_fallback,omitempty"`
+	// ExitReport 是第三方对这个落地出口 IP 的评估，只用于展示，不参与任何判断。
+	ExitReport *ExitReport `json:"exit_report,omitempty"`
+}
+
+// ExitReport 是第三方对一个出口 IP 的评估：所在地、所属网络，以及各家数据是否把它
+// 标成机房、代理、滥用来源等。内容来自外部接口（见 Sources），只用于展示。
+type ExitReport struct {
+	IP        string    `json:"ip"`
+	CheckedAt time.Time `json:"checked_at"`
+	// Sources 是这次取到了应答的接口。
+	Sources []string `json:"sources"`
+
+	Country     string `json:"country,omitempty"`
+	CountryCode string `json:"country_code,omitempty"`
+	Region      string `json:"region,omitempty"`
+	City        string `json:"city,omitempty"`
+	Timezone    string `json:"timezone,omitempty"`
+
+	ASN         int    `json:"asn,omitempty"`
+	ASOrg       string `json:"as_org,omitempty"`
+	ASNKind     string `json:"asn_kind,omitempty"`
+	Company     string `json:"company,omitempty"`
+	CompanyType string `json:"company_type,omitempty"`
+	// UsageType 是 IP2Location 的用途类型代码（DCH 机房、ISP 宽带、MOB 移动网络等）。
+	UsageType string `json:"usage_type,omitempty"`
+	// UserType 与 ConnectionType 是 MaxMind 的用户类型（residential、business、hosting 等）和接入方式。
+	UserType       string `json:"user_type,omitempty"`
+	ConnectionType string `json:"connection_type,omitempty"`
+
+	Residential bool `json:"residential"`
+	Mobile      bool `json:"mobile"`
+
+	// AbuserScore 是接口给出的原文，例如 "0.0002 (Very Low)"。
+	AbuserScore string `json:"abuser_score,omitempty"`
+	// TrustScore 是 ip.net.coffee 的信任分（0 到 100，越高越好）；FraudScore 是 IP2Location 的
+	// 欺诈分（0 到 100，越低越好）；StaticIPScore 与 UserCount 是 MaxMind 对这个地址有多固定、
+	// 背后大约有多少用户的估计。接口没有给出的为 nil。
+	TrustScore    *int     `json:"trust_score,omitempty"`
+	FraudScore    *int     `json:"fraud_score,omitempty"`
+	StaticIPScore *float64 `json:"static_ip_score,omitempty"`
+	UserCount     *int     `json:"user_count,omitempty"`
+
+	// Flags 是至少有一家数据命中的不利标记。
+	Flags []ExitFlag `json:"flags"`
+}
+
+// ExitFlag 是一项不利标记：哪几家数据命中了它，以及一共有几家对这一项给出了判断。
+// 各家的判断经常不一致，所以不合并成一个"是"或"否"。
+type ExitFlag struct {
+	Name string   `json:"name"`
+	By   []string `json:"by"`
+	Of   int      `json:"of"`
 }
 
 // NodeSource 指向订阅里的一个节点。
@@ -170,6 +230,7 @@ type Slot struct {
 	FakeDMI bool `json:"fake_dmi,omitempty"`
 	// FakeProc 让 /proc/cpuinfo 与 /proc/meminfo 按该槽的 CPU / 内存限额显示；默认关闭。
 	// 覆盖后的内容是创建容器时生成的静态文件，不随实际用量变化。
+	// 设了 CPU 限额时，容器还会被绑到前 N 个核上，/sys 里在线核的范围也按 N 显示。
 	FakeProc bool `json:"fake_proc,omitempty"`
 	// TmuxBridge 开启宿主 tmux 桥接：把该槽专用的 tmux socket 目录挂进 worker，
 	// 槽内的 tmux-mcp 经它操作宿主上的 tmux。默认关闭。

@@ -54,7 +54,7 @@ func main() {
 	case "resolve":
 		resolve(arg(0))
 	case "dnsq":
-		dnsq(arg(0), arg(1))
+		dnsq(arg(0), arg(1), arg(2))
 	case "udp":
 		udp(arg(0), arg(1))
 	case "stream":
@@ -282,14 +282,18 @@ func resolve(name string) {
 	fmt.Println("OK", addrs[0])
 }
 
-// dnsq 直接向指定服务器发一个 UDP 的 A 记录查询，绕过系统解析器。
-func dnsq(server, name string) {
+// dnsq 直接向指定服务器发一个 UDP 查询，绕过系统解析器。qtype 是记录类型的编号，不给时是 A（1）。
+func dnsq(server, name, qtype string) {
+	qt := 1
+	if n, err := strconv.Atoi(qtype); err == nil && n > 0 && n < 256 {
+		qt = n
+	}
 	q := []byte{0x12, 0x34, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0}
 	for _, lab := range strings.Split(name, ".") {
 		q = append(q, byte(len(lab)))
 		q = append(q, lab...)
 	}
-	q = append(q, 0, 0, 1, 0, 1)
+	q = append(q, 0, 0, byte(qt), 0, 1)
 	c, err := net.DialTimeout("udp4", net.JoinHostPort(server, "53"), 4*time.Second)
 	if err != nil {
 		fmt.Println("ERR", errName(err))

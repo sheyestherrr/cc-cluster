@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"fmt"
 	"net/netip"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -146,10 +148,20 @@ func TestParseExit(t *testing.T) {
 	if !ok || info.IP != "203.0.113.77" || info.TZ != "" {
 		t.Errorf("不合法的时区应被丢弃: %+v %v", info, ok)
 	}
-	if info, ok = parseExit("198.51.100.3\n"); !ok || info.IP != "198.51.100.3" || info.TZ != "" {
+	if info, ok = parseExit("198.51.100.3\n"); !ok || info.IP != "198.51.100.3" || info.TZ != "" || !info.plain {
 		t.Errorf("纯文本应答只有 IP: %+v %v", info, ok)
 	}
-	for _, body := range []string{`{"error": "rate limited"}`, `{"ip": "not-an-ip"}`, `{broken`, ""} {
+	// ipwho.is 的写法：时区是带 id 的对象，国家给全名和代码，运营商在 connection 里。
+	info, ok = parseExit(`{"ip":"203.0.113.77","success":true,"country":"United Kingdom","country_code":"GB","connection":{"asn":64500,"org":"Example Ltd","isp":"Example ISP"},"timezone":{"id":"Europe/London","utc":"+00:00"}}`)
+	if !ok || info.TZ != "Europe/London" || info.Country != "GB" || info.Org != "Example Ltd" || info.plain {
+		t.Errorf("ipwho.is 写法的应答没有解析对: %+v %v", info, ok)
+	}
+	// Cloudflare 的 trace：有 IP 和国家代码，没有时区；ts 那一行不能被当成地址。
+	info, ok = parseExit("fl=123f45\nh=www.cloudflare.com\nip=203.0.113.77\nts=1763632812.345\nuag=curl/8.5.0\ncolo=LHR\nloc=GB\ntls=TLSv1.3\n")
+	if !ok || info.IP != "203.0.113.77" || info.Country != "GB" || info.TZ != "" || !info.plain {
+		t.Errorf("trace 应答没有解析对: %+v %v", info, ok)
+	}
+	for _, body := range []string{`{"error": "rate limited"}`, `{"ip": "not-an-ip"}`, `{broken`, "", `{"success":false,"message":"limit"}`} {
 		if info, ok = parseExit(body); ok {
 			t.Errorf("parseExit(%q) 不应成功: %+v", body, info)
 		}
@@ -261,6 +273,101 @@ func TestWorkerSpecHardwareOverrides(t *testing.T) {
 	// 遮蔽在挂载之后生效，留在列表里会把覆盖的内容再遮掉。
 	if strings.Contains(strings.Join(hc.MaskedPaths, "\n"), dmiPath) {
 		t.Fatal("覆盖 DMI 时不能同时遮蔽它")
+	}
+	if hc.CpusetCpus != "" || strings.Contains(binds, "/sys/devices/system/cpu/") {
+		t.Fatal("没有给出核数时不应绑核，也不应覆盖 /sys 里的核范围")
+	}
+
+	// 只盖 /proc/cpuinfo 时，nproc 和 /sys 里仍是宿主的核数：还要绑核并盖住核范围。
+	p.CPUOnline, p.FakeCPUs = "/d/slots/a/etc/cpu-online", 4
+	hc = workerSpec(p).HostConfig
+	binds = strings.Join(hc.Binds, "\n")
+	if hc.CpusetCpus != "0-3" {
+		t.Fatalf("应绑到前 4 个核: %q", hc.CpusetCpus)
+	}
+	for _, f := range []string{"online", "possible", "present"} {
+		if want := "/d/slots/a/etc/cpu-online:/sys/devices/system/cpu/" + f + ":ro"; !strings.Contains(binds, want) {
+			t.Errorf("挂载缺少 %s", want)
+		}
+	}
+	if strings.Contains(binds, "/proc/stat") {
+		t.Error("/proc/stat 是动态的，不应被静态文件盖住")
+	}
+	if cpuRange(1) != "0" || cpuRange(2) != "0-1" {
+		t.Errorf("核范围的写法不对: %q %q", cpuRange(1), cpuRange(2))
+	}
+}
+
+func TestBuildExitReport(t *testing.T) {
+	const ip = "203.0.113.77"
+	coffee := `{"ip": "203.0.113.77", "cidr": "203.0.113.0/24", "is_datacenter": true, "isResidential": false, "isBroadcast": null,
+		"is_vpn": false, "is_proxy": true, "is_tor": false, "is_crawler": false, "is_abuser": true, "is_mobile": false,
+		"company_type": "hosting", "company_name": "Example\u001b[31m Hosting", "abuser_score": "0.02 (Elevated)", "asn": 64500,
+		"asOrganization": "EXAMPLE LTD", "country": "United Kingdom", "countryCode": "gb", "region": "England", "city": "London",
+		"timezone": "Europe/London", "asn_kind": "hosting", "trust_score": 47}`
+	meow := `{"ip": "203.0.113.77", "success": true,
+		"api4": {"ip2location": {"usage_type": "DCH", "fraud_score": 12, "proxy": {"is_data_center": true, "is_vpn": false, "is_tor": false,
+			"is_public_proxy": false, "is_web_proxy": false, "is_residential_proxy": false, "is_spammer": false, "is_botnet": false, "is_scanner": false}}},
+		"minfraud": {"anonymizer": {"is_anonymous": null, "is_anonymous_vpn": null, "is_hosting_provider": null, "is_public_proxy": null,
+			"is_residential_proxy": null, "is_tor_exit_node": null},
+			"location": {"time_zone": "Europe/London"},
+			"traits": {"user_type": "hosting", "connection_type": "Corporate", "static_ip_score": 8.1, "user_count": 179}},
+		"risk_assessment": {"ipapi": {"hosting": true, "mobile": false, "proxy": false}, "scamalytics": {"error": "login_required", "restricted": true}},
+		"core_data": {"asn": "AS64500", "as_name": "Example", "country": "United Kingdom", "country_code": "GB"}}`
+	r, err := buildExitReport(ip, coffee, meow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(r.Sources, " ") != "ip.net.coffee meowvps.com" {
+		t.Errorf("来源: %v", r.Sources)
+	}
+	if r.CountryCode != "GB" || r.City != "London" || r.Timezone != "Europe/London" || r.ASN != 64500 || r.TrustScore == nil || *r.TrustScore != 47 {
+		t.Errorf("ip.net.coffee 的字段没有解析对: %+v", r)
+	}
+	if r.UsageType != "DCH" || r.UserType != "hosting" || r.FraudScore == nil || *r.FraudScore != 12 || r.UserCount == nil || *r.UserCount != 179 || r.StaticIPScore == nil {
+		t.Errorf("汇总接口的字段没有解析对: %+v", r)
+	}
+	// 文字会显示在终端和网页上，控制字符要去掉。
+	if strings.ContainsRune(r.Company, 0x1b) {
+		t.Errorf("公司名里的控制字符应被去掉: %q", r.Company)
+	}
+	// 各家的判断分开记：机房三家都命中；代理只有一家命中、三家给出了判断（MaxMind 是 null，不算）；
+	// 没有任何一家命中的不列出。
+	got := map[string]string{}
+	for _, f := range r.Flags {
+		got[f.Name] = fmt.Sprintf("%s %d", strings.Join(f.By, "+"), f.Of)
+	}
+	want := map[string]string{"机房": "ip.net.coffee+IP2Location+ip-api 3", "代理": "ip.net.coffee 3", "滥用": "ip.net.coffee 2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("标记: %v，期望 %v", got, want)
+	}
+	if s := ExitReportSummary(r); !strings.Contains(s, "信任分 47") || !strings.Contains(s, "欺诈分 12") || !strings.Contains(s, "机房 3/3") || !strings.Contains(s, "代理 1/3") {
+		t.Errorf("一行描述: %q", s)
+	}
+
+	// ip.net.coffee 按网段缓存：答回来的是同一个 /24 里的邻居时，网段包含所问的地址就算数；别的网段的不算。
+	neighbor := strings.Replace(coffee, `"ip": "203.0.113.77"`, `"ip": "203.0.113.233"`, 1)
+	if r, err := buildExitReport(ip, neighbor, ""); err != nil || len(r.Sources) != 1 || r.IP != ip {
+		t.Errorf("同网段邻居的应答应被接受: %+v %v", r, err)
+	}
+	if _, err := buildExitReport("198.51.100.9", neighbor, ""); err == nil {
+		t.Error("别的网段的应答不应被接受")
+	}
+
+	// 只有一个接口应答时也成立；针对别的地址的应答、不是 JSON 的应答不算数。
+	r, err = buildExitReport(ip, "<html>blocked</html>", meow)
+	if err != nil || len(r.Sources) != 1 || r.Country != "United Kingdom" || r.TrustScore != nil {
+		t.Errorf("只有汇总接口时: %+v %v", r, err)
+	}
+	if _, err := buildExitReport("198.51.100.78", coffee, meow); err == nil {
+		t.Error("针对别的地址的应答应被拒绝")
+	}
+	r, err = buildExitReport(ip, `{"ip":"203.0.113.77","timezone":"x; rm -rf /","is_datacenter":false}`, "")
+	if err != nil || r.Timezone != "" || r.TrustScore != nil || len(r.Flags) != 0 || r.Flags == nil {
+		t.Errorf("最小应答: %+v %v", r, err)
+	}
+	if s := ExitReportSummary(r); !strings.Contains(s, "没有不利标记") {
+		t.Errorf("没有标记时的描述: %q", s)
 	}
 }
 

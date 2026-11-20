@@ -120,6 +120,9 @@ func setup(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	e.eng, err = engine.New(e.st, dk, logWriter{t})
+	if e.eng != nil {
+		e.eng.NoExitReport = true // 出口评估要访问外部接口，端到端测试不连外部地址
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,6 +335,7 @@ func TestEndToEnd(t *testing.T) {
 		e.expect("槽 a 的 DMI 不含只有 root 可读的序列号", `^0$`, e.wsh("a", "ls /sys/class/dmi/id | grep -cE 'serial|uuid'"))
 		e.expect("槽 b 的 DMI 信息被遮蔽", `^0$`, e.wsh("b", "ls /sys/devices/virtual/dmi/id 2>/dev/null | wc -l"))
 		e.expect("槽 a 的 cpuinfo 与 meminfo 按限额显示", `^2 1048576$`, e.wsh("a", "echo $(grep -c ^processor /proc/cpuinfo) $(awk '/^MemTotal:/{print $2}' /proc/meminfo)"))
+		e.expect("槽 a 被绑到前 2 个核，/sys 里的核范围一致", `^0-1 0-1 0-1 0-1$`, e.wsh("a", "echo $(cat /sys/devices/system/cpu/online) $(cat /sys/devices/system/cpu/possible) $(cat /sys/devices/system/cpu/present) $(awk '/^Cpus_allowed_list:/{print $2}' /proc/self/status)"))
 		e.expect("worker 自己不能改路由", `not permitted`, e.wsh("a", "ip route add 192.0.2.0/24 dev eth0 2>&1"))
 	})
 
@@ -340,9 +344,17 @@ func TestEndToEnd(t *testing.T) {
 		e.expect("A 出口为落地 A", seenA, e.w("a", "get", ipTarget, "80", "sniff-a.example"))
 		e.expect("B 出口为落地 B", seenB, e.w("b", "get", ipTarget, "80", "sniff-b.example"))
 		e.expect("A 非嗅探端口 8080", seenA, e.w("a", "get", ipTarget, "8080"))
-		e.expect("A 系统解析（经 TUN 接管）", `^OK 198\.51\.100\.5$`, e.w("a", "resolve", "bar.example"))
-		e.expect("A 直接问 8.8.8.8 也被接管", `^OK 198\.51\.100\.5$`, e.w("a", "dnsq", "8.8.8.8", "qux.example"))
-		e.expect("核心的解析经中转到达 DNS", `DNSQ from 198\.51\.100\.2 `, e.logs("target"))
+		// 槽内的 A 查询由核心答一个映射地址（100.64.0.0/10），不向外解析；连接时域名交给落地。
+		const mapped = `^OK 100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.`
+		e.expect("A 系统解析得到映射地址（经 TUN 接管）", mapped, e.w("a", "resolve", "bar.example"))
+		e.expect("A 直接问 8.8.8.8 也被接管", mapped, e.w("a", "dnsq", "8.8.8.8", "qux.example"))
+		e.expect("A 按域名访问：出口为落地 A", seenA, e.w("a", "get", "byname.example", "80"))
+		e.expect("按域名访问时域名交给落地解析", `REQ domain byname\.example:80`, e.logs("land-a"))
+		if regexp.MustCompile(`DNSQ from \S+ qtype 1\b`).MatchString(e.logs("target")) {
+			t.Errorf("槽内的 A 查询不应到达外部的 DNS 服务器：\n%s", e.logs("target"))
+		}
+		e.w("a", "dnsq", "8.8.8.8", "txt.example", "16")
+		e.expect("映射答不了的查询（TXT）经中转到达 DNS", `DNSQ from 198\.51\.100\.2 qtype 16`, e.logs("target"))
 		e.expect("嗅探到的域名交给落地", `REQ domain sniff-a\.example:80`, e.logs("land-a"))
 		e.expect("A 业务 UDP 被拒", `^ERR`, e.w("a", "udp", ipTarget, "9999"))
 		e.expect("A→B 跨槽不可达", `^ERR`, e.w("a", "get", "10.213.250.6", "80"))

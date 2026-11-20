@@ -46,8 +46,10 @@ type HostConfig struct {
 	DNSSearch  []string `json:"DnsSearch,omitempty"`
 	Memory     int64    `json:"Memory,omitempty"`
 	NanoCPUs   int64    `json:"NanoCpus,omitempty"`
-	PidsLimit  int64    `json:"PidsLimit,omitempty"`
-	Init       *bool    `json:"Init,omitempty"`
+	// CpusetCpus 把容器绑到指定的核上，例如 "0-3"。
+	CpusetCpus string `json:"CpusetCpus,omitempty"`
+	PidsLimit  int64  `json:"PidsLimit,omitempty"`
+	Init       *bool  `json:"Init,omitempty"`
 	// MaskedPaths 为 nil 时使用 Docker 的默认列表；给出时整体替换默认值。
 	MaskedPaths []string   `json:"MaskedPaths,omitempty"`
 	LogConfig   *LogConfig `json:"LogConfig,omitempty"`

@@ -30,7 +30,7 @@ func (a *app) subcommand(group, list string, args []string) (string, []string, e
 // ---- node ----
 
 func (a *app) cmdNode(args []string) error {
-	sub, rest, err := a.subcommand("node", "add|list|resolve|rm", args)
+	sub, rest, err := a.subcommand("node", "add|list|report|resolve|rm", args)
 	if err != nil {
 		return err
 	}
@@ -64,6 +64,21 @@ func (a *app) cmdNode(args []string) error {
 			return err
 		}
 		fmt.Fprintf(a.out, "节点 %s 的首跳地址：%s；用到它的网关在下次 gateway up / slot up 时应用\n", id, ip)
+		return nil
+	case "report":
+		id, err := parseWithID(a.newFlags("node report", "node report <落地>    重新查询出口 IP 的评估（经链路查询，需要用到它的网关在运行）"), rest)
+		if err != nil {
+			return err
+		}
+		eng, _, err := a.open(context.Background(), true)
+		if err != nil {
+			return err
+		}
+		rep, err := eng.RefreshExitReport(context.Background(), id)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(a.out, "落地 %s 的出口 %s：%s\n", id, rep.IP, engine.ExitReportSummary(*rep))
 		return nil
 	}
 	fmt.Fprintf(a.errw, "未知的 node 子命令 %q\n", sub)
@@ -528,7 +543,7 @@ func (a *app) slotAdd(args []string) error {
 	fs.StringVar(&opt.Hostname, "hostname", "", "指定 hostname；不填则按“用户名-机型”生成并持久化")
 	fs.StringVar(&opt.User, "user", "", "指定 worker 内的用户名；不填则随机挑一个并持久化")
 	fs.BoolVar(&s.FakeDMI, "fake-dmi", false, "用该槽身份里的机型信息覆盖 DMI（默认是把 DMI 遮成空的）")
-	fs.BoolVar(&s.FakeProc, "fake-proc", false, "让 /proc/cpuinfo 与 /proc/meminfo 按 --cpus / --memory 的限额显示（静态内容，不随用量变化）")
+	fs.BoolVar(&s.FakeProc, "fake-proc", false, "让 /proc/cpuinfo 与 /proc/meminfo 按 --cpus / --memory 的限额显示（静态内容，不随用量变化）；设了 --cpus 时还把容器绑到前 N 个核上")
 	fs.BoolVar(&s.TmuxBridge, "tmux-bridge", false, "开启宿主 tmux 桥接：槽内的 Claude 可以经 tmux-mcp 操作宿主上该槽专用的 tmux（宿主命令不受该槽的网络约束）")
 	fs.StringVar(&s.TmuxTools, "tmux-tools", "", "桥接开放的工具范围，deny:项,项 或 allow:项,项；不填为 "+model.DefaultTmuxTools)
 	id, err := parseWithID(fs, args)
