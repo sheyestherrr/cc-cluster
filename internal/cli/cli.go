@@ -51,11 +51,12 @@ const usage = `cc-cluster：为 Claude Code 管理相互独立的工作槽位。
   sub add|list|nodes|test|refresh|rm
                             Clash 格式的订阅
   node add|list|resolve|rm  代理节点（中转 / 落地），可取自订阅
-  gateway add|list|up|down|rm
+  gateway add|list|set-transit|up|down|rm
                             网关容器
   slot add|list|up|stop|hold|release|rm|exec|enter|mounts|unmount
                             工作槽位
   render <网关>             预览网关的核心配置（默认隐藏凭据）
+  exit-report [on|off]      启动槽位时是否顺带查询第三方对出口 IP 的评估
   version                   显示版本
 
 每个命令和子命令都可以加 -h 查看参数，例如 cc-cluster slot add -h。
@@ -131,6 +132,8 @@ func (a *app) dispatch(ctx context.Context, cmd string, args []string) error {
 		return a.cmdWeb(ctx, args)
 	case "watch":
 		return a.cmdWatch(ctx, args)
+	case "exit-report":
+		return a.cmdExitReport(ctx, args)
 	}
 	ctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
@@ -248,6 +251,7 @@ func (a *app) cmdInit(args []string) error {
 	fs.StringVar(&c.Name, "name", model.DefaultClusterName, "容器名前缀，用来区分同一台机器上的多个数据目录")
 	fs.StringVar(&c.GatewayImage, "gateway-image", model.DefaultGatewayImage, "网关镜像")
 	fs.StringVar(&c.WorkerImage, "worker-image", model.DefaultWorkerImage, "默认的 worker 镜像")
+	fs.BoolVar(&c.NoExitReport, "no-exit-report", false, "启动槽位时不顺带查询第三方对出口 IP 的评估（之后可用 exit-report on|off 更改）")
 	if err := parse(fs, args); err != nil {
 		return err
 	}
@@ -263,6 +267,34 @@ func (a *app) cmdInit(args []string) error {
 		return err
 	}
 	fmt.Fprintf(a.out, "已初始化数据目录 %s（容器名前缀 %s）\n", st.Dir(), c.Name)
+	return nil
+}
+
+// cmdExitReport 查看或更改“启动槽位时顺带查询出口评估”这个设置。
+func (a *app) cmdExitReport(ctx context.Context, args []string) error {
+	fs := a.newFlags("exit-report", "exit-report [on|off]    启动槽位时是否顺带查询第三方对出口 IP 的评估；不带参数显示现状")
+	if err := parse(fs, args); err != nil {
+		return err
+	}
+	eng, _, err := a.open(ctx, false)
+	if err != nil {
+		return err
+	}
+	switch fs.Arg(0) {
+	case "":
+	case "on", "off":
+		if err := eng.SetExitReportAuto(fs.Arg(0) == "on"); err != nil {
+			return err
+		}
+	default:
+		fs.Usage()
+		return errUsage
+	}
+	if eng.ExitReportAuto() {
+		fmt.Fprintln(a.out, "出口评估：开。启动槽位时经该槽的链路查询一次，只用于展示，取不到不影响使用")
+	} else {
+		fmt.Fprintln(a.out, "出口评估：关。启动槽位时不查询；node report <落地> 和网页里的“重新查询”仍可手动查")
+	}
 	return nil
 }
 

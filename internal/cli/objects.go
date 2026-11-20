@@ -289,6 +289,8 @@ func (a *app) cmdGateway(ctx context.Context, args []string) error {
 		return a.gatewayAdd(rest)
 	case "set-transit":
 		fs := a.newFlags("gateway set-transit", "gateway set-transit <网关> <主用中转> [候选中转…]")
+		var topt engine.TransitOptions
+		fs.BoolVar(&topt.SkipChainCheck, "skip-check", false, "不验证这些中转能否接通网关上各槽位的落地（默认会验证，接不通就不更换）")
 		id, err := parseWithID(fs, rest)
 		if err != nil {
 			return err
@@ -301,7 +303,7 @@ func (a *app) cmdGateway(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		res, err := eng.SetGatewayTransits(ctx, id, fs.Args())
+		res, err := eng.SetGatewayTransits(ctx, id, fs.Args(), topt)
 		if err != nil {
 			return err
 		}

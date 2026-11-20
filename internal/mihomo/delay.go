@@ -21,6 +21,12 @@ const DelayConfigPath = HomeDir + "/delay.yaml"
 // 这样能发现"节点自己能用，但连不上落地"的情况。
 // 返回的 names 是要测的代理名，与入参一一对应。
 func RenderDelayProbe(proxies []map[string]any, via map[string]any) (config []byte, names []string, err error) {
+	return RenderDelayProbeHosts(proxies, via, nil)
+}
+
+// RenderDelayProbeHosts 同 RenderDelayProbe，另外把 hosts 里的域名固定到给出的地址：
+// 已登记的节点记有首跳地址，测的时候应当与网关连的是同一个地址。
+func RenderDelayProbeHosts(proxies []map[string]any, via map[string]any, hosts map[string]string) (config []byte, names []string, err error) {
 	names = make([]string, len(proxies))
 	list := make([]map[string]any, 0, 2*len(proxies))
 	entry := func(src map[string]any, name, dialer string) map[string]any {
@@ -56,6 +62,9 @@ func RenderDelayProbe(proxies []map[string]any, via map[string]any) (config []by
 		"proxies":                  list,
 		"proxy-groups":             []map[string]any{{"name": DelayGroup, "type": "select", "proxies": names}},
 		"rules":                    []string{"MATCH,REJECT"},
+	}
+	if len(hosts) > 0 {
+		cfg["hosts"] = hosts
 	}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)

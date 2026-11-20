@@ -43,7 +43,7 @@ export default function App() {
       status={state ? { ready, total: state.slots.length } : null}>
       {page === "slots" && <SlotsPage state={state} loadError={loadError} refresh={refresh} goNetwork={() => setPage("network")} />}
       {page === "network" && <NetworkPage state={state} loadError={loadError} refresh={refresh} />}
-      {page === "system" && <SystemPage state={state} theme={theme} onThemeChange={setTheme} />}
+      {page === "system" && <SystemPage state={state} refresh={refresh} theme={theme} onThemeChange={setTheme} />}
     </AppShell>
   );
 }

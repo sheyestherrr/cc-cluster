@@ -9,6 +9,7 @@ import { DetailEmpty, DetailGrid, DetailHeader, ErrorBox, KeyValue, Line, Page, 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { ApiError, api, errorText, type Delay, type Gateway, type NodeInfo, type NodeInput, type Role, type State, type Sub } from "@/lib/api";
 import { cn, relativeTime } from "@/lib/utils";
@@ -497,16 +498,18 @@ function TransitDialog({ open, g, state, onClose, onChanged }: { open: boolean; 
   const [picked, setPicked] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [skipCheck, setSkipCheck] = useState(false);
   useResetOnOpen(open, () => {
     setPicked([g.transit ?? "", ...(g.transit_backups ?? [])].filter(Boolean));
     setError("");
+    setSkipCheck(false);
   });
 
   const save = async () => {
     setSaving(true);
     setError("");
     try {
-      const r = (await api.setTransits(g.id, picked)).data;
+      const r = (await api.setTransits(g.id, picked, skipCheck)).data;
       const failed = Object.keys(r.failed ?? {});
       if (!r.reloaded) toast(`网关 ${g.id} 的中转已更换，下次启动时生效。`);
       else if (failed.length) toast(`中转已更换，但槽位 ${failed.join("、")} 换完后没有通过核对，排查后重新启动它们。`);
@@ -554,8 +557,12 @@ function TransitDialog({ open, g, state, onClose, onChanged }: { open: boolean; 
           })}
         </div>
         <p className="text-[11.5px] leading-[18px] text-muted">
-          这里只列已登记的中转节点。要从订阅里挑新的：在订阅的“选节点”里选一个落地测整条链路，只把能接通落地的登记为中转。核心只检查中转自己通不通，不检查它能不能接通落地，所以候选也要先这样测过。
+          这里只列已登记的中转节点。要从订阅里挑新的：在订阅的“选节点”里选一个落地测整条链路，把能接通落地的登记为中转。更换时会接上这个网关各槽位的落地逐个验证，有接不通的就不更换。
         </p>
+        <div className="flex items-center gap-2.5">
+          <Switch checked={skipCheck} onCheckedChange={setSkipCheck} label="不验证能否接通落地" />
+          <span className="text-[11.5px] text-muted">不验证能否接通落地（落地只是暂时连不上时用）</span>
+        </div>
         {error && <ErrorBox text={error} />}
       </div>
     </Dialog>

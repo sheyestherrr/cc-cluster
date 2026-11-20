@@ -462,9 +462,28 @@ func TestEndToEnd(t *testing.T) {
 			}
 			return ""
 		}
-		// 在线加上一个候选：已就绪的槽位重新核对后仍然就绪，出口不变。
-		res, err := e.eng.SetGatewayTransits(e.ctx, "main", []string{"transit", "transit2"})
+		// 候选接不通落地（这里是出口网段里一个没人应答的地址）：验证不过，不更换；明确跳过验证才换。
+		must(t, e.eng.AddNode(e.ctx, model.Node{ID: "tdead", Role: model.RoleTransit, Proxy: map[string]any{"type": "socks5", "server": "203.0.113.13", "port": 1080}}))
+		if _, err := e.eng.SetGatewayTransits(e.ctx, "main", []string{"transit", "tdead"}, engine.TransitOptions{}); err == nil || !strings.Contains(err.Error(), "tdead 接不通落地") {
+			t.Fatalf("接不通落地的候选应被拒绝并指名: %v", err)
+		}
+		if g, err := e.st.Gateway("main"); err != nil || len(g.Backups) != 0 {
+			t.Fatalf("验证不过时网关不应改动: %+v %v", g, err)
+		}
+		if a := e.state("a"); a != engine.StateReady {
+			t.Fatalf("验证不过不应影响已就绪的槽位: %s", a)
+		}
+		res, err := e.eng.SetGatewayTransits(e.ctx, "main", []string{"transit", "tdead"}, engine.TransitOptions{SkipChainCheck: true})
 		must(t, err)
+		if len(res.Failed) != 0 {
+			t.Fatalf("跳过验证后应能更换，主用的仍可用: %+v", res)
+		}
+
+		// 在线加上一个候选：先验证每个中转都能接通两个槽位的落地（主用的中转是域名 + 固定地址），
+		// 已就绪的槽位重新核对后仍然就绪，出口不变。
+		res, err = e.eng.SetGatewayTransits(e.ctx, "main", []string{"transit", "transit2"}, engine.TransitOptions{})
+		must(t, err)
+		must(t, e.eng.RemoveNode("tdead"))
 		if !res.Reloaded || len(res.Failed) != 0 || len(res.Rechecked) < 2 {
 			t.Fatalf("加候选中转后的核对结果: %+v", res)
 		}
@@ -497,13 +516,13 @@ func TestEndToEnd(t *testing.T) {
 
 		// 恢复主用的，并换回只有一个中转：后面的测试照旧。
 		must(t, e.dk.ContainerStart(e.ctx, cluster+"-svc-transit"))
-		res, err = e.eng.SetGatewayTransits(e.ctx, "main", []string{"transit"})
+		res, err = e.eng.SetGatewayTransits(e.ctx, "main", []string{"transit"}, engine.TransitOptions{})
 		must(t, err)
 		if len(res.Failed) != 0 {
 			t.Fatalf("换回单个中转后的核对结果: %+v", res)
 		}
 		e.expect("换回后 A 正常", seenA, e.w("a", "get", ipTarget, "80"))
-		if _, err := e.eng.SetGatewayTransits(e.ctx, "main", []string{"transit", "la"}); err == nil {
+		if _, err := e.eng.SetGatewayTransits(e.ctx, "main", []string{"transit", "la"}, engine.TransitOptions{}); err == nil {
 			t.Error("落地不能当候选中转")
 		}
 		if err := e.eng.RemoveNode("transit2"); err != nil {

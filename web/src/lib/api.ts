@@ -184,6 +184,7 @@ export interface State {
   version: string;
   data_dir: string;
   cluster: { name: string; gateway_image: string; worker_image: string };
+  exit_report_auto: boolean;
   docker_error?: string;
   landing_limit: number;
   gateways: Gateway[];
@@ -266,8 +267,9 @@ export const api = {
 
   addGateway: (gw: { id: string; transit: string; pool: string }) => post("gateways", gw),
   /** 更换网关的中转：第一个是主用的，其余是候选。 */
-  setTransits: (gw: string, transits: string[]) =>
-    post<{ reloaded: boolean; rechecked: string[]; failed: Record<string, string> | null }>(`gateways/${id(gw)}/transits`, { transits }),
+  setTransits: (gw: string, transits: string[], skipCheck = false) =>
+    post<{ reloaded: boolean; rechecked: string[]; failed: Record<string, string> | null }>(`gateways/${id(gw)}/transits`, { transits, skip_check: skipCheck }),
+  setExitReportAuto: (auto: boolean) => post("settings/exit-report", { auto }),
   gatewayUp: (gw: string) => post(`gateways/${id(gw)}/up`),
   gatewayDown: (gw: string, force: boolean) => post(`gateways/${id(gw)}/down`, { force }),
   removeGateway: (gw: string) => del(`gateways/${id(gw)}`),

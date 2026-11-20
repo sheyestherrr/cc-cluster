@@ -61,6 +61,9 @@ type Cluster struct {
 	Name         string `json:"name"`
 	GatewayImage string `json:"gateway_image"`
 	WorkerImage  string `json:"worker_image"`
+	// NoExitReport 关掉启动槽位时顺带进行的出口评估查询（它经该槽的链路访问第三方接口）。
+	// 手动的重新查询不受影响。
+	NoExitReport bool `json:"no_exit_report,omitempty"`
 }
 
 // Node 是一个代理节点：Mihomo 原生 proxy 片段加上角色。

@@ -51,7 +51,7 @@ const (
 // refreshExitReport 在需要时查询落地出口 ip 的评估并记在落地上。force 为 false 时（启动槽位时
 // 顺带查询），已有同一个 IP 的、还没过期的结果就不再查，等待的时间也短。失败只返回错误，不改动落地。
 func (e *Engine) refreshExitReport(ctx context.Context, rt *gatewayRuntime, link netplan.Link, landing *model.Node, ip string, force bool) error {
-	if e.NoExitReport {
+	if !force && !e.ExitReportAuto() {
 		return nil
 	}
 	old := landing.ExitReport

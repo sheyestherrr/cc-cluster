@@ -39,7 +39,8 @@ type Engine struct {
 	LandingLimit int
 	// Tmux 描述怎样在宿主上运行 tmux（桥接用）；零值即可。
 	Tmux TmuxHost
-	// NoExitReport 关掉启动槽位时对出口 IP 评估的查询（它会访问两个外部接口）。
+	// NoExitReport 关掉启动槽位时对出口 IP 评估的查询（它会访问外部接口），不论集群设置如何；测试用。
+	// 给使用者的开关是集群设置里的 no_exit_report，见 SetExitReportAuto。
 	NoExitReport bool
 }
 
@@ -68,6 +69,32 @@ func New(st *store.Store, dk *dockerapi.Client, progress io.Writer) (*Engine, er
 
 // Cluster 返回集群设置。
 func (e *Engine) Cluster() model.Cluster { return e.cl }
+
+// ExitReportAuto 报告启动槽位时是否顺带查询出口评估。每次从数据目录读取：
+// 网页运行期间可以改这个设置。
+func (e *Engine) ExitReportAuto() bool {
+	if e.NoExitReport {
+		return false
+	}
+	c, err := e.st.Cluster()
+	return err != nil || !c.NoExitReport
+}
+
+// SetExitReportAuto 打开或关掉启动槽位时顺带进行的出口评估查询。
+func (e *Engine) SetExitReportAuto(on bool) (err error) {
+	unlock, err := e.st.Lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	defer func() { e.record("cluster.exit-report", "", err, fmt.Sprintf("auto=%t", on)) }()
+	c, err := e.st.Cluster()
+	if err != nil {
+		return err
+	}
+	c.NoExitReport = !on
+	return e.st.SaveCluster(c)
+}
 
 // GatewayContainer 返回网关的容器名。
 func (e *Engine) GatewayContainer(id string) string { return e.cl.Name + "-gw-" + id }

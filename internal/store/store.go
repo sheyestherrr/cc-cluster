@@ -96,6 +96,11 @@ func (s *Store) Cluster() (model.Cluster, error) {
 	return c, err
 }
 
+// SaveCluster 写回集群设置。
+func (s *Store) SaveCluster(c model.Cluster) error {
+	return writeJSON(s.path("cluster.json"), c)
+}
+
 // ---- 节点 ----
 
 // SaveNode 写入节点；create 为 true 时节点已存在则返回 ErrExists。

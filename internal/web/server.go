@@ -135,6 +135,15 @@ func (s *Server) Handler(port int) http.Handler {
 	api("GET /api/state", false, s.state)
 	api("GET /api/doctor", true, func(c *call) (any, error) { return checks(c.eng.Doctor(c.ctx)), nil })
 	api("GET /api/ops", false, s.ops)
+	api("POST /api/settings/exit-report", false, func(c *call) (any, error) {
+		var in struct {
+			Auto bool `json:"auto"`
+		}
+		if err := c.body(&in); err != nil {
+			return nil, err
+		}
+		return nil, c.eng.SetExitReportAuto(in.Auto)
+	})
 
 	api("POST /api/subs", false, s.subAdd)
 	api("GET /api/subs/{id}/nodes", false, s.subNodes)
@@ -163,12 +172,13 @@ func (s *Server) Handler(port int) http.Handler {
 	})
 	api("POST /api/gateways/{id}/transits", true, func(c *call) (any, error) {
 		var in struct {
-			Transits []string `json:"transits"`
+			Transits  []string `json:"transits"`
+			SkipCheck bool     `json:"skip_check"`
 		}
 		if err := c.body(&in); err != nil {
 			return nil, err
 		}
-		res, err := c.eng.SetGatewayTransits(c.ctx, c.id, in.Transits)
+		res, err := c.eng.SetGatewayTransits(c.ctx, c.id, in.Transits, engine.TransitOptions{SkipChainCheck: in.SkipCheck})
 		if err != nil {
 			return nil, err
 		}
@@ -372,6 +382,9 @@ type stateView struct {
 	Slots        []slotView    `json:"slots"`
 	Nodes        []nodeView    `json:"nodes"`
 	Subs         []subView     `json:"subs"`
+
+	// ExitReportAuto 表示启动槽位时顺带查询出口评估。
+	ExitReportAuto bool `json:"exit_report_auto"`
 }
 
 // StateUnknown 是连不上 Docker 时槽位与网关容器的状态。
@@ -383,7 +396,7 @@ func (s *Server) state(c *call) (any, error) {
 		dataDir = s.opt.DataDir
 	}
 	out := stateView{
-		Version: s.opt.Version, DataDir: dataDir, Cluster: c.eng.Cluster(), LandingLimit: model.MaxSlotsPerLanding,
+		Version: s.opt.Version, DataDir: dataDir, Cluster: c.eng.Cluster(), ExitReportAuto: c.eng.ExitReportAuto(), LandingLimit: model.MaxSlotsPerLanding,
 		Gateways: []gatewayView{}, Slots: []slotView{}, Nodes: []nodeView{}, Subs: []subView{},
 	}
 	slots, err := c.st.Slots()

@@ -35,6 +35,8 @@ type DelayOptions struct {
 	// Landing 不为空时测的是整条链路：经订阅里的每个节点再到这个落地节点。
 	// 节点自己能用不代表它肯转发到落地，挑中转时应当这样测。
 	Landing string
+	// Hosts 把域名固定到给出的地址（已登记节点的首跳地址），与网关里的做法一致。
+	Hosts map[string]string
 }
 
 // NodeDelay 是订阅里一个节点的测速结果。
@@ -217,7 +219,7 @@ func (e *Engine) measureDelays(ctx context.Context, proxies []map[string]any, vi
 	if err := e.ensureEgressNetwork(ctx, network); err != nil {
 		return nil, err
 	}
-	config, names, err := mihomo.RenderDelayProbe(proxies, via)
+	config, names, err := mihomo.RenderDelayProbeHosts(proxies, via, opt.Hosts)
 	if err != nil {
 		return nil, err
 	}

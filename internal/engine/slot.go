@@ -110,6 +110,121 @@ func (e *Engine) checkTransits(g model.Gateway) error {
 	return nil
 }
 
+// transitChainFailures 给 transits 里的每个中转接上落地 landing 测整条链路，返回接不通的中转 ID。
+// 核心在候选之间切换时只看中转自己通不通；能不能接通落地要在登记时另外测。
+// 不通的再测一次，免得一次抖动就判成不通。
+func (e *Engine) transitChainFailures(ctx context.Context, g model.Gateway, transits []model.Node, landing model.Node) ([]string, error) {
+	opt := DelayOptions{URL: g.ConnectivityURLs()[0], Network: g.EgressNetwork, Hosts: map[string]string{}}
+	for _, n := range append(append([]model.Node(nil), transits...), landing) {
+		if n.ConnectIPv4 != "" && n.ServerIsDomain() {
+			opt.Hosts[n.Server()] = n.ConnectIPv4
+		}
+	}
+	pending := transits
+	for attempt := 0; attempt < 2 && len(pending) > 0; attempt++ {
+		fragments := make([]map[string]any, len(pending))
+		for i, n := range pending {
+			fragments[i] = n.Proxy
+		}
+		delays, err := e.measureDelays(ctx, fragments, landing.Proxy, opt)
+		if err != nil {
+			return nil, err
+		}
+		var failed []model.Node
+		for i, d := range delays {
+			if d <= 0 {
+				failed = append(failed, pending[i])
+			}
+		}
+		pending = failed
+	}
+	ids := make([]string, len(pending))
+	for i, n := range pending {
+		ids[i] = n.ID
+	}
+	return ids, nil
+}
+
+// verifyTransitChains 核对网关 g 的每个中转都能接通它上面各槽位所用的落地；
+// 有接不通的就返回错误并指明是哪一对。网关还没有槽位时无从验证，留到槽位启动时。
+func (e *Engine) verifyTransitChains(ctx context.Context, g model.Gateway) error {
+	slots, err := e.st.Slots()
+	if err != nil {
+		return err
+	}
+	users := map[string][]string{}
+	var landings []string
+	for _, sl := range slots {
+		if sl.Gateway != g.ID || sl.Landing == "" {
+			continue
+		}
+		if _, seen := users[sl.Landing]; !seen {
+			landings = append(landings, sl.Landing)
+		}
+		users[sl.Landing] = append(users[sl.Landing], sl.ID)
+	}
+	if len(landings) == 0 {
+		e.logf("网关 %s 上还没有槽位，中转能否接通落地留到槽位启动时验证", g.ID)
+		return nil
+	}
+	var transits []model.Node
+	for _, id := range g.Transits() {
+		n, err := e.st.Node(id)
+		if err != nil {
+			return err
+		}
+		transits = append(transits, n)
+	}
+	const hint = "可以跳过这项检查（命令行加 --skip-check，网页里打开“不验证”）"
+	var problems []string
+	for _, lid := range landings {
+		landing, err := e.st.Node(lid)
+		if err != nil {
+			return err
+		}
+		e.logf("正在验证 %d 个中转能否接通落地 %s", len(transits), lid)
+		bad, err := e.transitChainFailures(ctx, g, transits, landing)
+		if err != nil {
+			return fmt.Errorf("验证中转能否接通落地 %s 时出错，没有更换：%w；确认无妨时%s", lid, err, hint)
+		}
+		if len(bad) > 0 {
+			problems = append(problems, fmt.Sprintf("%s 接不通落地 %s（槽位 %s 在用）", strings.Join(bad, "、"), lid, strings.Join(users[lid], "、")))
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("没有更换：中转 %s。换成能接通的（取自订阅的可以用 sub test <订阅> --landing <落地> 按整条链路测速）；落地只是暂时连不上、确认无妨时%s",
+			strings.Join(problems, "；"), hint)
+	}
+	return nil
+}
+
+// warnBackupChains 在槽位启动时验证候选中转能否接通这个槽的落地；只提醒，不拦启动
+// （主用的那条链路已经由 checkChain 测过）。
+func (e *Engine) warnBackupChains(ctx context.Context, g model.Gateway, landing model.Node) {
+	var backups []model.Node
+	for _, id := range g.Backups {
+		n, err := e.st.Node(id)
+		if err != nil {
+			e.logf("提醒：没有验证候选中转能否接通落地 %s：%v", landing.ID, err)
+			return
+		}
+		backups = append(backups, n)
+	}
+	bad, err := e.transitChainFailures(ctx, g, backups, landing)
+	switch {
+	case err != nil:
+		e.logf("提醒：没有验证候选中转能否接通落地 %s：%v", landing.ID, err)
+	case len(bad) > 0:
+		e.logf("提醒：候选中转 %s 接不通落地 %s，主用的不通时改用它们这个槽会没网；用 gateway set-transit 换成能接通的", strings.Join(bad, "、"), landing.ID)
+	}
+}
+
+// TransitOptions 是 SetGatewayTransits 的选项。
+type TransitOptions struct {
+	// SkipChainCheck 跳过“每个中转都能接通网关上各槽位的落地”这项检查。
+	SkipChainCheck bool
+}
+
 // TransitChange 是 SetGatewayTransits 的结果。
 type TransitChange struct {
 	// Reloaded 表示网关在运行，新配置已经生效。
@@ -123,7 +238,9 @@ type TransitChange struct {
 // SetGatewayTransits 更换一个网关的中转：transits 的第一个是主用的，其余是候选。
 // 网关在运行时在线重载，并让换之前已就绪的槽位重新走一遍链路检查与出口核对
 // （出口由落地决定，换中转不应改变它）。
-func (e *Engine) SetGatewayTransits(ctx context.Context, id string, transits []string) (res TransitChange, err error) {
+//
+// 保存之前先接上网关上各槽位的落地逐个测一遍：有中转接不通落地就不更换。
+func (e *Engine) SetGatewayTransits(ctx context.Context, id string, transits []string, opt TransitOptions) (res TransitChange, err error) {
 	unlock, err := e.st.Lock()
 	if err != nil {
 		return res, err
@@ -147,6 +264,11 @@ func (e *Engine) SetGatewayTransits(ctx context.Context, id string, transits []s
 	}
 	if err := e.checkTransits(g); err != nil {
 		return res, err
+	}
+	if !opt.SkipChainCheck {
+		if err := e.verifyTransitChains(ctx, g); err != nil {
+			return res, err
+		}
 	}
 
 	// 先记下现在已接线的槽位，再保存：保存之后它们的摘要就对不上了。
@@ -180,7 +302,7 @@ func (e *Engine) SetGatewayTransits(ctx context.Context, id string, transits []s
 	res.Failed = map[string]string{}
 	for _, sid := range ready {
 		res.Rechecked = append(res.Rechecked, sid)
-		if _, uerr := e.slotUp(ctx, sid, UpOptions{}); uerr != nil {
+		if _, uerr := e.slotUp(ctx, sid, UpOptions{skipBackupCheck: true}); uerr != nil {
 			res.Failed[sid] = uerr.Error()
 			e.logf("提醒：槽位 %s 换中转后没有通过核对：%v", sid, uerr)
 		}
@@ -324,6 +446,8 @@ func (e *Engine) AddSlot(ctx context.Context, sl model.Slot, opt SlotOptions) (o
 type UpOptions struct {
 	// Recreate 允许在 worker 容器的设置与期望不一致时删掉重建（容器内的进程会结束）。
 	Recreate bool
+	// skipBackupCheck 不验证候选中转能否接通落地（刚换完中转、已经验证过时）。
+	skipBackupCheck bool
 }
 
 // UpResult 是 SlotUp 的结果。
@@ -399,6 +523,9 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 	e.logf("经网关回环入口探测槽位 %s 的链路", id)
 	if err := e.checkChain(ctx, rt, p, landing); err != nil {
 		return res, fmt.Errorf("槽位 %s 的链路不通，未接线：%w", id, err)
+	}
+	if len(p.gw.Backups) > 0 && !opt.skipBackupCheck {
+		e.warnBackupChains(ctx, p.gw, landing)
 	}
 	// 落地还没有真实的时区（没设过，或者只有兜底值）时，按探测到的出口所在时区设置并记下，
 	// 之后不再随探测结果变动：worker 的时区是容器规格的一部分，变了就要重建。

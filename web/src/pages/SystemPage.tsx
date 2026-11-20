@@ -4,12 +4,14 @@ import { CheckCircle2, Loader2, Stethoscope, XCircle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ErrorBox, Group, KeyValue, Page, PageHeader, Row } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { api, errorText, type Check, type Op, type State } from "@/lib/api";
 import type { ThemeMode } from "@/lib/theme";
 import { clockTime, cn } from "@/lib/utils";
 
 interface Props {
   state: State | null;
+  refresh: () => Promise<void>;
   theme: ThemeMode;
   onThemeChange: (m: ThemeMode) => void;
 }
@@ -20,7 +22,7 @@ const themes: { id: ThemeMode; label: string }[] = [
   { id: "dark", label: "深色" },
 ];
 
-export function SystemPage({ state, theme, onThemeChange }: Props) {
+export function SystemPage({ state, refresh, theme, onThemeChange }: Props) {
   const [checks, setChecks] = useState<Check[] | null>(null);
   const [checking, setChecking] = useState(false);
   const [ops, setOps] = useState<Op[] | null>(null);
@@ -36,6 +38,16 @@ export function SystemPage({ state, theme, onThemeChange }: Props) {
   useEffect(() => {
     void loadOps();
   }, [loadOps]);
+
+  const setExitReport = async (auto: boolean) => {
+    setError("");
+    try {
+      await api.setExitReportAuto(auto);
+      await refresh();
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
 
   const doctor = async () => {
     setChecking(true);
@@ -82,6 +94,12 @@ export function SystemPage({ state, theme, onThemeChange }: Props) {
             <KeyValue k="网关镜像" v={state?.cluster.gateway_image} />
             <KeyValue k="worker 镜像" v={state?.cluster.worker_image} />
           </div>
+        </Group>
+
+        <Group label="出口评估">
+          <Row label="启动槽位时顺带查询" hint="经该槽的链路向第三方接口查一次出口 IP 的评估（机房 / 代理 / 滥用标记），只用于展示。关掉后不再自动查询，落地详情里的“重新查询”仍可手动查。">
+            <Switch checked={state?.exit_report_auto ?? true} onCheckedChange={setExitReport} label="启动槽位时顺带查询出口评估" />
+          </Row>
         </Group>
 
         <Group label="运行环境">
