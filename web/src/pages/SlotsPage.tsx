@@ -413,6 +413,14 @@ function SlotDetail({ s, state, busy, onUp, onStop, onRelease, onEnter, onReport
             </KeyValue>
             <KeyValue k="落地" v={landing ? `${landing.type} · ${landing.server}:${landing.port}` : "已不存在"} />
             {landing?.expect_exit_ip && <KeyValue k="预期出口" v={landing.expect_exit_ip} />}
+            <KeyValue k="持续检测" plain>
+              <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-fg-2">
+                {!s.watch && <span className="text-muted">{wired ? "还没轮到；网页开着时每隔几分钟检测一次连通性与出口" : "只检测已就绪的槽位"}</span>}
+                {s.watch?.status === "ok" && <><Tag tone="ok">正常</Tag><span className="text-muted">{relativeTime(s.watch.at)}检测，出口没有变</span></>}
+                {s.watch?.status === "unreachable" && <><Tag tone="warn" title={s.watch.detail}>连不上</Tag><span className="text-muted">自 {relativeTime(s.watch.since)}起；槽位此时没有网络，出口恢复后会自己恢复</span></>}
+                {s.watch?.status === "changed" && <><Tag tone="danger">出口变了</Tag><span>{s.watch.detail}，已自动断网</span></>}
+              </span>
+            </KeyValue>
           </div>
         </section>
 

@@ -81,6 +81,8 @@ export interface Slot {
   landing: string;
   state: SlotState;
   hold_reason?: string;
+  /** 持续检测最近一次的结果。 */
+  watch?: { at: string; since: string; status: "ok" | "unreachable" | "changed"; expect?: string; exit_ip?: string; detail?: string };
   exit_ip?: string;
   exit_where?: string;
   applied_at?: string;
