@@ -10,7 +10,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
-import { ApiError, api, errorText, type Slot, type SlotInput, type SlotState, type State } from "@/lib/api";
+import { ApiError, api, errorText, type Delay, type Slot, type SlotInput, type SlotState, type State } from "@/lib/api";
 import { PALETTE, badgeLetter, cn, colorIndex, formatBytes, relativeTime } from "@/lib/utils";
 
 interface Props {
@@ -63,7 +63,8 @@ export function SlotsPage({ state, loadError, refresh, goNetwork }: Props) {
     run(s, recreate ? "重建中" : "启动中", () => api.slotUp(s.id, recreate), (r) => `${s.id} 已接线，出口 ${(r as { data: { exit: string } }).data.exit}`);
 
   const slots = state?.slots ?? null;
-  const canAdd = !!state && state.gateways.length > 0 && state.nodes.some((n) => n.role === "landing");
+  // 有网关和落地，或者有订阅（可以直出）就能新建。
+  const canAdd = !!state && ((state.gateways.length > 0 && state.nodes.some((n) => n.role === "landing")) || state.subs.length > 0);
   // 详情栏显示选中的槽位；没选过或选中的已被删除时显示第一个。
   const current = slots?.find((s) => s.id === selected) ?? slots?.[0] ?? null;
   const stop = (s: Slot) => run(s, "停止中", () => api.slotStop(s.id), `已停止 ${s.id}`);
@@ -97,7 +98,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork }: Props) {
             <Button variant="ghost" size="iconSm" aria-label="刷新" title="刷新" onClick={() => refresh()}>
               <RefreshCw />
             </Button>
-            <Button size="sm" onClick={() => setAdding(true)} disabled={!canAdd} title={canAdd ? undefined : "先在“节点与网关”里添加落地节点和网关"}>
+            <Button size="sm" onClick={() => setAdding(true)} disabled={!canAdd} title={canAdd ? undefined : "先在“节点与网关”里添加一个订阅，或者一个落地节点和一个网关"}>
               <Plus />
               新建槽位
             </Button>
@@ -117,7 +118,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork }: Props) {
           >
             <Plus className="h-5 w-5" />
             <span className="text-[13px] font-medium">还没有槽位</span>
-            <span className="text-[12px]">{canAdd ? "新建一个：选好网关和落地，再指定要挂进去的项目目录" : "先去“节点与网关”添加一个落地节点和一个网关"}</span>
+            <span className="text-[12px]">{canAdd ? "新建一个：选好出口（自己的落地，或订阅里的一个节点），再指定要挂进去的项目目录" : "先去“节点与网关”添加一个订阅，或者一个落地节点和一个网关"}</span>
           </button>
         )}
 
@@ -405,7 +406,8 @@ function SlotDetail({ s, state, busy, onUp, onStop, onRelease, onEnter, onReport
             <KeyValue k="网关" plain>
               <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-fg-2">
                 {!gateway ? "已不存在" : gatewayUp ? "运行中" : gateway.container === "running" ? "核心未就绪" : "没有在运行"}
-                {gateway && !gateway.transit && <Tag title="不经中转，直接连落地">单跳</Tag>}
+                {gateway && !gateway.transit && <Tag title="不经中转，直接连出口节点">不经中转</Tag>}
+                {landing?.direct && <Tag tone="warn" title="直接用订阅里的节点当出口：多人共用的地址；节点已固定，不会自动更换">直出</Tag>}
                 {gateway && gatewayUp && !gateway.config_current && <Tag tone="warn" title="节点或槽位的设置变过，重新启动槽位后生效">配置待更新</Tag>}
               </span>
             </KeyValue>
@@ -464,6 +466,25 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [wasOpen, setWasOpen] = useState(false);
+  // 出口的两种来源：自己的落地，或者直接用订阅里的一个节点（直出）。
+  const [direct, setDirect] = useState(false);
+  const [dsub, setDsub] = useState("");
+  const [dname, setDname] = useState("");
+  const [dnodes, setDnodes] = useState<Delay[] | null>(null);
+
+  const loadDirect = async (sub: string) => {
+    setDsub(sub);
+    setDname("");
+    setDnodes(null);
+    if (!sub) return;
+    try {
+      const all = (await api.subNodes(sub)).filter((d) => !d.info && d.delay_ms >= 0);
+      setDnodes(all);
+      setDname(all[0]?.name ?? "");
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
 
   // 每次打开时重置表单，并预选第一个网关和落地。
   if (open !== wasOpen) {
@@ -472,18 +493,22 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
       setSlot({ ...emptySlot(), gateway: state.gateways[0]?.id ?? "", landing: landings[0]?.id ?? "" });
       setMounts("");
       setError("");
+      const noLanding = landings.length === 0 && state.subs.length > 0;
+      setDirect(noLanding);
+      void loadDirect(noLanding ? state.subs[0].id : "");
     }
   }
 
   const gateway = state.gateways.find((g) => g.id === slot.gateway);
   const sharing = state.slots.filter((s) => s.landing === slot.landing).length;
-  const soloFull = !!gateway && !gateway.transit && gateway.slots.length > 0;
+  const ready = direct ? !!dsub && !!dname : !!slot.gateway && !!slot.landing;
 
   const save = async () => {
     setSaving(true);
     setError("");
     try {
-      const r = await api.addSlot({ ...slot, id: slot.id.trim(), mounts: mounts.split("\n").map((m) => m.trim()).filter(Boolean) });
+      const base = { ...slot, id: slot.id.trim(), mounts: mounts.split("\n").map((m) => m.trim()).filter(Boolean) };
+      const r = await api.addSlot(direct ? { ...base, gateway: "", landing: "", direct_sub: dsub, direct_name: dname } : base);
       onCreated(slot.id.trim(), r.data.warnings);
     } catch (e) {
       setError(errorText(e));
@@ -502,7 +527,7 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
       footer={
         <>
           <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button onClick={save} disabled={saving || !slot.id.trim() || !slot.gateway || !slot.landing}>{saving ? "登记中…" : "登记"}</Button>
+          <Button onClick={save} disabled={saving || !slot.id.trim() || !ready}>{saving ? "登记中…" : "登记"}</Button>
         </>
       }
     >
@@ -513,21 +538,54 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
             <Line label="名称">
               <Input aria-label="槽位名称" value={slot.id} maxLength={32} autoFocus placeholder="小写字母、数字、连字符，例如 work-a" onChange={(e) => setSlot({ ...slot, id: e.target.value })} />
             </Line>
-            <Line label="网关">
-              <Select aria-label="网关" value={slot.gateway} onChange={(e) => setSlot({ ...slot, gateway: e.target.value })}>
-                {state.gateways.map((g) => <option key={g.id} value={g.id}>{g.id}（{g.transit ? `中转 ${g.transit}` : "单跳直连落地"}，已有 {g.slots.length} 个槽位）</option>)}
+            <Line label="出口">
+              <Select aria-label="出口的来源" value={direct ? "direct" : "landing"} onChange={(e) => {
+                const d = e.target.value === "direct";
+                setDirect(d);
+                if (d && !dsub && state.subs[0]) void loadDirect(state.subs[0].id);
+              }}>
+                <option value="landing">用自己的落地（固定的出口地址）</option>
+                <option value="direct">直出：直接用订阅里的一个节点当出口</option>
               </Select>
             </Line>
-            <Line label="落地">
-              <Select aria-label="落地" value={slot.landing} onChange={(e) => setSlot({ ...slot, landing: e.target.value })}>
-                {landings.map((n) => <option key={n.id} value={n.id}>{n.id}（{n.type}，{n.server}:{n.port}）</option>)}
-              </Select>
-            </Line>
-            {(soloFull || sharing > 0) && (
-              <p className="px-4 pb-3 pl-[116px] text-[11.5px] leading-[18px] text-warn">
-                {soloFull && <span className="block">这个网关没有中转，只能接一个槽位，它已经有一个了。</span>}
-                {sharing > 0 && <span className="block">这个落地已经绑定了 {sharing} 个槽位，它们的出口地址相同；同一个落地最多同时给 {state.landing_limit} 个槽位接线。</span>}
-              </p>
+            {!direct && (
+              <>
+                <Line label="网关">
+                  <Select aria-label="网关" value={slot.gateway} onChange={(e) => setSlot({ ...slot, gateway: e.target.value })}>
+                    {state.gateways.map((g) => <option key={g.id} value={g.id}>{g.id}（{g.transit ? `中转 ${g.transit}` : "不经中转"}，已有 {g.slots.length} 个槽位）</option>)}
+                  </Select>
+                </Line>
+                <Line label="落地">
+                  <Select aria-label="落地" value={slot.landing} onChange={(e) => setSlot({ ...slot, landing: e.target.value })}>
+                    {landings.map((n) => <option key={n.id} value={n.id}>{n.id}（{n.type}，{n.server}:{n.port}）</option>)}
+                  </Select>
+                </Line>
+                {gateway?.transit && (
+                  <p className="px-4 pb-3 pl-[116px] text-[11.5px] leading-[18px] text-muted">流量经中转到落地，从落地出去；落地连不上时槽位没网，不会改从中转出去。</p>
+                )}
+                {sharing > 0 && (
+                  <p className="px-4 pb-3 pl-[116px] text-[11.5px] leading-[18px] text-warn">这个落地已经绑定了 {sharing} 个槽位，它们的出口地址相同；同一个落地最多同时给 {state.landing_limit} 个槽位接线。</p>
+                )}
+              </>
+            )}
+            {direct && (
+              <>
+                <Line label="订阅">
+                  <Select aria-label="订阅" value={dsub} onChange={(e) => void loadDirect(e.target.value)}>
+                    {state.subs.length === 0 && <option value="">还没有订阅，先在“节点与网关”里添加</option>}
+                    {state.subs.map((s) => <option key={s.id} value={s.id}>{s.id}（{s.count} 个节点）</option>)}
+                  </Select>
+                </Line>
+                <Line label="节点">
+                  <Select aria-label="当出口的节点" value={dname} disabled={!dnodes} onChange={(e) => setDname(e.target.value)}>
+                    {!dnodes && <option value="">读取中…</option>}
+                    {dnodes?.map((d) => <option key={d.name} value={d.name}>{d.delay_ms > 0 ? `${d.delay_ms} ms` : "未测"} · {d.name}</option>)}
+                  </Select>
+                </Line>
+                <p className="px-4 pb-3 pl-[116px] text-[11.5px] leading-[18px] text-warn">
+                  出口就是这个节点，是多人共用的地址。节点会被固定：它不通时槽位没网，不会自动换成别的节点（那样可能跳到别的国家），要换请手动改。列表按上次测的延迟排序，不通的没有列出；没测过就先到订阅的“选节点”里测一次。
+                </p>
+              </>
             )}
           </div>
         </section>

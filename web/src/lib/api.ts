@@ -152,6 +152,8 @@ export interface ExitReport {
 
 export interface NodeInfo {
   id: string;
+  /** 直出的出口：订阅里的节点直接当出口用，固定给一个槽位。 */
+  direct?: boolean;
   role: Role;
   type: string;
   server: string;
@@ -239,6 +241,9 @@ export interface SlotInput {
   fake_dmi: boolean;
   fake_proc: boolean;
   tmux_bridge: boolean;
+  /** 直出：不用落地，直接用订阅里的这个节点当出口；给了它们就不用给网关和落地。 */
+  direct_sub?: string;
+  direct_name?: string;
 }
 
 export const api = {

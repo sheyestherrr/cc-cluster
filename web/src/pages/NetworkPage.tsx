@@ -275,7 +275,7 @@ function GatewayRow({ g, busy, onUp, onDown, onDelete, ...sel }: Selectable & { 
       title={g.id}
       tags={
         <>
-          {g.transit ? <Tag tone="env" title="中转节点">{g.transit}</Tag> : <Tag title="不经中转，直接连落地；只能接一个槽位">单跳</Tag>}
+          {g.transit ? <Tag tone="env" title="中转节点">{g.transit}</Tag> : <Tag title="不经中转，各槽位直接连自己的出口节点">不经中转</Tag>}
           {running && !g.core_ready && <Tag tone="warn">核心未就绪</Tag>}
           {running && g.core_ready && !g.config_current && <Tag tone="warn" title="节点或槽位的设置变过，重新启动网关或槽位后生效">配置待更新</Tag>}
         </>
@@ -458,7 +458,7 @@ function GatewayDetail({ g, state, refresh }: { g: Gateway; state: State; refres
             <KeyValue k="中转" plain>
               <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-fg-2">
                 {g.transit ? <span className="selectable font-mono text-[11.5px]">{g.transit}</span> : "不经中转"}
-                {!g.transit && <Tag title="直接连落地；只能接一个槽位">单跳</Tag>}
+                {!g.transit && <Tag title="各槽位直接连自己的出口节点">不经中转</Tag>}
                 {transit && <span className="text-muted">{transit.type} · {transit.server}:{transit.port}</span>}
               </span>
             </KeyValue>
@@ -634,7 +634,7 @@ function AddGatewayDialog({ open, state, onClose, onCreated }: { open: boolean; 
       open={open}
       onClose={onClose}
       title="新建网关"
-      description="一个网关对应一个网关容器。带中转的网关可以接多个槽位，各自从自己的落地出去；不带中转的只能接一个。"
+      description="一个网关对应一个网关容器，可以接多个槽位，各自从自己的落地出去。带中转时流量先经中转再到落地；不带时各槽位直连自己的落地。"
       className="max-w-[560px] bg-bg"
       footer={
         <>
@@ -650,7 +650,7 @@ function AddGatewayDialog({ open, state, onClose, onCreated }: { open: boolean; 
           </Line>
           <Line label="中转">
             <Select aria-label="中转节点" value={gw.transit} onChange={(e) => setGw({ ...gw, transit: e.target.value })}>
-              <option value="">不使用中转（单跳直连落地，只能接一个槽位）</option>
+              <option value="">不使用中转（各槽位直连自己的落地）</option>
               {transits.map((n) => <option key={n.id} value={n.id}>{n.id}（{n.type}，{n.server}:{n.port}）</option>)}
             </Select>
           </Line>
