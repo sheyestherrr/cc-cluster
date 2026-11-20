@@ -1,5 +1,6 @@
-# Go 构建产物
+# Go 构建产物与发布包
 /bin/
+/dist/
 
 # 网页界面：依赖与构建产物不进版本库（internal/web/dist 里只保留占位的 README.md）
 /web/node_modules/

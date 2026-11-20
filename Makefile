@@ -11,7 +11,14 @@ WORKER_IMG  ?= cc-cluster-worker:dev
 E2E_DIR     ?= $(CURDIR)/tmp/e2e
 WEB_DIST    := internal/web/dist
 
-.PHONY: build web release test vet fmt check images image-gateway image-worker e2e clean
+LDFLAGS     := -X github.com/sheyestherrr/cc-cluster/internal/cli.Version=$(VERSION)
+# 发布包：每个平台一个压缩包。DIST_TAG 是文件名里的版本段，默认与 VERSION 相同；
+# 滚动的预发布用固定的名字（nightly），下载地址不随提交变化。
+DIST_PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+DIST_TAG       ?= $(VERSION)
+DIST_DIR       := dist
+
+.PHONY: build web release dist test vet fmt check repo-check images image-gateway image-worker e2e clean
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-X github.com/sheyestherrr/cc-cluster/internal/cli.Version=$(VERSION)" -o bin/cc-cluster ./cmd/cc-cluster
@@ -26,6 +33,25 @@ web:
 # 发布用：带网页界面的单个二进制。使用者下载后不需要 Node.js、pnpm 或 Go。
 release: web build
 
+# 各平台的发布包与校验和，放在 dist/ 下；发布工作流只调用这一步，本地也能照样生成。
+# 包里除了带网页界面的二进制，还有 README 和随二进制分发的第三方代码的许可说明。
+dist: web
+	rm -rf $(DIST_DIR)
+	$(GO) mod download
+	set -e; yaml="$$($(GO) list -m -f '{{.Dir}}' gopkg.in/yaml.v3)"; \
+	for p in $(DIST_PLATFORMS); do \
+		os=$${p%/*}; arch=$${p#*/}; name=cc-cluster_$(DIST_TAG)_$${os}_$${arch}; \
+		mkdir -p $(DIST_DIR)/$$name/licenses; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$$name/cc-cluster ./cmd/cc-cluster; \
+		cp README.md $(DIST_DIR)/$$name/; \
+		cp web/NOTICE.md $(DIST_DIR)/$$name/licenses/web-NOTICE.md; \
+		cp "$$yaml/LICENSE" $(DIST_DIR)/$$name/licenses/yaml.v3-LICENSE; \
+		cp "$$yaml/NOTICE" $(DIST_DIR)/$$name/licenses/yaml.v3-NOTICE; \
+		tar -C $(DIST_DIR) -czf $(DIST_DIR)/$$name.tar.gz $$name; \
+		rm -rf $(DIST_DIR)/$$name; \
+	done
+	cd $(DIST_DIR) && sha256sum *.tar.gz > SHA256SUMS
+
 test:
 	$(GO) test $(PKGS)
 
@@ -39,6 +65,10 @@ fmt:
 # 提交前的静态检查与单元测试；不需要 Docker。
 check: vet test
 	@test -z "$$(gofmt -l cmd internal test)" || { echo "以下文件未经 gofmt："; gofmt -l cmd internal test; exit 1; }
+
+# 仓库卫生检查：不该进版本库的路径、订阅地址与带密码的代理地址一类的内容。加 HISTORY=1 连历史一起查。
+repo-check:
+	sh scripts/ci/check-repo.sh $(if $(HISTORY),--history)
 
 images: image-gateway image-worker
 
@@ -57,4 +87,4 @@ e2e:
 	CC_E2E_DIR=$(E2E_DIR) CC_E2E_GATEWAY_IMAGE=$(GATEWAY_IMG) CC_E2E_WORKER_IMAGE=$(WORKER_IMG) $(GO) test -tags e2e -count=1 -timeout 15m -v ./test/e2e/
 
 clean:
-	rm -rf bin
+	rm -rf bin $(DIST_DIR)
