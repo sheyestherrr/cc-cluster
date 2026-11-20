@@ -13,6 +13,6 @@ export default defineConfig({
   build: { outDir: "../../internal/web/dist", emptyOutDir: false, target: "es2021" },
   // 开发时页面由 vite 提供，接口转给本机正在运行的 cc-cluster web。
   server: { port: 3017, strictPort: true, proxy: { "/api": "http://127.0.0.1:7878" } },
-  resolve: { alias: { "@": path.resolve(__dirname, "./src") } },
+  resolve: { alias: { "@": path.resolve(import.meta.dirname, "./src") } },
   clearScreen: false,
 });
