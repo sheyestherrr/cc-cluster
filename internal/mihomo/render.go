@@ -62,6 +62,14 @@ var rejectedDestinations = []string{
 	"172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/4", "240.0.0.0/4",
 }
 
+// FakeIPRange 是核心答给槽内的映射地址段（第一个地址留给核心自己）。
+//
+// 用运营商级 NAT 的 100.64.0.0/10，而不是核心默认的 198.18.0.0/16：宿主或上游路由器
+// 在用 fake-ip 透明代理时，首跳地址就落在 198.18.0.0/15 里，两者不要混在一起。
+// 这一段也在 rejectedDestinations 里：有映射的连接按域名处理，目的地址不参与规则匹配；
+// 没有映射的（例如网关重启后槽内还拿着旧地址）不会被当成真实地址送到落地。
+const FakeIPRange = "100.64.0.1/10"
+
 // Render 生成网关的核心配置。
 func Render(in Input) (Output, error) {
 	gw := in.Gateway
@@ -137,7 +145,9 @@ func Render(in Input) (Output, error) {
 		srcRules = append(srcRules, fmt.Sprintf("SRC-IP-CIDR,%s,%s", b.Link.Subnet, name))
 	}
 
-	// 核心自己的解析走中转（共享网关）或本槽落地（专用网关）。
+	// 槽内的 A 记录查询由核心直接答一个映射地址（fake-ip），不向外解析；连接时域名原样交给落地，
+	// 由落地那一侧解析，所以外部看到的解析器在落地所在地。下面的上游只用于映射答不了的查询
+	// （TXT、SRV 等其他类型），走中转（共享网关）或本槽落地（专用网关）。
 	// 两者都没有时不加后缀：主路由表里没有通往 DNS 服务器的路由，解析只会失败，不会泄漏。
 	nameservers := make([]string, 0, len(gw.DNS))
 	for _, d := range gw.DNS {
@@ -185,7 +195,8 @@ func Render(in Input) (Output, error) {
 		"dns": map[string]any{
 			"enable":           true,
 			"ipv6":             false,
-			"enhanced-mode":    "redir-host",
+			"enhanced-mode":    "fake-ip",
+			"fake-ip-range":    FakeIPRange,
 			"use-hosts":        true,
 			"use-system-hosts": false,
 			"nameserver":       nameservers,

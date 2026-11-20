@@ -141,9 +141,18 @@ func TestRenderSharedGateway(t *testing.T) {
 		t.Fatalf("探测入口应按序号排序并只监听回环: %v", first)
 	}
 
-	ns := cfg["dns"].(map[string]any)["nameserver"].([]any)
+	dns := cfg["dns"].(map[string]any)
+	ns := dns["nameserver"].([]any)
 	if ns[0] != "https://1.1.1.1/dns-query#transit" {
 		t.Fatalf("核心解析应经中转: %v", ns)
+	}
+	// 槽内的 A 查询由核心答映射地址，域名交给落地解析：外部看到的解析器才在落地所在地。
+	if dns["enhanced-mode"] != "fake-ip" || dns["fake-ip-range"] != FakeIPRange {
+		t.Fatalf("应使用 fake-ip 并指定映射地址段: %v", dns)
+	}
+	// 映射地址段不能与局域网透明代理常用的 198.18.0.0/15 重叠（首跳可能落在那里面）。
+	if pfx := netip.MustParsePrefix(FakeIPRange).Masked(); pfx.Overlaps(netip.MustParsePrefix("198.18.0.0/15")) {
+		t.Fatalf("映射地址段 %s 与 198.18.0.0/15 重叠", pfx)
 	}
 }
 
