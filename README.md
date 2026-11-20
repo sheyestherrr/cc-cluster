@@ -54,7 +54,7 @@ cc-cluster node add hk --role transit --sub air --landing home-a    # 在能接�
 
 # 网关：不带 --transit 即不经中转，各槽位直连自己的落地
 cc-cluster gateway add main --transit hk --backup sg      # --backup 是候选中转：主用的不通时自动改用，出口不变
-cc-cluster gateway set-transit main sg hk                 # 在线更换：第一个是主用的，其余是候选
+cc-cluster gateway set-transit main sg hk                 # 在线更换：第一个是主用的，其余是候选；先验证它们都能接通各槽位的落地，接不通就不换
 
 # 槽位
 cc-cluster slot add alice --gateway main --landing home-a --memory 8g --cpus 4
@@ -79,7 +79,7 @@ cc-cluster slot release alice && cc-cluster slot up alice
 
 - 出口有两种来源，规则不同。**用自己的落地**：流量只从落地出去，落地连不上就是没网，不会改从中转出去；中转只是第一跳，可以登记候选并自动切换。**直出**（订阅里的节点直接当出口）：出口是多人共用的地址，节点固定、不自动切换，不通就是没网，要换只能手动。两种情况下，持续检测发现出口地址变了都会给该槽断网并保持，等你 `slot release` 后重新 `slot up`。
 - 落地没有设置时区时，首次启动槽位会按探测到的出口所在地设置（依次问 `ipinfo.io`、`ipwho.is`、`ipapi.co`，Cloudflare 的 trace 保底），之后不再自动变动；都拿不到时区时暂用 `America/Los_Angeles` 并提醒，下次启动再探测。也可以用 `node add --tz` 或 `slot add --tz` 指定。
-- 启动槽位时会顺带经该槽的链路查一次第三方对出口 IP 的评估（机房 / 代理 / 滥用标记与评分），只用于展示，取不到不影响使用；`cc-cluster node report <落地>` 重新查询并多问一个汇总来源，网页的槽位与落地详情里显示同一份结果。各家的判断分开列出，它们不代表任何具体服务的结论。
+- 启动槽位时会顺带经该槽的链路查一次第三方对出口 IP 的评估（机房 / 代理 / 滥用标记与评分），只用于展示，取不到不影响使用；`cc-cluster node report <落地>` 重新查询并多问一个汇总来源，网页的槽位与落地详情里显示同一份结果。各家的判断分开列出，它们不代表任何具体服务的结论。不想在启动时自动查询可以关掉：`cc-cluster exit-report off`（或网页“系统”页的开关），手动的重新查询不受影响。
 - 槽内解析域名得到的是 `100.64.0.0/10` 里的映射地址（fake-ip）：域名交给落地那一侧解析，外部看到的解析器在落地所在地。
 - 同一个落地最多同时给 5 个槽位接线。哪个槽位用哪个落地由你配置。
 - 每个槽位有自己的用户名、HOME、hostname 和 machine-id，槽内没有 `/.dockerenv`。`slot add --fake-dmi` 与 `--fake-proc` 可以另外覆盖机型信息和 `/proc` 里的 CPU、内存显示，默认关闭；`--fake-proc` 设了 CPU 限额时还会把槽位绑到相应数量的核上，让 `nproc` 一类的结果与之一致（`/proc/stat` 仍是宿主的核数）。
