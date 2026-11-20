@@ -33,6 +33,8 @@ type SlotStatus struct {
 	WorkerIP   string
 	// TmuxAlive 报告该槽的宿主 tmux 是否在运行；只在槽位开启了桥接时检查。
 	TmuxAlive bool
+	// Watch 是持续检测最近一次的结果；没有检测过（或重新接线后还没轮到）时为 nil。
+	Watch *model.Watch
 }
 
 // SlotStatuses 返回全部槽位的现状。只读，不取锁。
@@ -77,6 +79,9 @@ func (e *Engine) slotStatus(ctx context.Context, sl model.Slot) (SlotStatus, err
 	}
 	if sl.TmuxBridge {
 		s.TmuxAlive = e.TmuxAlive(ctx, sl.ID)
+	}
+	if w, ok, _ := e.st.Watch(sl.ID); ok {
+		s.Watch = &w
 	}
 
 	if h, held, err := e.st.Hold(sl.ID); err != nil {

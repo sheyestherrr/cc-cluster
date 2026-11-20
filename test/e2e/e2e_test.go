@@ -511,6 +511,65 @@ func TestEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("持续检测", func(t *testing.T) {
+		e.t = t
+		watch := func() map[string]model.Watch {
+			res, err := e.eng.WatchOnce(e.ctx)
+			must(t, err)
+			out := map[string]model.Watch{}
+			for _, w := range res {
+				out[w.Slot] = w
+			}
+			return out
+		}
+		if w := watch(); w["a"].Status != engine.WatchOK || w["b"].Status != engine.WatchOK || w["a"].ExitIP != ipLandA {
+			t.Fatalf("两个槽都正常时的检测结果: %+v", w)
+		}
+
+		// 落地连不上：只记下来，不断网保持；落地回来后自己恢复。
+		must(t, e.dk.ContainerStop(e.ctx, cluster+"-svc-land-b", 0))
+		if w := watch(); w["b"].Status != engine.WatchUnreachable || w["a"].Status != engine.WatchOK {
+			t.Errorf("落地 B 停掉后的检测结果: %+v", w)
+		}
+		e.expect("落地停掉时 B 没有网络（不会改从中转出去）", `^ERR`, e.w("b", "get", ipTarget, "80"))
+		if got := e.state("b"); got != engine.StateReady {
+			t.Errorf("连不上不应让槽位被断网保持，状态是 %s", got)
+		}
+		must(t, e.dk.ContainerStart(e.ctx, cluster+"-svc-land-b"))
+		time.Sleep(time.Second)
+		if w := watch(); w["b"].Status != engine.WatchOK {
+			t.Errorf("落地 B 回来后的检测结果: %+v", w["b"])
+		}
+		e.expect("落地回来后 B 自己恢复", seenB, e.w("b", "get", ipTarget, "80"))
+
+		// 出口变了：把记录里“接线时核对过的出口”改成另一个地址，等于现在看到的出口与当时不同。
+		applied, ok, err := e.st.Applied("a")
+		must(t, err)
+		if !ok {
+			t.Fatal("槽 a 应有接线记录")
+		}
+		applied.ExitIP = "198.51.100.77"
+		must(t, e.st.SaveApplied("a", applied))
+		if w := watch(); w["a"].Status != engine.WatchChanged || w["b"].Status != engine.WatchOK {
+			t.Errorf("出口变了时的检测结果: %+v", w)
+		}
+		s, err := e.eng.SlotStatus(e.ctx, "a")
+		must(t, err)
+		if s.State != engine.StateHold || !strings.Contains(s.HoldReason, "持续检测") || !strings.Contains(s.HoldReason, ipLandA) {
+			t.Errorf("出口变了应自动断网保持并写明原因: %s %q", s.State, s.HoldReason)
+		}
+		e.expect("断网保持后 A 没有网络", `^ERR`, e.w("a", "get", ipTarget, "80"))
+		e.expect("B 不受影响", seenB, e.w("b", "get", ipTarget, "80"))
+		if w := watch(); len(w) != 1 || w["b"].Status != engine.WatchOK {
+			t.Errorf("被断网保持的槽位不再检测: %+v", w)
+		}
+		must(t, e.eng.SlotRelease("a"))
+		e.up("a", ipLandA)
+		if s, _ := e.eng.SlotStatus(e.ctx, "a"); s.Watch != nil {
+			t.Errorf("重新接线后应清掉之前的检测结果: %+v", s.Watch)
+		}
+	})
+
 	t.Run("核心被杀", func(t *testing.T) {
 		e.t = t
 		stream := make(chan string, 1)

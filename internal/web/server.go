@@ -55,6 +55,9 @@ type Options struct {
 	Version string
 	// Assets 替换嵌入的前端，测试用。
 	Assets fs.FS
+	// NoWatch 关闭服务运行期间的持续检测；WatchInterval 是它的间隔，0 用默认值。
+	NoWatch       bool
+	WatchInterval time.Duration
 }
 
 // Server 是网页服务。
@@ -91,6 +94,20 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 		return errors.New("网页界面只能监听本机回环地址")
 	}
 	srv := &http.Server{Handler: s.Handler(addr.Port), ReadHeaderTimeout: 10 * time.Second}
+	// 网页开着的时候顺带做持续检测：隔一段时间看一眼各槽的连通性与出口，出口变了就断网保持。
+	if !s.opt.NoWatch {
+		go engine.Watch(ctx, s.opt.WatchInterval, func(ctx context.Context) (*engine.Engine, error) {
+			st, err := store.Open(s.opt.DataDir)
+			if err != nil {
+				return nil, err
+			}
+			dk, err := dockerapi.New(ctx, "")
+			if err != nil {
+				return nil, err
+			}
+			return engine.New(st, dk, io.Discard)
+		})
+	}
 	done := make(chan struct{})
 	go func() {
 		select {
@@ -339,6 +356,8 @@ type slotView struct {
 	// TmuxBridge 为真时，槽内可以经宿主 tmux 执行不受该槽网络约束的宿主命令；页面要明确显示。
 	TmuxBridge bool `json:"tmux_bridge,omitempty"`
 	TmuxAlive  bool `json:"tmux_alive,omitempty"`
+	// Watch 是持续检测最近一次的结果。
+	Watch *model.Watch `json:"watch,omitempty"`
 	// EnterCommand 是在终端里进入这个槽位的命令；网页不提供终端。
 	EnterCommand string `json:"enter_command"`
 }
@@ -430,7 +449,7 @@ func (s *Server) state(c *call) (any, error) {
 			ExitIP: st.ExitIP, ExitWhere: st.ExitWhere, Hostname: st.Identity.Hostname,
 			User: st.Identity.UserName(), Home: st.Identity.Home(), TZ: tz,
 			Mounts: sl.Mounts, Memory: sl.MemoryBytes, CPUs: sl.CPUs, FakeDMI: sl.FakeDMI, FakeProc: sl.FakeProc,
-			TmuxBridge: sl.TmuxBridge, TmuxAlive: st.TmuxAlive,
+			TmuxBridge: sl.TmuxBridge, TmuxAlive: st.TmuxAlive, Watch: st.Watch,
 			EnterCommand: fmt.Sprintf("cc-cluster --data-dir %s enter %s", shellQuote(dataDir), sl.ID),
 		}
 		if v.Mounts == nil {

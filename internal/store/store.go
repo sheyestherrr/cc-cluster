@@ -367,6 +367,25 @@ func (s *Store) ClearApplied(id string) error {
 	return ignoreNotExist(os.Remove(filepath.Join(s.SlotDir(id), "applied.json")))
 }
 
+// Watch 读取持续检测最近一次的结果；没有时 ok 为 false。
+func (s *Store) Watch(id string) (w model.Watch, ok bool, err error) {
+	err = readJSON(filepath.Join(s.SlotDir(id), "watch.json"), &w)
+	if errors.Is(err, fs.ErrNotExist) {
+		return w, false, nil
+	}
+	return w, err == nil, err
+}
+
+// SaveWatch 写入持续检测的结果。
+func (s *Store) SaveWatch(id string, w model.Watch) error {
+	return writeJSON(filepath.Join(s.SlotDir(id), "watch.json"), w)
+}
+
+// ClearWatch 删除持续检测的结果。
+func (s *Store) ClearWatch(id string) error {
+	return ignoreNotExist(os.Remove(filepath.Join(s.SlotDir(id), "watch.json")))
+}
+
 // Hold 读取手动断网标记；没有时 ok 为 false。
 func (s *Store) Hold(id string) (h model.Hold, ok bool, err error) {
 	err = readJSON(filepath.Join(s.SlotDir(id), "hold.json"), &h)

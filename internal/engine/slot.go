@@ -477,6 +477,7 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 		AppliedAt: time.Now().UTC(), EchoURLUsed: echoURL,
 		ExitCountry: exit.Country, ExitOrg: exit.Org, ExitTZ: exit.TZ,
 	})
+	_ = e.st.ClearWatch(id) // 重新接线后，之前的检测结果不再适用
 	res.Exit = exit
 	return res, err
 }

@@ -41,7 +41,8 @@ const usage = `cc-cluster：为 Claude Code 管理相互独立的工作槽位。
   claude [槽位] [目录]      同上，但直接启动 Claude Code（首次会提示在槽内安装）
   tmux   <槽位>             接入该槽的宿主 tmux；--on / --off 开关宿主桥接，--kill 结束它
   status                    显示网关与槽位的现状
-  web                       启动网页界面（只监听本机）
+  web                       启动网页界面（只监听本机）；运行期间顺带做持续检测
+  watch                     持续检测各槽的连通性与出口，出口变了就断网保持（--once 只测一遍）
   panel                     打开交互面板
 
 配置：
@@ -128,6 +129,8 @@ func (a *app) dispatch(ctx context.Context, cmd string, args []string) error {
 		return a.panel(ctx)
 	case "web":
 		return a.cmdWeb(ctx, args)
+	case "watch":
+		return a.cmdWatch(ctx, args)
 	}
 	ctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()

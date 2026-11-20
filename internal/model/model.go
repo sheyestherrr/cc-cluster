@@ -315,6 +315,20 @@ type Hold struct {
 	At     time.Time `json:"at"`
 }
 
+// Watch 是持续检测对一个槽位最近一次的结果。
+type Watch struct {
+	Slot string    `json:"slot"`
+	At   time.Time `json:"at"`
+	// Since 是进入当前状态的时间。
+	Since time.Time `json:"since"`
+	// Status 是 ok、unreachable 或 changed。
+	Status string `json:"status"`
+	// Expect 是接线时核对过的出口，ExitIP 是这次看到的（连不上时为空）。
+	Expect string `json:"expect,omitempty"`
+	ExitIP string `json:"exit_ip,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
 // Op 是操作记录的一行，不含密钥。
 type Op struct {
 	Time   time.Time `json:"time"`
