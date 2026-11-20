@@ -10,6 +10,25 @@ Go 管理器已实现：命令行、交互面板、订阅导入与测速、网�
 
 Docker 共享宿主内核，独立配置与资源限额不能证明物理机级隔离或账号不会关联。
 
+## 下载
+
+[Releases](https://github.com/sheyestherrr/cc-cluster/releases) 里有带网页界面的单个二进制，Linux 与 macOS、amd64 与 arm64 各一个压缩包：
+
+- 带版本号的（`v1.2.3`）是正式版，推标签时生成。
+- `nightly` 是 master 上最新一次提交的自动构建，每次推送都会被覆盖，文件名固定（`cc-cluster_nightly_linux_amd64.tar.gz` 等）。
+
+```sh
+tar -xzf cc-cluster_v1.2.3_linux_amd64.tar.gz
+sha256sum --check --ignore-missing SHA256SUMS      # 核对下载的文件
+```
+
+运行还需要两个镜像。网关镜像随每次发布推到 GHCR，拉下来后在初始化时指给它；worker 镜像里的 tmux 要与宿主的版本一致（宿主桥接用），仍然要在源码目录里 `make image-worker` 构建。
+
+```sh
+docker pull ghcr.io/sheyestherrr/cc-cluster-gateway:v1.2.3
+cc-cluster init --gateway-image ghcr.io/sheyestherrr/cc-cluster-gateway:v1.2.3
+```
+
 ## 构建与测试
 
 发布版是带网页界面的单个二进制，下载后不需要 Go、Node.js 或 pnpm；运行时只需要 Docker 和两个镜像。
@@ -23,6 +42,14 @@ make web            # 构建网页界面，放进 Go 的嵌入目录；之后再
 make release        # make web + make build：带网页界面的单个二进制
 make images         # 构建网关镜像与默认的 worker 镜像
 make e2e            # 端到端测试：需要 Docker 与网关镜像，只用 internal 网络和假节点
+make dist           # 各平台的发布包与校验和，放在 dist/（发布工作流调用的就是它）
+make repo-check     # 仓库卫生检查：不该提交的路径、订阅地址与带密码的代理地址；HISTORY=1 连历史一起查
+```
+
+推到 GitHub 后由 Actions 自动检查（`.github/workflows/ci.yml`）：`make check`、带网页界面的构建、凭据扫描（gitleaks 加上面的仓库卫生检查，都查全部历史）、Go 依赖的已知漏洞、工作流自查；推到 master 和提 PR 时另外跑端到端测试。发布见 `.github/workflows/release.yml`。
+
+```sh
+git tag v1.2.3 && git push origin v1.2.3            # 出一个正式版
 ```
 
 ## 使用
@@ -111,7 +138,8 @@ tmux 的客户端和 server 要同一版本才连得上：`make image-worker` �
 | `cmd/cc-cluster` | 程序入口 |
 | `internal/` | 配置模型、文件状态、编址、核心配置生成、订阅解析、Docker API 客户端、编排、命令行与网页服务 |
 | `web/` | 网页界面的前端源码（React），构建后嵌入二进制 |
-| `scripts/` | 辅助脚本：`web.sh` 一键构建并启动网页界面 |
+| `scripts/` | 辅助脚本：`web.sh` 一键构建并启动网页界面；`ci/check-repo.sh` 仓库卫生检查 |
+| `.github/` | GitHub Actions 的检查与发布工作流、依赖更新配置 |
 | `images/gateway` | 网关镜像：固定版本的 Mihomo 与监督脚本 |
 | `images/worker` | 默认的 worker 基础镜像 |
 | `test/e2e` | 端到端测试与假服务 |
