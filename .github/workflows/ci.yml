@@ -144,9 +144,6 @@ jobs:
     if: github.event_name != 'push' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
-    # 先不拦合并：这组测试要 NET_ADMIN 和 TUN 设备，在 GitHub 的机器上还没有稳定跑通过。
-    # 连续通过几次之后去掉这一行。
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
