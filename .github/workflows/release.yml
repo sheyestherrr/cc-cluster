@@ -1,0 +1,197 @@
+# 发布：推 v* 标签出正式版；推到 master 更新名为 nightly 的滚动预发布（覆盖上一次）。
+#
+# 三个任务权限分开：
+#   build   只有读权限：跑检查、装前端依赖并构建（这一步会执行第三方包的代码），产出发布包。
+#   image   只多一个推镜像的权限：构建网关镜像并推到 GHCR。
+#   publish 只多一个写 Release 的权限：不检出代码、不执行仓库里的任何东西，只上传 build 的产物。
+#
+# 其余约定同 ci.yml：Action 按提交哈希固定，标签名等外部输入经环境变量传入并先校验。
+name: 发布
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "12.21.0"
+
+jobs:
+  build:
+    name: 检查并打包
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      kind: ${{ steps.meta.outputs.kind }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      image_tags: ${{ steps.meta.outputs.image_tags }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 确定版本
+        id: meta
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then
+            version="${GITHUB_REF_NAME}"
+            if ! printf '%s' "${version}" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?'; then
+              echo "标签 ${version} 不是 v主.次.修订[-预发布] 的写法，不发布" >&2
+              exit 1
+            fi
+            kind=release
+            dist_tag="${version}"
+            case "${version}" in
+              *-*) prerelease=true; image_tags="${version}" ;;
+              *) prerelease=false; image_tags="${version} latest" ;;
+            esac
+          else
+            version="nightly-${GITHUB_SHA::7}"
+            kind=nightly
+            dist_tag=nightly
+            prerelease=true
+            image_tags=nightly
+          fi
+          {
+            echo "version=${version}"
+            echo "kind=${kind}"
+            echo "dist_tag=${dist_tag}"
+            echo "prerelease=${prerelease}"
+            echo "image_tags=${image_tags}"
+          } >> "${GITHUB_OUTPUT}"
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: stable
+          # 发布包不从缓存里取任何东西
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - name: 安装 pnpm
+        run: npm install --global "pnpm@${PNPM_VERSION}"
+      - name: 发布前的检查
+        run: |
+          go mod verify
+          make check
+      - name: 各平台的发布包与校验和
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          DIST_TAG: ${{ steps.meta.outputs.dist_tag }}
+        run: |
+          make dist VERSION="${VERSION}" DIST_TAG="${DIST_TAG}"
+          ls -l dist
+          cat dist/SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  image:
+    name: 网关镜像
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+      - name: 构建并推送到 GHCR（amd64 与 arm64）
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          IMAGE_TAGS: ${{ needs.build.outputs.image_tags }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cc-cluster-gateway"
+          printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+          docker buildx create --use --name release
+          read -r -a names <<< "${IMAGE_TAGS}"
+          tags=()
+          for t in "${names[@]}"; do
+            tags+=(--tag "${image}:${t}")
+          done
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            "${tags[@]}" \
+            --push \
+            images/gateway
+
+  publish:
+    name: 发布 Release
+    needs: [build, image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - name: 核对校验和
+        working-directory: dist
+        run: sha256sum --check --strict SHA256SUMS
+      - name: 写 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.build.outputs.version }}
+          KIND: ${{ needs.build.outputs.kind }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cc-cluster-gateway"
+          notes="${RUNNER_TEMP}/notes.md"
+          if [ "${KIND}" = nightly ]; then
+            {
+              echo "master 上最新一次提交的自动构建（${VERSION}，提交 ${GITHUB_SHA}），每次推送都会被覆盖。不是正式版本。"
+              echo
+              echo "网关镜像：\`${image}:nightly\`"
+              echo
+              echo "下载后用 \`sha256sum --check SHA256SUMS\` 核对。"
+            } > "${notes}"
+            if gh release view nightly > /dev/null 2>&1; then
+              # 已有：把 nightly 标签挪到这次提交，再覆盖说明和文件。文件名是固定的，下载地址不变。
+              gh api --method PATCH "repos/${GH_REPO}/git/refs/tags/nightly" -f sha="${GITHUB_SHA}" -F force=true > /dev/null
+              gh release edit nightly --title "nightly（${VERSION}）" --notes-file "${notes}" --prerelease
+              gh release upload nightly dist/*.tar.gz dist/SHA256SUMS --clobber
+            else
+              gh release create nightly dist/*.tar.gz dist/SHA256SUMS \
+                --target "${GITHUB_SHA}" --title "nightly（${VERSION}）" --notes-file "${notes}" --prerelease --latest=false
+            fi
+            exit 0
+          fi
+
+          {
+            echo "网关镜像：\`${image}:${VERSION}\`"
+            echo
+            echo "下载后用 \`sha256sum --check SHA256SUMS\` 核对。"
+          } > "${notes}"
+          if gh release view "${VERSION}" > /dev/null 2>&1; then
+            # 同一个标签重跑：只补传文件，不动已经写好的说明。
+            gh release upload "${VERSION}" dist/*.tar.gz dist/SHA256SUMS --clobber
+            exit 0
+          fi
+          flags=(--verify-tag --title "${VERSION}" --generate-notes --notes "$(cat "${notes}")")
+          if [ "${PRERELEASE}" = true ]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "${VERSION}" dist/*.tar.gz dist/SHA256SUMS "${flags[@]}"

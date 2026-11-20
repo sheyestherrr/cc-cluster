@@ -1,0 +1,32 @@
+# 依赖更新：每周检查一次，PR 提到 dev（开发都在 dev 上，master 只接收快进合并）。
+#
+# 两个镜像的基础层（Mihomo 核心、Alpine、Node）不在这里：它们写在 Dockerfile 的 ARG 里，
+# 升级核心之前要重新跑端到端测试，所以保持手动。
+version: 2
+updates:
+  # 工作流里按提交哈希固定的 Action
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: gomod
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+
+  # 网页前端（pnpm 的锁文件归在 npm 这一类下）
+  - package-ecosystem: npm
+    directory: /web
+    target-branch: dev
+    schedule:
+      interval: weekly
+    groups:
+      web:
+        patterns: ["*"]
+        update-types: [minor, patch]

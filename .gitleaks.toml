@@ -1,0 +1,18 @@
+# gitleaks 的配置：沿用它自带的全部规则，只排除两个锁文件。
+# 锁文件里全是依赖的完整性校验值，长得像密钥，但不是。
+#
+# 本项目特有的敏感内容（订阅地址、带密码的代理地址）和不该进版本库的路径
+# 由 scripts/ci/check-repo.sh 检查，不写在这里。
+#
+# 遇到误报时优先在这里按“路径”或“规则 + 具体内容”收窄地排除，不要整条规则关掉。
+title = "cc-cluster"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "依赖锁文件里的完整性校验值"
+paths = [
+  '''(^|/)pnpm-lock\.yaml$''',
+  '''(^|/)go\.sum$''',
+]
