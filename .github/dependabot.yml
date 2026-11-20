@@ -30,3 +30,7 @@ updates:
       web:
         patterns: ["*"]
         update-types: [minor, patch]
+    ignore:
+      # Node 的类型定义跟着工作流里的 NODE_VERSION 走：换 Node 的大版本时手动一起改，不单独升
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
