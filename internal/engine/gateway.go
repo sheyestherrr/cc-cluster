@@ -55,15 +55,19 @@ func (e *Engine) plan(gwID string) (*gatewayPlan, error) {
 	p.pool, _ = netip.ParsePrefix(gw.Pool)
 
 	in := mihomo.Input{Gateway: gw}
-	if gw.Transit != "" {
-		t, err := e.st.Node(gw.Transit)
+	for i, tid := range gw.Transits() {
+		t, err := e.st.Node(tid)
 		if err != nil {
 			return nil, fmt.Errorf("网关 %s 的中转：%w", gw.ID, err)
 		}
 		if err := t.Validate(); err != nil {
 			return nil, err
 		}
-		p.transit, in.Transit = &t, &t
+		if i == 0 {
+			p.transit, in.Transit = &t, &t
+		} else {
+			in.Backups = append(in.Backups, t)
+		}
 	}
 	slots, err := e.st.Slots()
 	if err != nil {
@@ -162,7 +166,9 @@ func (e *Engine) gatewayUp(ctx context.Context, id string) (*gatewayPlan, *gatew
 	// 先核对自动解析的首跳地址：中转，或者专用网关直连的那个落地。
 	if gw, err := e.st.Gateway(id); err == nil {
 		if gw.Transit != "" {
-			e.refreshFirstHop(ctx, gw.Transit)
+			for _, t := range gw.Transits() {
+				e.refreshFirstHop(ctx, t)
+			}
 		} else if slots, err := e.st.Slots(); err == nil {
 			for _, s := range slots {
 				if s.Gateway == id {
@@ -523,7 +529,9 @@ type GatewayStatus struct {
 	Gateway   model.Gateway
 	Container string // absent / created / running / exited …
 	CoreReady bool   // TUN 与表 100 是否就位
-	Slots     []string
+	// ActiveTransit 是有候选中转的网关当前在用的那个中转；没有候选或问不到时为空。
+	ActiveTransit string
+	Slots         []string
 	// ConfigCurrent 表示容器里的核心配置与期望一致。
 	ConfigCurrent bool
 }
@@ -559,8 +567,31 @@ func (e *Engine) GatewayStatuses(ctx context.Context) ([]GatewayStatus, error) {
 				cur, _ := e.sh(ctx, name, "cat "+mihomo.HomeDir+"/config.digest 2>/dev/null")
 				s.ConfigCurrent = strings.TrimSpace(cur) == p.out.Digest
 			}
+			if len(gw.Backups) > 0 && s.CoreReady {
+				s.ActiveTransit = e.activeTransit(ctx, name, gw)
+			}
 		}
 		out = append(out, s)
 	}
 	return out, nil
+}
+
+// activeTransit 问核心有候选中转的网关现在用的是哪一个；问不到时返回空。
+func (e *Engine) activeTransit(ctx context.Context, container string, gw model.Gateway) string {
+	out, err := e.sh(ctx, container, fmt.Sprintf("curl -sS -m 4 --unix-socket %s 'http://localhost/proxies/%s'", mihomo.SocketPath, mihomo.TransitName))
+	if err != nil {
+		return ""
+	}
+	var res struct {
+		Now string `json:"now"`
+	}
+	if json.Unmarshal([]byte(strings.TrimSpace(out)), &res) != nil {
+		return ""
+	}
+	for i, id := range gw.Transits() {
+		if mihomo.TransitMemberName(i) == res.Now {
+			return id
+		}
+	}
+	return ""
 }

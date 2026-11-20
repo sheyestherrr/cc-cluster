@@ -2,6 +2,7 @@ package mihomo
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/netip"
 	"strings"
 	"testing"
@@ -49,6 +50,53 @@ func rulesOf(t *testing.T, cfg map[string]any) []string {
 		out = append(out, r.(string))
 	}
 	return out
+}
+
+func TestRenderTransitBackups(t *testing.T) {
+	node := func(id, server, ip string) model.Node {
+		return model.Node{ID: id, Role: model.RoleTransit, ConnectIPv4: ip, Proxy: map[string]any{"type": "socks5", "server": server, "port": float64(1080)}}
+	}
+	main, spare := node("hk", "hk.example.com", "203.0.113.10"), node("sg", "203.0.113.11", "")
+	in := Input{Gateway: gateway(), Transit: &main, Bindings: []Binding{{SlotID: "a", Link: link(t, 2), Landing: landing("home-a", "198.51.100.20")}}}
+	single, err := Render(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(single.Config), "proxy-groups") {
+		t.Error("没有候选中转时不应出现代理组（已有网关的配置摘要不能变）")
+	}
+
+	in.Backups = []model.Node{spare}
+	out, err := Render(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := decode(t, out.Config)
+	if len(out.FirstHops) != 2 {
+		t.Fatalf("两个中转都应是首跳: %v", out.FirstHops)
+	}
+	groups := cfg["proxy-groups"].([]any)
+	g := groups[0].(map[string]any)
+	if len(groups) != 1 || g["name"] != TransitName || g["type"] != "fallback" || fmt.Sprint(g["proxies"]) != "[transit-0 transit-1]" {
+		t.Errorf("候选中转应组成一个按顺序改用的组: %v", g)
+	}
+	names := map[string]any{}
+	for _, p := range cfg["proxies"].([]any) {
+		m := p.(map[string]any)
+		names[m["name"].(string)] = m["dialer-proxy"]
+	}
+	// 落地仍经 TransitName 拨号（现在是那个组），中转自己直连。
+	if names["land-home-a"] != TransitName || names["transit-0"] != nil || names["transit-1"] != nil || len(names) != 3 {
+		t.Errorf("代理与拨号方式: %v", names)
+	}
+
+	if _, err := Render(Input{Gateway: gateway(), Backups: []model.Node{spare}}); err == nil {
+		t.Error("没有主用中转时不应接受候选中转")
+	}
+	bad := landing("home-b", "198.51.100.30")
+	if _, err := Render(Input{Gateway: gateway(), Transit: &main, Backups: []model.Node{bad}}); err == nil {
+		t.Error("候选中转的角色必须是中转")
+	}
 }
 
 func TestRenderSharedGateway(t *testing.T) {

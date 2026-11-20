@@ -144,6 +144,19 @@ func (s *Server) Handler(port int) http.Handler {
 		}
 		return nil, c.eng.GatewayDown(c.ctx, c.id, in.Force)
 	})
+	api("POST /api/gateways/{id}/transits", true, func(c *call) (any, error) {
+		var in struct {
+			Transits []string `json:"transits"`
+		}
+		if err := c.body(&in); err != nil {
+			return nil, err
+		}
+		res, err := c.eng.SetGatewayTransits(c.ctx, c.id, in.Transits)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"reloaded": res.Reloaded, "rechecked": orEmpty(res.Rechecked), "failed": res.Failed}, nil
+	})
 	api("DELETE /api/gateways/{id}", true, func(c *call) (any, error) { return nil, c.eng.RemoveGateway(c.ctx, c.id) })
 
 	api("POST /api/slots", false, s.slotAdd)
@@ -294,6 +307,8 @@ type subView struct {
 type gatewayView struct {
 	ID            string   `json:"id"`
 	Transit       string   `json:"transit,omitempty"`
+	Backups       []string `json:"transit_backups,omitempty"`
+	ActiveTransit string   `json:"active_transit,omitempty"`
 	EgressNetwork string   `json:"egress_network"`
 	Pool          string   `json:"pool"`
 	Container     string   `json:"container"`
@@ -401,7 +416,8 @@ func (s *Server) state(c *call) (any, error) {
 	}
 	for _, g := range gwSt {
 		out.Gateways = append(out.Gateways, gatewayView{
-			ID: g.Gateway.ID, Transit: g.Gateway.Transit, EgressNetwork: g.Gateway.EgressNetwork, Pool: g.Gateway.Pool,
+			ID: g.Gateway.ID, Transit: g.Gateway.Transit, Backups: g.Gateway.Backups, ActiveTransit: g.ActiveTransit,
+			EgressNetwork: g.Gateway.EgressNetwork, Pool: g.Gateway.Pool,
 			Container: g.Container, CoreReady: g.CoreReady, ConfigCurrent: g.ConfigCurrent, Slots: orEmpty(g.Slots),
 		})
 	}
@@ -434,8 +450,15 @@ func (s *Server) state(c *call) (any, error) {
 			Source: n.Source, UsedBy: []string{},
 		}
 		for _, g := range gateways {
-			if g.Transit == n.ID {
-				v.UsedBy = append(v.UsedBy, "网关 "+g.ID)
+			for i, t := range g.Transits() {
+				if t != n.ID {
+					continue
+				}
+				if i == 0 {
+					v.UsedBy = append(v.UsedBy, "网关 "+g.ID)
+				} else {
+					v.UsedBy = append(v.UsedBy, "网关 "+g.ID+"（候选）")
+				}
 			}
 		}
 		for _, sl := range slots {

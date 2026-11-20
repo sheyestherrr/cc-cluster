@@ -36,10 +36,13 @@ const (
 
 	ipTransitEgress = "203.0.113.3"
 	ipTransitRemote = "198.51.100.2"
-	ipLandA         = "198.51.100.3"
-	ipLandB         = "198.51.100.4"
-	ipTarget        = "198.51.100.5"
-	fakenet         = "/opt/e2e/fakenet"
+	// 第二个假中转，用作候选。
+	ipTransit2Egress = "203.0.113.9"
+	ipTransit2Remote = "198.51.100.9"
+	ipLandA          = "198.51.100.3"
+	ipLandB          = "198.51.100.4"
+	ipTarget         = "198.51.100.5"
+	fakenet          = "/opt/e2e/fakenet"
 )
 
 type env struct {
@@ -110,6 +113,10 @@ func setup(t *testing.T) *env {
 	if err := dk.NetworkConnect(ctx, netRemote, cluster+"-svc-transit", ipTransitRemote); err != nil {
 		t.Fatalf("假中转接入远端网络: %v", err)
 	}
+	e.service("transit2", netEgress, ipTransit2Egress, "socks5", "1080")
+	if err := dk.NetworkConnect(ctx, netRemote, cluster+"-svc-transit2", ipTransit2Remote); err != nil {
+		t.Fatalf("第二个假中转接入远端网络: %v", err)
+	}
 
 	data := filepath.Join(base, "data")
 	if err := os.RemoveAll(data); err != nil {
@@ -132,6 +139,7 @@ func setup(t *testing.T) *env {
 	}
 	// 中转用域名 + connect_ipv4，顺带验证核心的 hosts 固定。
 	must(t, e.eng.AddNode(e.ctx, model.Node{ID: "transit", Role: model.RoleTransit, Proxy: socks("transit.test"), ConnectIPv4: ipTransitEgress}))
+	must(t, e.eng.AddNode(e.ctx, model.Node{ID: "transit2", Role: model.RoleTransit, Proxy: socks(ipTransit2Egress)}))
 	must(t, e.eng.AddNode(e.ctx, model.Node{ID: "la", Role: model.RoleLanding, Proxy: socks(ipLandA), ExpectExitIP: ipLandA, TZ: "Asia/Tokyo"}))
 	must(t, e.eng.AddNode(e.ctx, model.Node{ID: "lb", Role: model.RoleLanding, Proxy: socks(ipLandB), ExpectExitIP: ipLandB}))
 	must(t, e.eng.AddNode(e.ctx, model.Node{ID: "lwrong", Role: model.RoleLanding, Proxy: socks(ipLandB), ExpectExitIP: "198.51.100.99"}))
@@ -440,6 +448,67 @@ func TestEndToEnd(t *testing.T) {
 		e.eng.LandingLimit = 0
 		must(t, e.eng.SlotRemove(e.ctx, "d", true))
 		e.expect("A 不受影响", seenA, e.w("a", "get", ipTarget, "80"))
+	})
+
+	t.Run("候选中转", func(t *testing.T) {
+		e.t = t
+		active := func() string {
+			sts, err := e.eng.GatewayStatuses(e.ctx)
+			must(t, err)
+			for _, s := range sts {
+				if s.Gateway.ID == "main" {
+					return s.ActiveTransit
+				}
+			}
+			return ""
+		}
+		// 在线加上一个候选：已就绪的槽位重新核对后仍然就绪，出口不变。
+		res, err := e.eng.SetGatewayTransits(e.ctx, "main", []string{"transit", "transit2"})
+		must(t, err)
+		if !res.Reloaded || len(res.Failed) != 0 || len(res.Rechecked) < 2 {
+			t.Fatalf("加候选中转后的核对结果: %+v", res)
+		}
+		if a, b := e.state("a"), e.state("b"); a != engine.StateReady || b != engine.StateReady {
+			t.Fatalf("加候选中转后槽位应仍就绪: a=%s b=%s", a, b)
+		}
+		e.expect("A 经主用中转，出口仍是落地 A", seenA, e.w("a", "get", ipTarget, "80"))
+		if got := active(); got != "transit" {
+			t.Errorf("主用的可用时应在用它，得到 %q", got)
+		}
+
+		// 主用的中转停掉：核心自己改用候选的，出口仍是各自的落地。
+		must(t, e.dk.ContainerStop(e.ctx, cluster+"-svc-transit", 0))
+		deadline := time.Now().Add(150 * time.Second)
+		got := ""
+		for time.Now().Before(deadline) {
+			if got = e.w("a", "get", ipTarget, "80"); regexp.MustCompile(seenA).MatchString(got) {
+				break
+			}
+			time.Sleep(3 * time.Second)
+		}
+		e.expect("主用中转停掉后 A 经候选恢复，出口仍是落地 A", seenA, got)
+		e.expect("B 同样恢复，出口仍是落地 B", seenB, e.w("b", "get", ipTarget, "80"))
+		if got := active(); got != "transit2" {
+			t.Errorf("主用的不通时应在用候选，得到 %q", got)
+		}
+		if a := e.state("a"); a != engine.StateReady {
+			t.Errorf("自动改用候选不应让槽位退出就绪: %s", a)
+		}
+
+		// 恢复主用的，并换回只有一个中转：后面的测试照旧。
+		must(t, e.dk.ContainerStart(e.ctx, cluster+"-svc-transit"))
+		res, err = e.eng.SetGatewayTransits(e.ctx, "main", []string{"transit"})
+		must(t, err)
+		if len(res.Failed) != 0 {
+			t.Fatalf("换回单个中转后的核对结果: %+v", res)
+		}
+		e.expect("换回后 A 正常", seenA, e.w("a", "get", ipTarget, "80"))
+		if _, err := e.eng.SetGatewayTransits(e.ctx, "main", []string{"transit", "la"}); err == nil {
+			t.Error("落地不能当候选中转")
+		}
+		if err := e.eng.RemoveNode("transit2"); err != nil {
+			t.Errorf("不再被引用的候选中转应能删除: %v", err)
+		}
 	})
 
 	t.Run("核心被杀", func(t *testing.T) {

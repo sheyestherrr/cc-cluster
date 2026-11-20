@@ -170,10 +170,21 @@ func (g Gateway) Validate() error {
 	if err := ValidateID("网关", g.ID); err != nil {
 		return err
 	}
-	if g.Transit != "" {
-		if err := ValidateID("节点", g.Transit); err != nil {
+	if g.Transit == "" && len(g.Backups) > 0 {
+		return fmt.Errorf("网关 %s 没有主用的中转，不能有候选中转", g.ID)
+	}
+	seen := map[string]bool{}
+	for _, t := range g.Transits() {
+		if err := ValidateID("节点", t); err != nil {
 			return err
 		}
+		if seen[t] {
+			return fmt.Errorf("网关 %s 的中转 %s 重复了", g.ID, t)
+		}
+		seen[t] = true
+	}
+	if len(g.Backups) > MaxTransitBackups {
+		return fmt.Errorf("网关 %s 的候选中转最多 %d 个", g.ID, MaxTransitBackups)
 	}
 	if g.EgressNetwork == "" {
 		return fmt.Errorf("网关 %s 缺少出口网络名", g.ID)

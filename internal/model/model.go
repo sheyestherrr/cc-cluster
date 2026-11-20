@@ -182,7 +182,10 @@ func (s Subscription) Find(name string) (SubProxy, bool) {
 type Gateway struct {
 	ID string `json:"id"`
 	// Transit 是中转节点 ID；为空表示单跳（直连落地），此时该网关只能接一个槽。
-	Transit       string   `json:"transit,omitempty"`
+	Transit string `json:"transit,omitempty"`
+	// Backups 是候选中转，按顺序：主用的 Transit 不通时核心自动改用其中第一个通的，
+	// 主用的恢复后切回。换中转不改变出口（出口由落地决定）。没有 Transit 时必须为空。
+	Backups       []string `json:"transit_backups,omitempty"`
 	EgressNetwork string   `json:"egress_network"`
 	Pool          string   `json:"pool"`
 	DNS           []string `json:"dns"`
@@ -191,6 +194,17 @@ type Gateway struct {
 	ConnectURLs []string `json:"connect_urls,omitempty"`
 	Image       string   `json:"image,omitempty"`
 	LogLevel    string   `json:"log_level,omitempty"`
+}
+
+// MaxTransitBackups 是一个网关的候选中转数量上限。
+const MaxTransitBackups = 8
+
+// Transits 返回全部中转：主用的在前，候选的按顺序在后。
+func (g Gateway) Transits() []string {
+	if g.Transit == "" {
+		return nil
+	}
+	return append([]string{g.Transit}, g.Backups...)
 }
 
 // ConnectivityURLs 返回连通性检查要访问的地址。

@@ -25,8 +25,14 @@ const (
 	SocketPath = HomeDir + "/mihomo.sock"
 )
 
-// TransitName 是中转在核心配置里的代理名。
+// TransitName 是中转在核心配置里的代理名；有候选中转时它是那个自动改用的组。
 const TransitName = "transit"
+
+// TransitCheckSeconds 是有候选中转时核心检查各中转是否可用的间隔。
+const TransitCheckSeconds = 30
+
+// TransitMemberName 是有候选中转时第 i 个中转（0 是主用的）的代理名。
+func TransitMemberName(i int) string { return fmt.Sprintf("%s-%d", TransitName, i) }
 
 // LandingName 返回落地节点在核心配置里的代理名。
 func LandingName(nodeID string) string { return "land-" + nodeID }
@@ -41,7 +47,8 @@ type Binding struct {
 // Input 是生成一个网关配置所需的全部期望状态。
 type Input struct {
 	Gateway  model.Gateway
-	Transit  *model.Node // 为 nil 表示单跳
+	Transit  *model.Node  // 为 nil 表示单跳
+	Backups  []model.Node // 候选中转，按顺序；Transit 为 nil 时必须为空
 	Bindings []Binding
 }
 
@@ -76,8 +83,8 @@ func Render(in Input) (Output, error) {
 	if in.Transit == nil && len(in.Bindings) > 1 {
 		return Output{}, fmt.Errorf("网关 %s 没有中转，只能接一个槽（专用网关）；现有 %d 个", gw.ID, len(in.Bindings))
 	}
-	if in.Transit != nil && in.Transit.Role != model.RoleTransit {
-		return Output{}, fmt.Errorf("节点 %s 的角色不是中转", in.Transit.ID)
+	if in.Transit == nil && len(in.Backups) > 0 {
+		return Output{}, fmt.Errorf("网关 %s 没有主用的中转，不能有候选中转", gw.ID)
 	}
 
 	bindings := append([]Binding(nil), in.Bindings...)
@@ -86,18 +93,40 @@ func Render(in Input) (Output, error) {
 	hosts := map[string]string{}
 	hops := map[netip.Addr]bool{}
 	var proxies []map[string]any
+	var groups []map[string]any
 	dnsVia := ""
 
 	if t := in.Transit; t != nil {
-		hop, err := t.FirstHopIP()
-		if err != nil {
-			return Output{}, err
+		// 只有一个中转时它就叫 TransitName；有候选时每个中转各有名字，TransitName 是按顺序
+		// 自动改用的组（fallback）：排在前面的通就用前面的。落地经这个名字拨号，两种情况写法相同。
+		all := append([]model.Node{*t}, in.Backups...)
+		var members []string
+		for i, n := range all {
+			if n.Role != model.RoleTransit {
+				return Output{}, fmt.Errorf("节点 %s 的角色不是中转", n.ID)
+			}
+			hop, err := n.FirstHopIP()
+			if err != nil {
+				return Output{}, err
+			}
+			hops[hop] = true
+			if n.ServerIsDomain() {
+				hosts[n.Server()] = hop.String()
+			}
+			name := TransitName
+			if len(all) > 1 {
+				name = TransitMemberName(i)
+				members = append(members, name)
+			}
+			proxies = append(proxies, proxyEntry(n, name, ""))
 		}
-		hops[hop] = true
-		if t.ServerIsDomain() {
-			hosts[t.Server()] = hop.String()
+		if len(all) > 1 {
+			groups = append(groups, map[string]any{
+				"name": TransitName, "type": "fallback", "proxies": members,
+				"url": gw.ConnectivityURLs()[0], "interval": TransitCheckSeconds, "timeout": 5000,
+				"lazy": false, "max-failed-times": 2,
+			})
 		}
-		proxies = append(proxies, proxyEntry(*t, TransitName, ""))
 		dnsVia = TransitName
 	}
 
@@ -205,6 +234,9 @@ func Render(in Input) (Output, error) {
 		"proxies":   orEmpty(proxies),
 		"listeners": orEmpty(listeners),
 		"rules":     rules,
+	}
+	if len(groups) > 0 { // 没有候选中转时不出现这一项，已有网关的配置摘要不变
+		cfg["proxy-groups"] = groups
 	}
 
 	var buf bytes.Buffer

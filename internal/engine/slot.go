@@ -57,8 +57,10 @@ func (e *Engine) RemoveNode(id string) (err error) {
 		return err
 	}
 	for _, g := range gws {
-		if g.Transit == id {
-			return fmt.Errorf("网关 %s 还在用节点 %s 作中转", g.ID, id)
+		for _, t := range g.Transits() {
+			if t == id {
+				return fmt.Errorf("网关 %s 还在用节点 %s 作中转", g.ID, id)
+			}
 		}
 	}
 	slots, err := e.st.Slots()
@@ -85,8 +87,16 @@ func (e *Engine) AddGateway(g model.Gateway) (err error) {
 	if err := g.Validate(); err != nil {
 		return err
 	}
-	if g.Transit != "" {
-		t, err := e.st.Node(g.Transit)
+	if err := e.checkTransits(g); err != nil {
+		return err
+	}
+	return e.st.SaveGateway(g, true)
+}
+
+// checkTransits 核对网关引用的中转都已登记、角色是中转、有首跳地址。
+func (e *Engine) checkTransits(g model.Gateway) error {
+	for _, id := range g.Transits() {
+		t, err := e.st.Node(id)
 		if err != nil {
 			return err
 		}
@@ -97,7 +107,85 @@ func (e *Engine) AddGateway(g model.Gateway) (err error) {
 			return err
 		}
 	}
-	return e.st.SaveGateway(g, true)
+	return nil
+}
+
+// TransitChange 是 SetGatewayTransits 的结果。
+type TransitChange struct {
+	// Reloaded 表示网关在运行，新配置已经生效。
+	Reloaded bool
+	// Rechecked 是换完之后重新核对过链路与出口的槽位；Failed 是其中没有通过的及原因，
+	// 它们不再算作就绪，排查后要重新 slot up。
+	Rechecked []string
+	Failed    map[string]string
+}
+
+// SetGatewayTransits 更换一个网关的中转：transits 的第一个是主用的，其余是候选。
+// 网关在运行时在线重载，并让换之前已就绪的槽位重新走一遍链路检查与出口核对
+// （出口由落地决定，换中转不应改变它）。
+func (e *Engine) SetGatewayTransits(ctx context.Context, id string, transits []string) (res TransitChange, err error) {
+	unlock, err := e.st.Lock()
+	if err != nil {
+		return res, err
+	}
+	defer unlock()
+	defer func() { e.record("gateway.transit", id, err, strings.Join(transits, ",")) }()
+	g, err := e.st.Gateway(id)
+	if err != nil {
+		return res, err
+	}
+	if g.Transit == "" {
+		return res, fmt.Errorf("网关 %s 是直连落地的，没有中转可换；要经中转就另建一个带中转的网关", id)
+	}
+	if len(transits) == 0 {
+		return res, errors.New("至少给出一个中转")
+	}
+	g.Transit, g.Backups = transits[0], append([]string(nil), transits[1:]...)
+	g.Normalize()
+	if err := g.Validate(); err != nil {
+		return res, err
+	}
+	if err := e.checkTransits(g); err != nil {
+		return res, err
+	}
+
+	// 先记下现在已接线的槽位，再保存：保存之后它们的摘要就对不上了。
+	var ready []string
+	if c, ok, ierr := e.inspect(ctx, e.GatewayContainer(id)); ierr != nil {
+		return res, ierr
+	} else if ok && c.State.Running {
+		res.Reloaded = true
+		slots, err := e.st.Slots()
+		if err != nil {
+			return res, err
+		}
+		for _, sl := range slots {
+			if sl.Gateway != id {
+				continue
+			}
+			if s, err := e.slotStatus(ctx, sl); err == nil && s.State == StateReady {
+				ready = append(ready, sl.ID)
+			}
+		}
+	}
+	if err := e.st.SaveGateway(g, false); err != nil {
+		return res, err
+	}
+	if !res.Reloaded {
+		return res, nil
+	}
+	if _, _, err := e.gatewayUp(ctx, id); err != nil {
+		return res, err
+	}
+	res.Failed = map[string]string{}
+	for _, sid := range ready {
+		res.Rechecked = append(res.Rechecked, sid)
+		if _, uerr := e.slotUp(ctx, sid, UpOptions{}); uerr != nil {
+			res.Failed[sid] = uerr.Error()
+			e.logf("提醒：槽位 %s 换中转后没有通过核对：%v", sid, uerr)
+		}
+	}
+	return res, nil
 }
 
 // SlotOptions 是登记槽位时可以指定的身份部分；留空则随机生成。
@@ -851,6 +939,9 @@ func (e *Engine) checkChain(ctx context.Context, rt *gatewayRuntime, p *gatewayP
 		return fmt.Errorf("经落地 %s 访问不了 %s：落地连不上，或者它的协议、账号写得不对", landing.ID, strings.Join(urls, "、"))
 	}
 	if _, terr := e.proxyDelay(ctx, rt, mihomo.TransitName, urls); terr != nil {
+		if len(p.gw.Backups) > 0 {
+			return fmt.Errorf("中转这一跳就不通：主用的 %s 和候选的 %s 都访问不了 %s；换一批中转（gateway set-transit）", p.transit.ID, strings.Join(p.gw.Backups, "、"), strings.Join(urls, "、"))
+		}
 		return fmt.Errorf("中转 %s 这一跳就不通（经它访问不了 %s）；换一个中转，取自订阅的可以用 sub test 找能用的节点", p.transit.ID, strings.Join(urls, "、"))
 	}
 	hint := "换一个中转"

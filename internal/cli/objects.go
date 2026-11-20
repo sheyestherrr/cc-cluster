@@ -280,13 +280,44 @@ func (a *app) nodeList(args []string) error {
 // ---- gateway ----
 
 func (a *app) cmdGateway(ctx context.Context, args []string) error {
-	sub, rest, err := a.subcommand("gateway", "add|list|up|down|rm", args)
+	sub, rest, err := a.subcommand("gateway", "add|list|set-transit|up|down|rm", args)
 	if err != nil {
 		return err
 	}
 	switch sub {
 	case "add":
 		return a.gatewayAdd(rest)
+	case "set-transit":
+		fs := a.newFlags("gateway set-transit", "gateway set-transit <网关> <主用中转> [候选中转…]")
+		id, err := parseWithID(fs, rest)
+		if err != nil {
+			return err
+		}
+		if fs.NArg() == 0 {
+			fs.Usage()
+			return errUsage
+		}
+		eng, _, err := a.open(ctx, true)
+		if err != nil {
+			return err
+		}
+		res, err := eng.SetGatewayTransits(ctx, id, fs.Args())
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(a.out, "网关 %s 的中转已改为 %s", id, fs.Arg(0))
+		if fs.NArg() > 1 {
+			fmt.Fprintf(a.out, "（候选：%s；主用的不通时自动改用，出口不变）", strings.Join(fs.Args()[1:], "、"))
+		}
+		switch {
+		case !res.Reloaded:
+			fmt.Fprintln(a.out, "；网关没有在运行，下次启动时生效")
+		case len(res.Failed) > 0:
+			fmt.Fprintf(a.out, "；已生效，但 %d 个槽位换完后没有通过核对（见上面的提醒），排查后重新 slot up\n", len(res.Failed))
+		default:
+			fmt.Fprintf(a.out, "；已生效，重新核对了 %d 个槽位的出口\n", len(res.Rechecked))
+		}
+		return nil
 	case "list", "ls":
 		if err := parse(a.newFlags("gateway list", "gateway list"), rest); err != nil {
 			return err
@@ -340,7 +371,8 @@ func (a *app) cmdGateway(ctx context.Context, args []string) error {
 func (a *app) gatewayAdd(args []string) error {
 	fs := a.newFlags("gateway add", "gateway add <网关> [--transit 节点] [参数]")
 	g := model.Gateway{}
-	var dns, echo, connect multi
+	var dns, echo, connect, backups multi
+	fs.Var(&backups, "backup", "候选中转，可重复、按顺序：主用的不通时核心自动改用，恢复后切回；出口由落地决定，不随之改变")
 	fs.Var(&connect, "connect-url", "连通性检查访问的地址，可重复（默认是 Google 和 Cloudflare 的 204 地址）；出口探测之前先用它分段检查链路")
 	fs.StringVar(&g.Transit, "transit", "", "中转节点；不填表示单跳直连落地，此时该网关只能接一个槽")
 	fs.StringVar(&g.EgressNetwork, "egress-network", model.DefaultEgressNetwork, "出口所在的 Docker 网络；不存在时创建为普通 bridge 网络")
@@ -353,7 +385,7 @@ func (a *app) gatewayAdd(args []string) error {
 	if err != nil {
 		return err
 	}
-	g.ID, g.DNS, g.EchoURLs, g.ConnectURLs = id, dns, echo, connect
+	g.ID, g.DNS, g.EchoURLs, g.ConnectURLs, g.Backups = id, dns, echo, connect, backups
 	eng, _, err := a.open(context.Background(), false)
 	if err != nil {
 		return err
@@ -373,7 +405,14 @@ func (a *app) printGateways(ctx context.Context, eng *engine.Engine) error {
 	w := a.table()
 	fmt.Fprintln(w, "网关\t中转\t出口网络\t容器\t核心就绪\t配置最新\t槽位")
 	for _, s := range sts {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Gateway.ID, orDash(s.Gateway.Transit), s.Gateway.EgressNetwork,
+		transit := orDash(s.Gateway.Transit)
+		if n := len(s.Gateway.Backups); n > 0 {
+			transit += fmt.Sprintf(" +%d 候选", n)
+			if s.ActiveTransit != "" && s.ActiveTransit != s.Gateway.Transit {
+				transit += "（在用 " + s.ActiveTransit + "）"
+			}
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Gateway.ID, transit, s.Gateway.EgressNetwork,
 			s.Container, yesNo(s.CoreReady), yesNo(s.ConfigCurrent), orDash(strings.Join(s.Slots, ",")))
 	}
 	return w.Flush()
