@@ -8,8 +8,8 @@ Claude-Hydra 以 MIT 许可发布，许可全文附在本文件末尾。
 
 | 本目录的文件 | 上游文件（`app/` 下） | 改动 |
 | --- | --- | --- |
-| `tailwind.config.cjs`、`postcss.config.cjs`、`tsconfig*.json`、`vite.config.ts` | 同名文件 | 去掉 Tauri 相关设置，产物输出到 Go 的嵌入目录 |
-| `src/index.css` | `src/index.css` | 原样 |
+| `tailwind.config.cjs`、`tsconfig*.json`、`vite.config.ts` | 同名文件 | 去掉 Tauri 相关设置，产物输出到 Go 的嵌入目录；升级到 Tailwind 4 后样式由它的 vite 插件处理，上游的 `postcss.config.cjs` 不再需要，已删除 |
+| `src/index.css` | `src/index.css` | 为 Tailwind 4 改了入口写法和三处基础样式，见文件开头的说明 |
 | `src/lib/utils.ts`、`src/lib/theme.ts` | 同名文件 | 时间显示改为接受 ISO 时间；本地存储的键改名 |
 | `src/components/ui/*.tsx`、`src/components/Menu.tsx` | 同名文件 | 原样或只改了注释 |
 | `src/components/PageHeader.tsx` | `src/components/PageHeader.tsx` | 页头与分组原样；内容区加了“列表 + 右侧详情栏”的两栏布局和可选中的行，这部分是本项目自己写的 |

@@ -2,10 +2,12 @@
 import path from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   root: "src",
-  plugins: [react()],
+  // Tailwind 4 起由它自己的 vite 插件处理样式，不再经过 PostCSS。
+  plugins: [react(), tailwindcss()],
   base: "./",
   // 产物直接放进 Go 的嵌入目录；那里有一个纳入版本库的占位文件，所以不清空目录（由 make web 先删旧产物）。
   build: { outDir: "../../internal/web/dist", emptyOutDir: false, target: "es2021" },

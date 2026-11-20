@@ -1,7 +1,11 @@
-/* 取自 Claude-Hydra（MIT）app/src/index.css，v1.1.6，原样。 */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/*
+ * 取自 Claude-Hydra（MIT）app/src/index.css，v1.1.6。为 Tailwind 4 做了四处改动：
+ * 入口改成 @import 加 @config（主题仍在 tailwind.config.cjs）；按钮的手形光标由这里补上
+ *（新版的预设样式不再给）；按下缩小改用 scale 属性，才能被 active:!scale-100 取消；
+ * .field 的 outline-none 换成含义相同的 outline-hidden。
+ */
+@import "tailwindcss";
+@config "../tailwind.config.cjs";
 
 /*
  * Design tokens (RGB triplets so Tailwind can apply alpha).
@@ -105,13 +109,18 @@
   input,
   select,
   textarea {
-    transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+    transition-property: color, background-color, border-color, box-shadow, transform, scale, opacity;
     transition-duration: 140ms;
     transition-timing-function: var(--ease);
   }
 
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
   button:not(:disabled):active {
-    transform: scale(0.97);
+    scale: 0.97;
   }
 
   :focus-visible {
@@ -151,7 +160,7 @@
     @apply px-1 pb-1.5 text-[11px] font-medium uppercase tracking-[0.04em] text-muted;
   }
   .field {
-    @apply h-8 w-full rounded-md bg-pill px-2.5 text-[13px] text-fg outline-none;
+    @apply h-8 w-full rounded-md bg-pill px-2.5 text-[13px] text-fg outline-hidden;
   }
   select.field {
     -webkit-appearance: none;
