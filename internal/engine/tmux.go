@@ -66,8 +66,9 @@ func (e *Engine) tmuxBin() (string, error) {
 }
 
 // tmuxEnv 是运行宿主 tmux 时的环境：本进程的环境去掉 TMUX 与 TMUX_PANE
-// （在别的 tmux 里运行管理器时，它们指向那一个 server），再加上 Tmux.Env。
-func (e *Engine) tmuxEnv() []string {
+// （在别的 tmux 里运行管理器时，它们指向那一个 server），加上 extra，最后是 Tmux.Env。
+// 同名的变量以后出现的为准。
+func (e *Engine) tmuxEnv(extra ...string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
 		if strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=") {
@@ -75,6 +76,7 @@ func (e *Engine) tmuxEnv() []string {
 		}
 		env = append(env, kv)
 	}
+	env = append(env, extra...)
 	return append(env, e.Tmux.Env...)
 }
 
@@ -88,6 +90,12 @@ func (e *Engine) tmuxArgs(id string, args ...string) []string {
 }
 
 func (e *Engine) tmuxRun(ctx context.Context, id string, args ...string) (string, error) {
+	return e.tmuxRunEnv(ctx, id, nil, args...)
+}
+
+// tmuxRunEnv 同 tmuxRun，另外带上 extra 里的环境变量。启动 server 的那一次调用的环境
+// 会成为 server 的全局环境，之后每个 pane 里的 shell 都继承它。
+func (e *Engine) tmuxRunEnv(ctx context.Context, id string, extra []string, args ...string) (string, error) {
 	bin, err := e.tmuxBin()
 	if err != nil {
 		return "", err
@@ -95,7 +103,7 @@ func (e *Engine) tmuxRun(ctx context.Context, id string, args ...string) (string
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, e.tmuxArgs(id, args...)...)
-	cmd.Env = e.tmuxEnv()
+	cmd.Env = e.tmuxEnv(extra...)
 	out, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(out))
 	if err != nil {
@@ -182,7 +190,11 @@ func (e *Engine) TmuxEnsure(ctx context.Context, id, dir string) (started bool, 
 			return false, err
 		}
 	}
-	if _, err := e.tmuxRun(ctx, id, "new-session", "-d", "-s", TmuxSession, "-c", dir); err != nil {
+	// pane 里是用户自己的登录 shell（module、许可证等环境要靠它的启动文件）。历史单独放在
+	// 该槽的目录下：经桥接执行的命令不混进用户平时的历史，事后也能在这里查到执行过什么。
+	// 只对读 HISTFILE 的 shell（bash、zsh）有效；启动文件里自己重设了 HISTFILE 的以它为准。
+	hist := []string{"HISTFILE=" + e.st.TmuxHistory(id)}
+	if _, err := e.tmuxRunEnv(ctx, id, hist, "new-session", "-d", "-s", TmuxSession, "-c", dir); err != nil {
 		return false, fmt.Errorf("启动槽位 %s 的宿主 tmux 失败：%w", id, err)
 	}
 	e.record("tmux.start", id, nil, dir)

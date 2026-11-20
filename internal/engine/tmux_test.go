@@ -176,6 +176,14 @@ func TestTmuxServerLifecycle(t *testing.T) {
 	if err != nil || !strings.HasPrefix(out, TmuxSession+" ") || !strings.Contains(out, want) {
 		t.Fatalf("session 或工作目录不对：%q %v（期望目录 %s）", out, err, want)
 	}
+	// shell 历史单独放在该槽的目录下，而且不在挂进 worker 的那个目录里。
+	hist, err := eng.tmuxRun(ctx, "a", "show-environment", "-g", "HISTFILE")
+	if want := "HISTFILE=" + st.TmuxHistory("a"); err != nil || hist != want {
+		t.Fatalf("server 的环境里应有该槽自己的历史文件：%q %v（期望 %s）", hist, err, want)
+	}
+	if strings.HasPrefix(st.TmuxHistory("a"), st.TmuxDir("a")+"/") {
+		t.Fatal("历史文件不应放在挂进 worker 的 socket 目录里")
+	}
 	if started, err := eng.TmuxEnsure(ctx, "a", ""); err != nil || started {
 		t.Fatalf("已在运行时不应再启动一次：%v %v", started, err)
 	}

@@ -262,6 +262,10 @@ func (s *Store) EtcDir(id string) string { return s.path("slots", id, "etc") }
 // TmuxDir 返回槽位的宿主 tmux socket 所在的目录；开启桥接时整个目录挂进 worker。
 func (s *Store) TmuxDir(id string) string { return s.path("slots", id, "tmux") }
 
+// TmuxHistory 返回槽位的宿主 tmux 里 shell 历史文件的路径。它不在挂进 worker 的目录里：
+// 人接入这个 tmux 时敲的命令也记在这里，槽内不应读到。
+func (s *Store) TmuxHistory(id string) string { return s.path("slots", id, "tmux-history") }
+
 // SaveSlot 写入槽位并确保其子目录存在；create 为 true 时槽位已存在则返回 ErrExists。
 func (s *Store) SaveSlot(sl model.Slot, create bool) error {
 	p := filepath.Join(s.SlotDir(sl.ID), "slot.json")
