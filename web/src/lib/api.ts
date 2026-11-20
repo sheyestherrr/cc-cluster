@@ -101,6 +101,10 @@ export interface Slot {
 export interface Gateway {
   id: string;
   transit?: string;
+  /** 候选中转，按顺序；主用的不通时核心自动改用。 */
+  transit_backups?: string[];
+  /** 有候选时当前在用的中转；问不到时没有。 */
+  active_transit?: string;
   egress_network: string;
   pool: string;
   container: string;
@@ -254,6 +258,9 @@ export const api = {
   removeNode: (node: string) => del(`nodes/${id(node)}`),
 
   addGateway: (gw: { id: string; transit: string; pool: string }) => post("gateways", gw),
+  /** 更换网关的中转：第一个是主用的，其余是候选。 */
+  setTransits: (gw: string, transits: string[]) =>
+    post<{ reloaded: boolean; rechecked: string[]; failed: Record<string, string> | null }>(`gateways/${id(gw)}/transits`, { transits }),
   gatewayUp: (gw: string) => post(`gateways/${id(gw)}/up`),
   gatewayDown: (gw: string, force: boolean) => post(`gateways/${id(gw)}/down`, { force }),
   removeGateway: (gw: string) => del(`gateways/${id(gw)}`),

@@ -96,7 +96,7 @@ export function NetworkPage({ state, loadError, refresh }: Props) {
       />
     );
   } else if (state && current?.kind === "gateway") {
-    side = <GatewayDetail key={`gateway:${current.id}`} g={state.gateways.find((x) => x.id === current.id)!} state={state} />;
+    side = <GatewayDetail key={`gateway:${current.id}`} g={state.gateways.find((x) => x.id === current.id)!} state={state} refresh={refresh} />;
   } else if (state && current?.kind === "sub") {
     side = <SubDetail key={`sub:${current.id}`} s={state.subs.find((x) => x.id === current.id)!} state={state} onBrowse={() => setBrowsing(current.id)} />;
   }
@@ -433,9 +433,11 @@ function NodeDetail({ n, state, busy, onReport }: { n: NodeInfo; state: State; b
 }
 
 /** 详情栏：一个网关。 */
-function GatewayDetail({ g, state }: { g: Gateway; state: State }) {
+function GatewayDetail({ g, state, refresh }: { g: Gateway; state: State; refresh: () => Promise<void> }) {
   const running = g.container === "running";
   const transit = state.nodes.find((n) => n.id === g.transit);
+  const backups = g.transit_backups ?? [];
+  const [changing, setChanging] = useState(false);
   return (
     <>
       <DetailHeader
@@ -447,6 +449,7 @@ function GatewayDetail({ g, state }: { g: Gateway; state: State }) {
             <span>{gatewayStatus(g)}</span>
           </>
         }
+        actions={g.transit ? <Button variant="outline" size="sm" onClick={() => setChanging(true)}>更换中转…</Button> : undefined}
       />
       <DetailGrid>
         <section>
@@ -459,6 +462,16 @@ function GatewayDetail({ g, state }: { g: Gateway; state: State }) {
                 {transit && <span className="text-muted">{transit.type} · {transit.server}:{transit.port}</span>}
               </span>
             </KeyValue>
+            {backups.length > 0 && (
+              <KeyValue k="候选" plain>
+                <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-fg-2">
+                  <span className="selectable font-mono text-[11.5px]">{backups.join("、")}</span>
+                  {g.active_transit && g.active_transit !== g.transit
+                    ? <Tag tone="warn" title="主用的中转现在不通，核心已改用候选的；出口不变，主用的恢复后会切回">在用 {g.active_transit}</Tag>
+                    : <span className="text-muted">主用的不通时自动改用，出口不变</span>}
+                </span>
+              </KeyValue>
+            )}
             <KeyValue k="配置" v={!running ? "网关没有在运行" : g.config_current ? "与当前的节点和槽位设置一致" : "节点或槽位的设置变过，重新启动网关或槽位后生效"} plain />
             <KeyValue k="槽位" v={g.slots.length ? g.slots.join("、") : "没有槽位"} plain />
           </div>
@@ -472,7 +485,80 @@ function GatewayDetail({ g, state }: { g: Gateway; state: State }) {
           </div>
         </section>
       </DetailGrid>
+      <TransitDialog open={changing} g={g} state={state} onClose={() => setChanging(false)} onChanged={refresh} />
     </>
+  );
+}
+
+/** 更换一个网关的中转：按点选的顺序，第一个是主用的，其余是候选。 */
+function TransitDialog({ open, g, state, onClose, onChanged }: { open: boolean; g: Gateway; state: State; onClose: () => void; onChanged: () => Promise<void> }) {
+  const toast = useToast();
+  const transits = state.nodes.filter((n) => n.role === "transit");
+  const [picked, setPicked] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  useResetOnOpen(open, () => {
+    setPicked([g.transit ?? "", ...(g.transit_backups ?? [])].filter(Boolean));
+    setError("");
+  });
+
+  const save = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const r = (await api.setTransits(g.id, picked)).data;
+      const failed = Object.keys(r.failed ?? {});
+      if (!r.reloaded) toast(`网关 ${g.id} 的中转已更换，下次启动时生效。`);
+      else if (failed.length) toast(`中转已更换，但槽位 ${failed.join("、")} 换完后没有通过核对，排查后重新启动它们。`);
+      else toast(`网关 ${g.id} 的中转已更换并生效，重新核对了 ${r.rechecked.length} 个槽位的出口。`);
+      await onChanged();
+      onClose();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={`更换 ${g.id} 的中转`}
+      description="排第一的是主用的，其余是候选：主用的不通时核心自动改用下一个，恢复后切回。换中转不改变出口，出口由各槽位的落地决定。网关在运行时立即生效，并重新核对已就绪槽位的出口。"
+      className="max-w-[560px] bg-bg"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>取消</Button>
+          <Button onClick={save} disabled={saving || picked.length === 0}>{saving ? "更换并核对中…" : "更换"}</Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="list-card">
+          {transits.map((n) => {
+            const at = picked.indexOf(n.id);
+            return (
+              <div key={n.id} className="flex items-center gap-3 px-4 py-2">
+                <span className="w-14 shrink-0 text-[11.5px] text-muted">{at === 0 ? "主用" : at > 0 ? `候选 ${at}` : ""}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px]">{n.id}{n.source && <span className="ml-1.5 text-[11.5px] text-muted">{n.source.name}</span>}</div>
+                  <div className="selectable truncate font-mono text-[11px] text-muted">{n.type} · {n.server}:{n.port}</div>
+                </div>
+                {at > 0 && <Button variant="outline" size="sm" disabled={saving} onClick={() => setPicked([n.id, ...picked.filter((x) => x !== n.id)])}>设为主用</Button>}
+                {at >= 0
+                  ? <Button variant="outline" size="sm" disabled={saving} onClick={() => setPicked(picked.filter((x) => x !== n.id))}>移除</Button>
+                  : <Button variant="outline" size="sm" disabled={saving} onClick={() => setPicked([...picked, n.id])}>{picked.length ? "加为候选" : "设为主用"}</Button>}
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[11.5px] leading-[18px] text-muted">
+          这里只列已登记的中转节点。要从订阅里挑新的：在订阅的“选节点”里选一个落地测整条链路，只把能接通落地的登记为中转。核心只检查中转自己通不通，不检查它能不能接通落地，所以候选也要先这样测过。
+        </p>
+        {error && <ErrorBox text={error} />}
+      </div>
+    </Dialog>
   );
 }
 
@@ -744,6 +830,7 @@ function SubDialog({ sub, state, onClose, onChanged }: { sub: string | null; sta
   const [picked, setPicked] = useState<Delay | null>(null);
   const [form, setForm] = useState<{ id: string; role: Role; tz: string }>({ id: "", role: "transit", tz: "" });
   const [saving, setSaving] = useState(false);
+  const [showDead, setShowDead] = useState(false);
 
   const load = useCallback(async (id: string) => {
     try {
@@ -796,6 +883,7 @@ function SubDialog({ sub, state, onClose, onChanged }: { sub: string | null; sta
   };
 
   const fastest = nodes?.find((d) => d.delay_ms > 0 && !d.info);
+  const dead = nodes?.filter((d) => d.delay_ms < 0).length ?? 0;
 
   return (
     <Dialog
@@ -854,7 +942,7 @@ function SubDialog({ sub, state, onClose, onChanged }: { sub: string | null; sta
         {nodes === null && !error && <div className="py-6 text-center text-[12.5px] text-muted">读取中…</div>}
         {nodes && (
           <div className="list-card">
-            {nodes.map((d, i) => (
+            {nodes.filter((d) => showDead || d.delay_ms >= 0).map((d, i) => (
               <div key={`${d.name}-${i}`} className={cn("flex items-center gap-3 px-4 py-2 hover:bg-card-2", d.info && "opacity-60")}>
                 <span className="w-16 shrink-0 text-right font-mono text-[11.5px]">{delayLabel(d)}</span>
                 <div className="min-w-0 flex-1">
@@ -878,6 +966,11 @@ function SubDialog({ sub, state, onClose, onChanged }: { sub: string | null; sta
                 </Button>
               </div>
             ))}
+            {dead > 0 && (
+              <button type="button" className="w-full px-4 py-2 text-left text-[11.5px] text-muted hover:bg-card-2" onClick={() => setShowDead(!showDead)}>
+                {showDead ? `收起不通的 ${dead} 个` : `还有 ${dead} 个${testedVia ? `接不通落地 ${testedVia}` : "不通"}，已收起；点这里展开`}
+              </button>
+            )}
           </div>
         )}
       </div>
