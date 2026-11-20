@@ -144,6 +144,10 @@ tmux 的客户端和 server 要同一版本才连得上：`make image-worker` �
 | `images/worker` | 默认的 worker 基础镜像 |
 | `test/e2e` | 端到端测试与假服务 |
 
+## 许可
+
+本项目以 [MIT 许可](LICENSE)发布。网页界面里取自 Claude-Hydra 的文件沿用其 MIT 许可，逐文件来源见 [web/NOTICE.md](web/NOTICE.md)；发布包的 `licenses/` 目录里附有随二进制分发的第三方代码的许可说明。
+
 ## 致谢
 
 网页界面的风格、基础组件和页面骨架取自 [Claude-Hydra](https://github.com/jin-yu-liu/Claude-Hydra)（MIT 许可），订阅导入的做法也参考了它；取用的文件、改动和许可全文见 [web/NOTICE.md](web/NOTICE.md)。感谢该项目。

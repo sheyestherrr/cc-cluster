@@ -43,7 +43,7 @@ dist: web
 		os=$${p%/*}; arch=$${p#*/}; name=cc-cluster_$(DIST_TAG)_$${os}_$${arch}; \
 		mkdir -p $(DIST_DIR)/$$name/licenses; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$$name/cc-cluster ./cmd/cc-cluster; \
-		cp README.md $(DIST_DIR)/$$name/; \
+		cp README.md LICENSE $(DIST_DIR)/$$name/; \
 		cp web/NOTICE.md $(DIST_DIR)/$$name/licenses/web-NOTICE.md; \
 		cp "$$yaml/LICENSE" $(DIST_DIR)/$$name/licenses/yaml.v3-LICENSE; \
 		cp "$$yaml/NOTICE" $(DIST_DIR)/$$name/licenses/yaml.v3-NOTICE; \
