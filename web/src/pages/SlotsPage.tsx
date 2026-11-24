@@ -21,7 +21,7 @@ interface Props {
   goNetwork: () => void;
 }
 
-const stateText: Record<SlotState, string> = {
+export const stateText: Record<SlotState, string> = {
   ready: "已接线",
   pending: "已接线 · 配置待应用",
   offline: "运行中 · 未接线",

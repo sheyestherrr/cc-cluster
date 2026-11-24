@@ -4,6 +4,7 @@ import { AppShell, pageTitles, type PageId } from "@/components/AppShell";
 import { api, errorText, type State } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
 import { NetworkPage } from "@/pages/NetworkPage";
+import { OverviewPage } from "@/pages/OverviewPage";
 import { SlotsPage } from "@/pages/SlotsPage";
 import { SubsPage } from "@/pages/SubsPage";
 import { SystemPage } from "@/pages/SystemPage";
@@ -13,7 +14,7 @@ const REFRESH_MS = 8000;
 const APP_NAME = "cc-cluster";
 
 export default function App() {
-  const [page, setPage] = useState<PageId>("slots");
+  const [page, setPage] = useState<PageId>("overview");
   const [theme, setTheme] = useTheme();
   const [state, setState] = useState<State | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -49,6 +50,7 @@ export default function App() {
   return (
     <AppShell activePage={page} onPageChange={setPage} theme={theme} onThemeChange={setTheme}
       status={state ? { ready, total: state.slots.length } : null}>
+      {page === "overview" && <OverviewPage state={state} loadError={loadError} go={setPage} />}
       {page === "slots" && <SlotsPage state={state} loadError={loadError} refresh={refresh} goNetwork={() => setPage("network")} />}
       {page === "network" && <NetworkPage state={state} loadError={loadError} refresh={refresh} goSubs={() => setPage("subs")} />}
       {page === "subs" && <SubsPage state={state} loadError={loadError} refresh={refresh} />}

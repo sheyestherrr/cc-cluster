@@ -26,7 +26,8 @@ Claude-Hydra 以 MIT 许可发布，许可全文附在本文件末尾。
 `src/components/Flag.tsx`（国旗与行首的地区图标）、`src/favicon.svg` 也是本项目自己写的。国旗的图形来自依赖
 [country-flag-icons](https://gitlab.com/catamphetamine/country-flag-icons)（MIT）的 3x2 SVG，构建时原样放进产物。
 
-订阅页“订阅列表 + 节点列表 + 筛选栏”的安排参考了 [Resin](https://github.com/Resinat/Resin)（MIT）的订阅页与节点池页，
+订阅页“订阅列表 + 节点列表 + 筛选栏”和总览页（`src/pages/OverviewPage.tsx`，本项目自己写的）“指标卡 + 分布图 + 最近动态”的安排
+参考了 [Resin](https://github.com/Resinat/Resin)（MIT）的订阅页、节点池页与看板页，
 没有取用它的前端代码；分享链接的解析取自它的 Go 代码，来源与许可见 `internal/subscription/NOTICE.md`。
 
 ## Claude-Hydra 的许可（MIT）
