@@ -273,7 +273,7 @@ export const api = {
 
   addSub: (sub: string, url: string, note = "") => post<{ id: string; count: number }>("subs", { id: sub, url, note }),
   subNodes: (sub: string) => get<Delay[]>(`subs/${id(sub)}/nodes`),
-  refreshSub: (sub: string) => post<{ Total: number; Updated: string[] | null; Missing: string[] | null }>(`subs/${id(sub)}/refresh`),
+  refreshSub: (sub: string) => post<{ Total: number; Updated: string[] | null; Renamed: string[] | null; Missing: string[] | null }>(`subs/${id(sub)}/refresh`),
   testSub: (sub: string, landing: string) => post<Delay[]>(`subs/${id(sub)}/test`, { landing }),
   removeSub: (sub: string) => del(`subs/${id(sub)}`),
 

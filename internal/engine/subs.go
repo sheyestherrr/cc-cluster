@@ -162,11 +162,15 @@ func (e *Engine) pull(ctx context.Context, sub *model.Subscription) error {
 type RefreshResult struct {
 	Total   int      // 订阅里的节点数
 	Updated []string // 片段有变化、已更新的节点 ID
+	Renamed []string // 订阅里只是改了名、已跟着改过来的节点 ID
 	Missing []string // 订阅里已经找不到的节点 ID；它们保持原样
 }
 
 // SubRefresh 重新拉取订阅，并更新取自它的节点。网关上已经生效的配置不会自动改变：
 // 之后执行 gateway up 或 slot up 才应用。
+//
+// 节点先按名称对上订阅里的条目；名称不在了，但有一项的配置与它完全相同，就认为只是改了名。
+// 配置没变的条目保留上一次的测速结果。
 func (e *Engine) SubRefresh(ctx context.Context, id string) (res RefreshResult, err error) {
 	unlock, err := e.st.Lock()
 	if err != nil {
@@ -174,14 +178,32 @@ func (e *Engine) SubRefresh(ctx context.Context, id string) (res RefreshResult, 
 	}
 	defer unlock()
 	defer func() {
-		e.record("sub.refresh", id, err, fmt.Sprintf("更新 %d 个节点，%d 个已不在订阅里", len(res.Updated), len(res.Missing)))
+		detail := fmt.Sprintf("更新 %d 个节点，%d 个已不在订阅里", len(res.Updated), len(res.Missing))
+		if len(res.Renamed) > 0 {
+			detail += fmt.Sprintf("，%d 个改了名", len(res.Renamed))
+		}
+		e.record("sub.refresh", id, err, detail)
 	}()
 	sub, err := e.st.Sub(id)
 	if err != nil {
 		return res, err
 	}
+	delays := map[string]int{}
+	for _, p := range sub.Proxies {
+		if p.DelayMS != 0 {
+			delays[model.ProxyHash(p.Proxy)] = p.DelayMS
+		}
+	}
 	if err := e.pull(ctx, &sub); err != nil {
 		return res, err
+	}
+	byHash := map[string]string{}
+	for i, p := range sub.Proxies {
+		h := model.ProxyHash(p.Proxy)
+		sub.Proxies[i].DelayMS = delays[h]
+		if _, dup := byHash[h]; !dup {
+			byHash[h] = p.Name
+		}
 	}
 	if err := e.st.SaveSub(sub, false); err != nil {
 		return res, err
@@ -198,7 +220,16 @@ func (e *Engine) SubRefresh(ctx context.Context, id string) (res RefreshResult, 
 		}
 		p, ok := sub.Find(n.Source.Name)
 		if !ok {
-			res.Missing = append(res.Missing, n.ID)
+			name, same := byHash[model.ProxyHash(n.Proxy)]
+			if !same {
+				res.Missing = append(res.Missing, n.ID)
+				continue
+			}
+			n.Source = &model.NodeSource{Sub: id, Name: name}
+			if err := e.st.SaveNode(n, false); err != nil {
+				return res, err
+			}
+			res.Renamed = append(res.Renamed, n.ID)
 			continue
 		}
 		if sameJSON(p.Proxy, n.Proxy) {

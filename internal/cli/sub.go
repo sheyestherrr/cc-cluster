@@ -120,6 +120,9 @@ func (a *app) cmdSub(ctx context.Context, args []string) error {
 		if len(res.Updated) > 0 {
 			fmt.Fprintf(a.out, "已更新的节点：%s；用到它们的网关在下次 gateway up / slot up 时应用\n", strings.Join(res.Updated, "、"))
 		}
+		if len(res.Renamed) > 0 {
+			fmt.Fprintf(a.out, "订阅里改了名、已跟着改过来的节点：%s\n", strings.Join(res.Renamed, "、"))
+		}
 		if len(res.Missing) > 0 {
 			fmt.Fprintf(a.out, "订阅里已经找不到、保持原样的节点：%s\n", strings.Join(res.Missing, "、"))
 		}

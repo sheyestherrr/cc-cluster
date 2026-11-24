@@ -186,9 +186,10 @@ export function NetworkPage({ state, loadError, refresh }: Props) {
                   onNote={() => setNoting({ kind: "subs", what: "订阅", id: s.id, note: s.note })}
                   onRefresh={() =>
                     run(`sub:${s.id}`, "刷新中", () => api.refreshSub(s.id), (r) => {
-                      const d = (r as { data: { Total: number; Updated: string[] | null; Missing: string[] | null } }).data;
+                      const d = (r as Awaited<ReturnType<typeof api.refreshSub>>).data;
                       const parts = [`订阅 ${s.id} 现有 ${d.Total} 个节点`];
                       if (d.Updated?.length) parts.push(`已更新节点 ${d.Updated.join("、")}（重新启动网关或槽位后生效）`);
+                      if (d.Renamed?.length) parts.push(`${d.Renamed.join("、")} 在订阅里改了名，已跟着改过来`);
                       if (d.Missing?.length) parts.push(`订阅里已经没有 ${d.Missing.join("、")} 对应的节点，它们保持原样`);
                       return parts.join("；");
                     })

@@ -182,6 +182,26 @@ func TestSubscriptionLifecycle(t *testing.T) {
 		t.Fatalf("订阅里找不到的节点应保持原样: %+v", jp)
 	}
 
+	// 订阅里只是改了名：节点跟着改来源名称，片段不动；配置没变的条目保留测速结果。
+	sub, _ = st.Sub("main")
+	sub.Proxies[0].DelayMS = 88
+	if err := st.SaveSub(sub, false); err != nil {
+		t.Fatal(err)
+	}
+	yaml = `proxies:
+  - {name: "🇭🇰 香港 01", type: ss, server: hk9.example.com, port: 8388, cipher: aes-256-gcm, password: new}
+`
+	res, err = eng.SubRefresh(ctx, "main")
+	if err != nil || len(res.Renamed) != 1 || res.Renamed[0] != "hk" || len(res.Updated) != 0 || len(res.Missing) != 1 {
+		t.Fatalf("改名后的刷新结果不对: %+v %v", res, err)
+	}
+	if hk, _ = st.Node("hk"); hk.Source.Name != "🇭🇰 香港 01" || hk.Proxy["password"] != "new" {
+		t.Fatalf("节点应跟着订阅改名: %+v", hk)
+	}
+	if sub, _ = st.Sub("main"); sub.Proxies[0].DelayMS != 88 {
+		t.Fatalf("配置没变的条目应保留测速结果: %+v", sub.Proxies[0])
+	}
+
 	// 订阅地址带令牌：只出现在订阅文件里（0600），不进操作记录。
 	ops, err := os.ReadFile(st.Dir() + "/ops.jsonl")
 	if err != nil {
