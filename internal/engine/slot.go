@@ -633,7 +633,22 @@ func (e *Engine) slotDigest(slot model.Slot, ident model.Identity, p *gatewayPla
 }
 
 // seedVersion 计入 worker 的规格摘要：写入容器的身份文件的做法改变时提高它，已有的容器就会被要求重建。
-const seedVersion = "1"
+const seedVersion = "2"
+
+// profilePathFile 是写进 worker 的 profile 片段（路径相对容器根），内容是 profilePathScript。
+//
+// 容器的环境变量里 PATH 以 $HOME/.local/bin 开头（见 workerSpec），但登录 shell 会读 /etc/profile，
+// 而 Debian 等发行版的 /etc/profile 把 PATH 重设成固定的值，装在 HOME 里的程序（Claude Code 的原生安装）
+// 就找不到了。/etc/profile 随后会读 /etc/profile.d/*.sh，在这里把它补回去；镜像没有这套机制时这个文件不起作用。
+const (
+	profilePathFile   = "etc/profile.d/local-bin.sh"
+	profilePathScript = `case ":$PATH:" in
+*":$HOME/.local/bin:"*) ;;
+*) PATH="$HOME/.local/bin:$PATH" ;;
+esac
+export PATH
+`
+)
 
 // workerDigest 是 worker 容器的规格摘要：容器规格加上创建后写进容器的身份内容。
 // extra 是另外写进容器文件层的文件（开启桥接时的配置）；为空时不计入，摘要与没有这一项时相同。
@@ -748,7 +763,7 @@ func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.
 	return e.dk.ContainerInspect(ctx, name)
 }
 
-// seedWorker 把该槽的用户、组和 machine-id 写进刚创建、尚未启动的容器。
+// seedWorker 把该槽的用户、组、machine-id 和补全 PATH 的 profile 片段写进刚创建、尚未启动的容器。
 // 文件进入容器自己的文件层，重启后仍在；重建容器时重新写入。extra 是另外要写入的文件（路径相对容器根）。
 func (e *Engine) seedWorker(ctx context.Context, name string, slot model.Slot, ident model.Identity, extra map[string][]byte) error {
 	read := func(p string) ([]byte, error) {
@@ -772,6 +787,7 @@ func (e *Engine) seedWorker(ctx context.Context, name string, slot model.Slot, i
 		"etc/group":               {Data: mergeGroup(group, ident, slot), Mode: 0o644},
 		"etc/machine-id":          {Data: mid, Mode: 0o444},
 		"var/lib/dbus/machine-id": {Data: mid, Mode: 0o444},
+		profilePathFile:           {Data: []byte(profilePathScript), Mode: 0o644},
 	}
 	for p, data := range extra {
 		files[p] = dockerapi.File{Data: data, Mode: 0o644}

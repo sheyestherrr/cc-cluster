@@ -117,7 +117,7 @@ ip rule add pref 1005 iif cs2 unreachable                       # TUN 不在时�
 
 ## 槽位里能看到什么
 
-每个槽位首次创建时生成一份身份并保存，之后重建容器、重新接线都沿用：用户名、hostname、MAC、machine-id。启动时还会删除 `/.dockerenv`，把 `/etc/resolv.conf` 改成一行 `nameserver`，按出口所在地设置时区，遮蔽 DMI。
+每个槽位首次创建时生成一份身份并保存，之后重建容器、重新接线都沿用：用户名、hostname、MAC、machine-id。启动时还会删除 `/.dockerenv`，把 `/etc/resolv.conf` 改成一行 `nameserver`，按出口所在地设置时区，遮蔽 DMI。创建容器时还会写入一个 `/etc/profile.d` 片段：登录 shell 读 `/etc/profile` 时 `PATH` 会被发行版重设，这个片段把 `$HOME/.local/bin`（Claude Code 的安装位置）补回去。
 
 | 项目 | 槽内的观测 |
 | --- | --- |

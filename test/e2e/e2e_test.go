@@ -326,6 +326,7 @@ func TestEndToEnd(t *testing.T) {
 		e.expect("以项目用户运行", `^`+regexp.QuoteMeta(e.wsh("a", "echo $(id -u):$(id -g)"))+`$`, e.wsh("a", "stat -c %u:%g /home/kevin"))
 		e.expect("用户名与 HOME 是该槽自己的", `^kevin /home/kevin /home/kevin$`, e.wsh("a", "echo $(whoami) $HOME $(pwd)"))
 		e.expect("passwd 保留镜像的系统账号并加入该槽用户", `^root:x:0:0:.*\nkevin:x:\d+:\d+:Kevin:/home/kevin:/bin/sh$`, e.wsh("a", "grep -E '^(root|kevin):' /etc/passwd"))
+		e.expect("登录 shell 的 PATH 里仍有 HOME 下的程序目录", `(^|:)/home/kevin/\.local/bin(:|$)`, e.exec(e.eng.WorkerContainer("a"), "/bin/sh", "-lc", "echo $PATH"))
 		e.expect("另一个槽的用户名是随机挑的，不相同", `^ok$`, e.wsh("b", "[ \"$(whoami)\" != kevin ] && [ \"$HOME\" = \"/home/$(whoami)\" ] && echo ok"))
 		e.expect("没有任何能力", `^CapEff:\s+0000000000000000$`, e.wsh("a", "grep CapEff /proc/self/status"))
 		e.expect("系统目录写不动", `^denied denied$`, e.wsh("a", "for d in /etc /usr; do touch $d/.probe 2>/dev/null && echo wrote || echo denied; done | tr '\\n' ' ' | sed 's/ $//'"))

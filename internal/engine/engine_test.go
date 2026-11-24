@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"net/netip"
+	"os/exec"
 	"reflect"
 	"strconv"
 	"strings"
@@ -368,6 +369,28 @@ func TestBuildExitReport(t *testing.T) {
 	}
 	if s := ExitReportSummary(r); !strings.Contains(s, "没有不利标记") {
 		t.Errorf("没有标记时的描述: %q", s)
+	}
+}
+
+// 登录 shell 读过会重设 PATH 的 /etc/profile 之后，profile 片段要把 HOME 下的程序目录补回最前面，且不重复添加。
+func TestProfilePathScript(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("没有 sh")
+	}
+	for _, tc := range []struct{ name, path, want string }{
+		{"被重设过", "/usr/local/bin:/usr/bin:/bin", "/home/kevin/.local/bin:/usr/local/bin:/usr/bin:/bin"},
+		{"已经在里面", "/usr/bin:/home/kevin/.local/bin:/bin", "/usr/bin:/home/kevin/.local/bin:/bin"},
+	} {
+		cmd := exec.Command(sh, "-c", profilePathScript+`printf %s "$PATH"`)
+		cmd.Env = []string{"HOME=/home/kevin", "PATH=" + tc.path}
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("%s：%v", tc.name, err)
+		}
+		if string(out) != tc.want {
+			t.Errorf("%s：PATH = %q，期望 %q", tc.name, out, tc.want)
+		}
 	}
 }
 
