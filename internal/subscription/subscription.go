@@ -1,6 +1,6 @@
-// Package subscription 拉取并解析 Clash 格式的订阅。
+// Package subscription 拉取并解析订阅：Clash 格式，以及 base64 订阅和分享链接（见 links.go）。
 //
-// 做法与 Claude-Hydra 相同（https://github.com/jin-yu-liu/Claude-Hydra，MIT 许可，
+// Clash 格式的做法与 Claude-Hydra 相同（https://github.com/jin-yu-liu/Claude-Hydra，MIT 许可，
 // app/src-tauri/src/clash.rs 的 clash_subscription 与 app/src/lib/clashNodes.ts）：
 // 以 clash.meta 的 User-Agent 请求订阅地址，取回 Clash YAML，读其中的 proxies 列表。
 // 这里是按同样的思路用 Go 重新实现的，没有复制其代码。
@@ -91,14 +91,95 @@ func Fetch(ctx context.Context, client *http.Client, raw string) ([]byte, error)
 	return body, nil
 }
 
-// Parse 从 Clash YAML 里取出 proxies 列表。缺少名称、类型、服务器或端口的条目被跳过；
-// 重名的条目只保留第一个。
+// 订阅内容的格式。
+const (
+	FormatClash = "clash" // Clash（Mihomo）的 YAML 或 JSON，带 proxies 列表
+	FormatLinks = "links" // 一行一个的分享链接，或者把它们整体做了 base64 的“通用订阅”
+)
+
+// Report 是一次解析的结果。
+type Report struct {
+	Proxies []model.SubProxy
+	Format  string
+	// Skipped 是没能解析的行号（从 1 起；base64 订阅是解码之后的行号）。只有分享链接才有：
+	// 协议不认识、写法不对，或者用了 Mihomo 不支持的传输方式。
+	Skipped []int
+}
+
+var errUnknownFormat = errors.New("认不出订阅内容的格式：支持 Clash 格式（带 proxies 列表）、base64 订阅，和一行一个的分享链接（ss、vmess、vless、trojan、hysteria2、socks5、http）")
+
+// Parse 解析订阅内容，只返回节点。
 func Parse(body []byte) ([]model.SubProxy, error) {
-	var doc struct {
-		Proxies []map[string]any `yaml:"proxies"`
+	rep, err := ParseReport(body)
+	return rep.Proxies, err
+}
+
+// ParseReport 解析订阅内容：依次试 Clash 格式、分享链接，都不是时再把整段当 base64 解开试一次。
+func ParseReport(body []byte) (Report, error) {
+	text := normalizeText(body)
+	if text == "" {
+		return Report{}, errors.New("订阅内容是空的")
 	}
-	if err := yaml.Unmarshal(body, &doc); err != nil {
-		return nil, errors.New("订阅内容不是合法的 YAML（需要 Clash 格式的订阅）")
+	rep, ok, err := parseText(text)
+	if err == nil && !ok {
+		decoded, isBase64 := decodeWhole(text)
+		if !isBase64 {
+			return Report{}, errUnknownFormat
+		}
+		if rep, ok, err = parseText(normalizeText([]byte(decoded))); err == nil && !ok {
+			return Report{}, errUnknownFormat
+		}
+	}
+	if err != nil {
+		return Report{}, err
+	}
+	if len(rep.Proxies) == 0 {
+		if rep.Format == FormatLinks {
+			return Report{}, fmt.Errorf("没有能用的节点：%d 行都没能解析（协议不支持或写法不对）", len(rep.Skipped))
+		}
+		return Report{}, errors.New("订阅里没有可用的节点（proxies 列表是空的，或者条目缺少名称、类型、服务器、端口）")
+	}
+	return rep, nil
+}
+
+// normalizeText 去掉 BOM、统一换行并去掉首尾空白。
+func normalizeText(body []byte) string {
+	text := strings.TrimPrefix(string(body), "\xEF\xBB\xBF")
+	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	return strings.TrimSpace(text)
+}
+
+// parseText 试着把一段文本当成 Clash 格式或分享链接来解析；recognized 为 false 表示两种都不是。
+func parseText(text string) (rep Report, recognized bool, err error) {
+	if looksLikeClash(text) || text[0] == '{' {
+		proxies, err := parseClash(text)
+		return Report{Proxies: proxies, Format: FormatClash}, true, err
+	}
+	proxies, skipped, ok := parseLinks(text)
+	return Report{Proxies: proxies, Format: FormatLinks, Skipped: skipped}, ok, nil
+}
+
+func looksLikeClash(text string) bool {
+	for _, key := range []string{"proxies:", "proxy-groups:", "proxy-providers:"} {
+		if strings.HasPrefix(text, key) || strings.Contains(text, "\n"+key) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseClash 从 Clash 的 YAML（或 JSON）里取出 proxies 列表。缺少名称、类型、服务器或端口的条目被跳过；
+// 重名的条目只保留第一个。
+func parseClash(text string) ([]model.SubProxy, error) {
+	var doc struct {
+		Proxies   []map[string]any `yaml:"proxies"`
+		Outbounds []any            `yaml:"outbounds"`
+	}
+	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
+		return nil, errors.New("订阅内容看起来是 Clash 格式，但不是合法的 YAML")
+	}
+	if doc.Proxies == nil && doc.Outbounds != nil {
+		return nil, errors.New("这是 sing-box 格式的配置，暂不支持；请换成 Clash 格式或通用（base64）格式的订阅")
 	}
 	seen := map[string]bool{}
 	var out []model.SubProxy
@@ -109,20 +190,25 @@ func Parse(body []byte) ([]model.SubProxy, error) {
 		if name == "" || seen[name] || !ok {
 			continue
 		}
-		for _, k := range droppedKeys {
-			delete(clean, k)
-		}
-		n := model.Node{Proxy: clean}
-		if t, _ := clean["type"].(string); t == "" || n.Server() == "" || n.Port() < 1 || n.Port() > 65535 {
+		if clean, ok = cleanProxy(clean); !ok {
 			continue
 		}
 		seen[name] = true
 		out = append(out, model.SubProxy{Name: name, Proxy: clean})
 	}
-	if len(out) == 0 {
-		return nil, errors.New("订阅里没有可用的节点（需要 Clash 格式、带 proxies 列表的订阅）")
-	}
 	return out, nil
+}
+
+// cleanProxy 去掉由管理器控制的字段，并确认片段有类型、服务器和合法的端口。
+func cleanProxy(p map[string]any) (map[string]any, bool) {
+	for _, k := range droppedKeys {
+		delete(p, k)
+	}
+	n := model.Node{Proxy: p}
+	if t, _ := p["type"].(string); t == "" || n.Server() == "" || n.Port() < 1 || n.Port() > 65535 {
+		return nil, false
+	}
+	return p, true
 }
 
 // plain 把 YAML 解出的值整理成能存成 JSON 的形状：映射的键必须是字符串，否则该值作废（返回 nil）。
