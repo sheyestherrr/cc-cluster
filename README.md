@@ -98,7 +98,7 @@ cc-cluster doctor                       # 检查这台机器能否运行；不�
 
 ## 五分钟上手
 
-下面假设你有一个自己的落地（SOCKS5 或 HTTP 代理）和一份 Clash 格式的机场订阅。没有落地的看[直出](#出口的两种来源)，没有订阅的可以不要中转。
+下面假设你有一个自己的落地（SOCKS5 或 HTTP 代理）和一份机场订阅（Clash 格式或通用的 base64 订阅都可以）。没有落地的看[直出](#出口的两种来源)，没有订阅的可以不要中转。
 
 ```sh
 # 1. 登记落地。密码放在文件里，不出现在命令行上
@@ -128,6 +128,24 @@ cc-cluster claude alice        # 首次会询问是否在槽内安装 Claude Cod
 **不要中转**：`cc-cluster gateway add direct-gw`（不带 `--transit`），槽位直连各自的落地。
 
 **其他协议的节点**：`node add … --file 片段.json`，内容是 Mihomo 原生的 proxy 片段（JSON 对象）。
+
+### 订阅的来源
+
+订阅是一批现成的节点，从里面挑出来登记的才是槽位用的节点。来源有两种：
+
+```sh
+cc-cluster sub add air --url-file ./sub.url     # 远程订阅：给地址，之后可以刷新
+cc-cluster sub add mine --file ./links.txt      # 本地订阅：直接给内容；--file - 从标准输入读
+
+cc-cluster sub set air --every 12h              # 远程订阅每 12 小时自动刷新一次；--every off 关掉
+cc-cluster sub set mine --file ./more.txt --append    # 往本地订阅后面追加几条
+cc-cluster sub set air --url-file ./new.url     # 换地址；已登记的节点按名称或配置对上后跟着更新
+```
+
+- 内容可以是 Clash（Mihomo）配置，也可以是一行一个的分享链接或它们的 base64：`ss://`、`vmess://`、`vless://`、`trojan://`、`hysteria2://`、`socks5://`、`http(s)://`。认不出来的行会跳过并报出行数；sing-box 的 JSON 配置暂不支持。
+- 订阅地址和贴进来的内容只保存在数据目录里（权限 0600），保存之后不再显示，也不进操作记录。
+- 自动刷新在 `cc-cluster web` 或 `cc-cluster watch` 运行期间进行，跟着持续检测的节奏；间隔最短 10 分钟。刷新失败时节点保持原样，原因记在 `sub list` 的状态一栏。
+- 订阅里的节点改了名但配置没变时，取自它的节点会跟着改名；配置变了的节点在重新启动网关或槽位后生效。
 
 ## 日常使用
 
@@ -184,6 +202,8 @@ cc-cluster              # 不带参数：终端里的交互面板，按编号选
 
 网页只监听 `127.0.0.1`。在别的机器上用，先做 SSH 端口转发：`ssh -L 7878:127.0.0.1:7878 <主机>`。进入槽位仍然要在终端里做，网页不提供终端。
 
+网页有五页：**总览**（接线的槽位、各槽位的出口、需要留意的事、订阅节点的延迟分布、最近的操作）、**槽位**、**节点与网关**、**订阅**（添加远程或本地订阅，按地区和协议筛选节点、测延迟，把选中的登记为中转或落地）和**系统**。节点行首的国旗取自落地出口的评估结果；没有评估时从节点名称里认，认不出来就显示通用图标。
+
 需要较新的浏览器（Chrome 111、Firefox 128、Safari 16.4 及以上）。
 
 ## 宿主 tmux 桥接（可选）
@@ -222,7 +242,7 @@ cc-cluster tmux alice --kill               # 结束它，连同其中的程序
 | 命令 | 作用 |
 | --- | --- |
 | `init` / `doctor` / `version` | 初始化数据目录 / 检查运行环境 / 版本 |
-| `sub add\|list\|nodes\|note\|test\|refresh\|rm` | Clash 格式的订阅 |
+| `sub add\|list\|nodes\|note\|set\|test\|refresh\|rm` | 订阅：远程的订阅地址，或贴进来的订阅内容与分享链接；`set` 改来源和自动刷新 |
 | `node add\|list\|note\|resolve\|report\|rm` | 代理节点（中转 / 落地）；`report` 重新查询落地出口的第三方评估 |
 | `gateway add\|list\|note\|set-transit\|up\|down\|rm` | 网关容器 |
 | `slot add\|list\|note\|up\|stop\|hold\|release\|rm\|exec\|enter\|mounts\|unmount` | 工作槽位 |
@@ -289,6 +309,7 @@ make repo-check     # 检查有没有把订阅地址、代理密码、数据目�
 本项目以 [MIT 许可](LICENSE)发布。
 
 - 网页界面的风格、基础组件和页面骨架取自 [Claude-Hydra](https://github.com/jin-yu-liu/Claude-Hydra)（MIT），订阅导入的做法也参考了它；取用的文件、改动和许可全文见 [web/NOTICE.md](web/NOTICE.md)。
+- 分享链接的解析改写自 [Resin](https://github.com/Resinat/Resin)（MIT）的订阅解析器，订阅页与总览页的信息安排也参考了它；取用的范围、改动和许可全文见 [internal/subscription/NOTICE.md](internal/subscription/NOTICE.md)。国旗图形来自 [country-flag-icons](https://gitlab.com/catamphetamine/country-flag-icons)（MIT）。
 - 网关核心是 [Mihomo](https://github.com/MetaCubeX/mihomo)。
 - 宿主桥接使用 [tmux-mcp](https://github.com/bnomei/tmux-mcp)（MIT），由 worker 镜像经 npm 安装；镜像里的 [tmux](https://github.com/tmux/tmux)（ISC）来自发行版的软件包，本机构建时改为从官方源码包编译。本仓库不含它们的代码。
 - 默认 worker 镜像的软件包选择参考了 Claude Code 官方的开发容器，Dockerfile 为重新编写。
