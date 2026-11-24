@@ -338,6 +338,9 @@ type nodeView struct {
 	ExitReport   *model.ExitReport `json:"exit_report,omitempty"`
 	Source       *model.NodeSource `json:"source,omitempty"`
 	UsedBy       []string          `json:"used_by"`
+	// Region 是国家或地区代码；RegionFrom 说明它来自出口评估（exit）还是从名称里认出来的（name）。
+	Region     string `json:"region,omitempty"`
+	RegionFrom string `json:"region_from,omitempty"`
 }
 
 type subView struct {
@@ -501,6 +504,7 @@ func (s *Server) state(c *call) (any, error) {
 			ExpectExitIP: n.ExpectExitIP, TZ: n.TZ, TZAuto: n.TZAuto, TZFallback: n.TZFallback, ExitReport: n.ExitReport, Direct: n.Direct,
 			Source: n.Source, UsedBy: []string{},
 		}
+		v.Region, v.RegionFrom = n.Region()
 		for _, g := range gateways {
 			for i, t := range g.Transits() {
 				if t != n.ID {
@@ -604,14 +608,27 @@ type delayView struct {
 	Server  string `json:"server"`
 	DelayMS int    `json:"delay_ms"`
 	Info    bool   `json:"info,omitempty"`
+	// Region 是从名称里认出的国家或地区代码；Nodes 是配置与它相同的已登记节点。
+	Region string   `json:"region,omitempty"`
+	Nodes  []string `json:"nodes,omitempty"`
 }
 
-func delays(in []engine.NodeDelay) []delayView {
+func (c *call) delays(in []engine.NodeDelay) ([]delayView, error) {
+	nodes, err := c.st.Nodes()
+	if err != nil {
+		return nil, err
+	}
+	registered := map[string][]string{}
+	for _, n := range nodes {
+		if h := model.ProxyHash(n.Proxy); h != "" {
+			registered[h] = append(registered[h], n.ID)
+		}
+	}
 	out := make([]delayView, len(in))
 	for i, d := range in {
-		out[i] = delayView{d.Name, d.Type, d.Server, d.DelayMS, d.Info}
+		out[i] = delayView{Name: d.Name, Type: d.Type, Server: d.Server, DelayMS: d.DelayMS, Info: d.Info, Region: d.Region, Nodes: registered[d.Hash]}
 	}
-	return out
+	return out, nil
 }
 
 func (s *Server) subAdd(c *call) (any, error) {
@@ -635,7 +652,7 @@ func (s *Server) subNodes(c *call) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return delays(engine.SubDelays(sub)), nil
+	return c.delays(engine.SubDelays(sub))
 }
 
 func (s *Server) subTest(c *call) (any, error) {
@@ -649,7 +666,7 @@ func (s *Server) subTest(c *call) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return delays(res), nil
+	return c.delays(res)
 }
 
 // ---- 节点、网关、槽位 ----

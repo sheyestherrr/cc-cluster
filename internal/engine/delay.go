@@ -48,6 +48,10 @@ type NodeDelay struct {
 	DelayMS int
 	// Info 表示名称像订阅里的提示项（剩余流量、到期时间等），自动挑选时跳过。
 	Info bool
+	// Region 是从名称里认出的国家或地区（两位大写代码），认不出或是提示项时为空。
+	Region string
+	// Hash 是片段内容的指纹（model.ProxyHash），用来对上已经登记的节点。
+	Hash string
 }
 
 // Usable 报告该节点是否测通。
@@ -73,7 +77,10 @@ func SubDelays(sub model.Subscription) []NodeDelay {
 		typ, _ := p.Proxy["type"].(string)
 		res[i] = NodeDelay{
 			Name: p.Name, Type: typ, Server: fmt.Sprintf("%s:%d", n.Server(), n.Port()),
-			DelayMS: p.DelayMS, Info: subscription.IsInfoName(p.Name),
+			DelayMS: p.DelayMS, Info: subscription.IsInfoName(p.Name), Hash: model.ProxyHash(p.Proxy),
+		}
+		if !res[i].Info {
+			res[i].Region = model.RegionFromName(p.Name)
 		}
 	}
 	rank := func(d NodeDelay) int {
