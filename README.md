@@ -166,6 +166,13 @@ cc-cluster slot rm alice           # 删除槽位；加 --purge 连 HOME 与身�
 
 **持续检测**：`cc-cluster watch` 每隔几分钟测一遍各槽位的连通性和出口；出口地址变了就给那个槽位断网并保持，等你 `slot release` 后重新 `slot up`。网页界面开着时自动进行，`watch --once` 只测一遍。
 
+**流量与连接**：`cc-cluster traffic` 列出各槽位此刻的速率和最近 24 小时的流量；`cc-cluster traffic alice` 列出它当前的连接和这段时间里连过的目标。
+
+- 能看到的是连接这一层：目标的域名与端口、上下行流量、时长。HTTPS 的网址路径和内容是加密的，这里看不到，也不做解密。
+- 历史（五分钟一档的流量、持续检测的结果、已结束的连接）在 `cc-cluster web` 或 `cc-cluster watch` 运行期间记录，存在数据目录的 `history/` 下，保留 30 天。两个都没开的时段没有曲线；想要完整的历史就让 `cc-cluster watch` 常驻。
+- 连接靠十秒一次的快照记录，比这更短的连接可能不在其中；流量来自网卡的计数，不受这个影响。
+- `history/` 里有各槽位访问过的域名，文件只有当前用户可读；不想留就删掉这个目录。
+
 **候选中转**：中转挂了可以自动换到你事先挑好的备用节点，出口不变。
 
 ```sh
@@ -202,7 +209,7 @@ cc-cluster              # 不带参数：终端里的交互面板，按编号选
 
 网页只监听 `127.0.0.1`。在别的机器上用，先做 SSH 端口转发：`ssh -L 7878:127.0.0.1:7878 <主机>`。进入槽位仍然要在终端里做，网页不提供终端。
 
-网页有五页：**总览**（接线的槽位、各槽位的出口、需要留意的事、订阅节点的延迟分布、最近的操作）、**槽位**、**节点与网关**、**订阅**（添加远程或本地订阅，按地区和协议筛选节点、测延迟，把选中的登记为中转或落地）和**系统**。节点行首的国旗取自落地出口的评估结果；没有评估时从节点名称里认，认不出来就显示通用图标。
+网页有五页：**总览**（接线的槽位、此刻与最近 24 小时 / 7 天 / 30 天的流量、各槽位的出口、持续检测的时间线、需要留意的事、订阅节点的延迟分布、最近的操作）、**槽位**（详情里有它的流量、当前的连接和连过的目标）、**节点与网关**、**订阅**（添加远程或本地订阅，按地区和协议筛选节点、测延迟，把选中的登记为中转或落地）和**系统**。节点行首的国旗取自落地出口的评估结果；没有评估时从节点名称里认，认不出来就显示通用图标。
 
 需要较新的浏览器（Chrome 111、Firefox 128、Safari 16.4 及以上）。
 
@@ -247,7 +254,7 @@ cc-cluster tmux alice --kill               # 结束它，连同其中的程序
 | `gateway add\|list\|note\|set-transit\|up\|down\|rm` | 网关容器 |
 | `slot add\|list\|note\|up\|stop\|hold\|release\|rm\|exec\|enter\|mounts\|unmount` | 工作槽位 |
 | `enter` / `claude` / `tmux` | 进入槽位 / 直接启动 Claude Code / 宿主 tmux 桥接 |
-| `status` / `watch` / `web` / `panel` | 现状 / 持续检测 / 网页界面 / 交互面板 |
+| `status` / `traffic` / `watch` / `web` / `panel` | 现状 / 流量与连接 / 持续检测 / 网页界面 / 交互面板 |
 | `render <网关>` | 预览网关的核心配置（默认隐藏凭据） |
 | `exit-report [on\|off]` | 启动槽位时是否顺带查询出口 IP 的第三方评估 |
 
@@ -309,7 +316,7 @@ make repo-check     # 检查有没有把订阅地址、代理密码、数据目�
 本项目以 [MIT 许可](LICENSE)发布。
 
 - 网页界面的风格、基础组件和页面骨架取自 [Claude-Hydra](https://github.com/jin-yu-liu/Claude-Hydra)（MIT），订阅导入的做法也参考了它；取用的文件、改动和许可全文见 [web/NOTICE.md](web/NOTICE.md)。
-- 分享链接的解析改写自 [Resin](https://github.com/Resinat/Resin)（MIT）的订阅解析器，订阅页与总览页的信息安排也参考了它；取用的范围、改动和许可全文见 [internal/subscription/NOTICE.md](internal/subscription/NOTICE.md)。国旗图形来自 [country-flag-icons](https://gitlab.com/catamphetamine/country-flag-icons)（MIT）。
+- 分享链接的解析改写自 [Resin](https://github.com/Resinat/Resin)（MIT）的订阅解析器，订阅页与总览页的信息安排也参考了它；取用的范围、改动和许可全文见 [internal/subscription/NOTICE.md](internal/subscription/NOTICE.md)。国旗图形来自 [country-flag-icons](https://gitlab.com/catamphetamine/country-flag-icons)（MIT），图表用 [recharts](https://github.com/recharts/recharts)（MIT）。
 - 网关核心是 [Mihomo](https://github.com/MetaCubeX/mihomo)。
 - 宿主桥接使用 [tmux-mcp](https://github.com/bnomei/tmux-mcp)（MIT），由 worker 镜像经 npm 安装；镜像里的 [tmux](https://github.com/tmux/tmux)（ISC）来自发行版的软件包，本机构建时改为从官方源码包编译。本仓库不含它们的代码。
 - 默认 worker 镜像的软件包选择参考了 Claude Code 官方的开发容器，Dockerfile 为重新编写。

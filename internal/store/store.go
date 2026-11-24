@@ -15,6 +15,7 @@
 //	│   ├── etc/                      可选的硬件信息覆盖文件（DMI、cpuinfo、meminfo）
 //	│   └── home/                     该槽完整 HOME
 //	├── ops.jsonl                     追加式操作记录，不含密钥
+//	├── history/                      流量、检测、订阅测速的历史与连接记录，见 history.go
 //	└── lock
 package store
 
