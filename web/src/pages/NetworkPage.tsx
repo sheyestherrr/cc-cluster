@@ -4,6 +4,7 @@ import { Gauge, Globe2, Loader2, LogOut, MoreHorizontal, Pencil, Play, Plus, Pow
 import type React from "react";
 import { useCallback, useEffect, useState } from "react";
 import { ExitCard } from "@/components/ExitCard";
+import { RegionIcon } from "@/components/Flag";
 import { Menu, type MenuEntry } from "@/components/Menu";
 import { NOTE_PLACEHOLDER, NoteDialog, NoteText, type NoteTarget } from "@/components/NoteDialog";
 import { DetailEmpty, DetailGrid, DetailHeader, ErrorBox, KeyValue, Line, Page, PageHeader, RowTitle, Tag, selectableRow } from "@/components/PageHeader";
@@ -236,8 +237,11 @@ interface Selectable {
   onSelect: () => void;
 }
 
-function RowShell({ icon: Icon, title, note, tags, detail, side, busy, action, menu, selected, onSelect }: Selectable & {
+function RowShell({ icon, region, regionFrom, title, note, tags, detail, side, busy, action, menu, selected, onSelect }: Selectable & {
   icon: React.ComponentType<{ className?: string }>;
+  /** 知道地区时行首显示国旗，不知道时显示 icon。 */
+  region?: string;
+  regionFrom?: string;
   title: string;
   note?: string;
   tags?: React.ReactNode;
@@ -249,9 +253,7 @@ function RowShell({ icon: Icon, title, note, tags, detail, side, busy, action, m
 }) {
   return (
     <div {...selectableRow(selected, onSelect)}>
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-pill text-fg-2">
-        <Icon className="h-4 w-4" />
-      </span>
+      <RegionIcon code={region} from={regionFrom} icon={icon} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <RowTitle selected={selected} onSelect={onSelect}>{title}</RowTitle>
@@ -337,6 +339,8 @@ function NodeRow({ n, busy, onResolve, onNote, onDelete, ...sel }: Selectable & 
     <RowShell
       {...sel}
       icon={n.role === "landing" ? Globe2 : Waypoints}
+      region={n.region}
+      regionFrom={n.region_from}
       title={n.id}
       note={n.note}
       tags={
@@ -379,12 +383,8 @@ function SubRow({ s, busy, onBrowse, onRefresh, onNote, onDelete, ...sel }: Sele
   );
 }
 
-function IconBadge({ icon: Icon }: { icon: React.ComponentType<{ className?: string }> }) {
-  return (
-    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-pill text-fg-2" aria-hidden>
-      <Icon className="h-[18px] w-[18px]" />
-    </span>
-  );
+function IconBadge({ icon }: { icon: React.ComponentType<{ className?: string }> }) {
+  return <RegionIcon icon={icon} size="detail" />;
 }
 
 /** 详情栏：一个节点。落地显示出口评估，中转只有连接信息。 */
@@ -400,7 +400,7 @@ function NodeDetail({ n, state, busy, onReport }: { n: NodeInfo; state: State; b
   return (
     <>
       <DetailHeader
-        badge={<IconBadge icon={landing ? Globe2 : Waypoints} />}
+        badge={<RegionIcon code={n.region} from={n.region_from} icon={landing ? Globe2 : Waypoints} size="detail" />}
         title={n.id}
         note={n.note}
         status={<span className="truncate">{roleText[n.role]} · {n.type}{n.used_by.length ? ` · ${n.used_by.join("、")}在用` : " · 未使用"}</span>}

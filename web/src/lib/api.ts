@@ -174,6 +174,9 @@ export interface NodeInfo {
   exit_report?: ExitReport;
   source?: { sub: string; name: string };
   used_by: string[];
+  /** 国家或地区代码（两位大写）；region_from 是 exit（出口评估）或 name（从名称里认出来的）。 */
+  region?: string;
+  region_from?: "exit" | "name";
 }
 
 export interface Sub {
@@ -205,6 +208,10 @@ export interface Delay {
   server: string;
   delay_ms: number;
   info?: boolean;
+  /** 从名称里认出的国家或地区代码。 */
+  region?: string;
+  /** 配置与它相同的已登记节点。 */
+  nodes?: string[];
 }
 
 export interface Check {

@@ -22,6 +22,9 @@ Claude-Hydra 以 MIT 许可发布，许可全文附在本文件末尾。
 这里改为经 HTTP 调用 cc-cluster 的 Go 接口（`internal/web`）。上游的图标和名称没有使用。
 订阅的拉取与解析在 Go 一侧完成（`internal/subscription`），没有取用上游的 `clashNodes.ts`。
 
+`src/components/Flag.tsx`（国旗与行首的地区图标）、`src/favicon.svg` 也是本项目自己写的。国旗的图形来自依赖
+[country-flag-icons](https://gitlab.com/catamphetamine/country-flag-icons)（MIT）的 3x2 SVG，构建时原样放进产物。
+
 ## Claude-Hydra 的许可（MIT）
 
 ```
