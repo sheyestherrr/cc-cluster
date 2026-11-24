@@ -44,12 +44,15 @@ export function Page({ children, side }: { children: React.ReactNode; side?: Rea
 }
 
 /** 详情栏的抬头：名字、状态和主要操作。 */
-export function DetailHeader({ badge, title, status, actions }: { badge: React.ReactNode; title: string; status: React.ReactNode; actions?: React.ReactNode }) {
+export function DetailHeader({ badge, title, note, status, actions }: { badge: React.ReactNode; title: string; note?: string; status: React.ReactNode; actions?: React.ReactNode }) {
   return (
     <header className="flex min-h-[48px] items-center gap-3 pb-4">
       {badge}
       <div className="min-w-0 flex-1">
-        <h2 className="truncate text-[15px] font-semibold tracking-[-0.01em]">{title}</h2>
+        <h2 className="truncate text-[15px] font-semibold tracking-[-0.01em]" title={note}>
+          {title}
+          {note && <span className="ml-2 text-[12.5px] font-normal tracking-normal text-muted">{note}</span>}
+        </h2>
         <div className="mt-0.5 flex items-center gap-1.5 text-[12px] text-muted">{status}</div>
       </div>
       {actions && <div className="flex shrink-0 items-center gap-1.5">{actions}</div>}

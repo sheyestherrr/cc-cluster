@@ -13,13 +13,15 @@ import (
 
 // cmdSub 管理 Clash 格式的订阅。
 func (a *app) cmdSub(ctx context.Context, args []string) error {
-	sub, rest, err := a.subcommand("sub", "add|list|nodes|test|refresh|rm", args)
+	sub, rest, err := a.subcommand("sub", "add|list|nodes|note|test|refresh|rm", args)
 	if err != nil {
 		return err
 	}
 	switch sub {
 	case "add":
 		return a.subAdd(ctx, rest)
+	case "note":
+		return a.setNote(engine.KindSub, "sub", "订阅", rest)
 	case "list", "ls":
 		if err := parse(a.newFlags("sub list", "sub list"), rest); err != nil {
 			return err
@@ -33,9 +35,9 @@ func (a *app) cmdSub(ctx context.Context, args []string) error {
 			return err
 		}
 		w := a.table()
-		fmt.Fprintln(w, "订阅\t节点数\t最近拉取")
+		fmt.Fprintln(w, "订阅\t节点数\t最近拉取\t备注")
 		for _, s := range subs {
-			fmt.Fprintf(w, "%s\t%d\t%s\n", s.ID, len(s.Proxies), s.FetchedAt.Local().Format("2006-01-02 15:04:05"))
+			fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", s.ID, len(s.Proxies), s.FetchedAt.Local().Format("2006-01-02 15:04:05"), orDash(s.Note))
 		}
 		return w.Flush()
 	case "nodes":
@@ -138,8 +140,9 @@ func (a *app) cmdSub(ctx context.Context, args []string) error {
 }
 
 func (a *app) subAdd(ctx context.Context, args []string) error {
-	fs := a.newFlags("sub add", "sub add <订阅> [--url-file 文件]")
+	fs := a.newFlags("sub add", "sub add <订阅> [--url-file 文件] [--note 备注]")
 	urlFile := fs.String("url-file", "", "存放订阅地址的文件；不填则从标准输入读一行（地址里通常带令牌，不从命令行传）")
+	note := fs.String("note", "", noteHelp)
 	id, err := parseWithID(fs, args)
 	if err != nil {
 		return err
@@ -161,17 +164,17 @@ func (a *app) subAdd(ctx context.Context, args []string) error {
 			return errors.New("没有读到订阅地址：用 --url-file，或从标准输入给出")
 		}
 	}
-	return a.addSub(ctx, id, url)
+	return a.addSub(ctx, id, url, strings.TrimSpace(*note))
 }
 
 // addSub 登记订阅并报告结果。拉取订阅是本机直接访问订阅服务器。
-func (a *app) addSub(ctx context.Context, id, url string) error {
+func (a *app) addSub(ctx context.Context, id, url, note string) error {
 	eng, _, err := a.open(ctx, false)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintln(a.errw, "正在从本机拉取订阅…")
-	s, err := eng.SubAdd(ctx, id, url)
+	s, err := eng.SubAdd(ctx, id, url, note)
 	if err != nil {
 		return err
 	}

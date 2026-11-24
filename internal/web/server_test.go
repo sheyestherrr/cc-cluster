@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -118,6 +119,20 @@ func TestStateAndNodeLifecycle(t *testing.T) {
 	}
 	if data["version"] != "test" || data["landing_limit"] != float64(model.MaxSlotsPerLanding) {
 		t.Errorf("版本或落地上限不对: %v", data)
+	}
+
+	// 备注：ID 里不允许的字符可以写在这里，现状里带出来；ID 不合法时报错里给出可用的写法。
+	if code, _, raw := call("POST", "/api/nodes/home/note", `{"note":"韩国家宽_LG"}`); code != http.StatusOK {
+		t.Fatalf("设置备注失败: %d %s", code, raw)
+	}
+	if code, _, raw := call("POST", "/api/gateways/solo/note", `{"note":"两行\n备注"}`); code != http.StatusBadRequest {
+		t.Errorf("带换行的备注应被拒绝: %d %s", code, raw)
+	}
+	if _, out, _ := call("GET", "/api/state", ""); out["data"].(map[string]any)["nodes"].([]any)[0].(map[string]any)["note"] != "韩国家宽_LG" {
+		t.Errorf("现状里应带出节点的备注: %v", out)
+	}
+	if code, out, _ := call("POST", "/api/gateways", `{"id":"kr_home_lg"}`); code != http.StatusBadRequest || !strings.Contains(fmt.Sprint(out["error"]), "kr-home-lg") {
+		t.Errorf("不合法的 ID 应报错并给出可用的写法: %d %v", code, out)
 	}
 
 	// 出错时给出说明而不是 500。

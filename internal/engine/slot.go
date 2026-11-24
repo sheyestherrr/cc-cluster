@@ -610,11 +610,18 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 }
 
 // slotDigest 是"这个槽的期望配置"的摘要：槽位、身份、它用到的节点与网关设置。
-// 别的槽的增删不改变它。
+// 别的槽的增删不改变它。备注只用于展示，不计入：改备注不应让已经接好线的槽位变成“需要重新应用”。
 func (e *Engine) slotDigest(slot model.Slot, ident model.Identity, p *gatewayPlan) (string, error) {
 	image := slot.Image
 	if image == "" {
 		image = e.cl.WorkerImage
+	}
+	landing, gw, transit := p.landings[slot.ID], p.gw, p.transit
+	slot.Note, landing.Note, gw.Note = "", "", ""
+	if transit != nil {
+		t := *transit
+		t.Note = ""
+		transit = &t
 	}
 	b, err := json.Marshal(struct {
 		Slot     model.Slot
@@ -624,7 +631,7 @@ func (e *Engine) slotDigest(slot model.Slot, ident model.Identity, p *gatewayPla
 		Transit  *model.Node
 		Gateway  model.Gateway
 		GWImage  string
-	}{slot, ident, image, p.landings[slot.ID], p.transit, p.gw, p.image})
+	}{slot, ident, image, landing, transit, gw, p.image})
 	if err != nil {
 		return "", err
 	}

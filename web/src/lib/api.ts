@@ -77,6 +77,8 @@ export type SlotState = "hold" | "absent" | "stopped" | "offline" | "pending" | 
 
 export interface Slot {
   id: string;
+  /** 备注：给人看的名字或说明，只用于显示。 */
+  note?: string;
   gateway: string;
   landing: string;
   state: SlotState;
@@ -102,6 +104,7 @@ export interface Slot {
 
 export interface Gateway {
   id: string;
+  note?: string;
   transit?: string;
   /** 候选中转，按顺序；主用的不通时核心自动改用。 */
   transit_backups?: string[];
@@ -154,6 +157,7 @@ export interface ExitReport {
 
 export interface NodeInfo {
   id: string;
+  note?: string;
   /** 直出的出口：订阅里的节点直接当出口用，固定给一个槽位。 */
   direct?: boolean;
   role: Role;
@@ -174,6 +178,7 @@ export interface NodeInfo {
 
 export interface Sub {
   id: string;
+  note?: string;
   count: number;
   fetched_at: string;
   tested_at?: string;
@@ -219,6 +224,7 @@ export interface Op {
 
 export interface NodeInput {
   id: string;
+  note?: string;
   role: Role;
   tz?: string;
   expect_exit_ip?: string;
@@ -233,6 +239,7 @@ export interface NodeInput {
 
 export interface SlotInput {
   id: string;
+  note?: string;
   gateway: string;
   landing: string;
   mounts: string[];
@@ -249,12 +256,22 @@ export interface SlotInput {
   direct_name?: string;
 }
 
+/** 能设置备注的对象种类，取值就是接口地址里的那一段。 */
+export type NoteKind = "subs" | "nodes" | "gateways" | "slots";
+
+/** 对象名称（ID）的写法；备注不受这个限制。服务端按同样的规则检查。 */
+export const ID_HINT = "小写字母、数字、连字符";
+export const NOTE_MAX = 64;
+
 export const api = {
   state: () => get<State>("state"),
   doctor: () => get<Check[]>("doctor"),
   ops: () => get<Op[]>("ops"),
 
-  addSub: (sub: string, url: string) => post<{ id: string; count: number }>("subs", { id: sub, url }),
+  /** 设置备注；空串表示清掉。 */
+  setNote: (kind: NoteKind, target: string, note: string) => post(`${kind}/${id(target)}/note`, { note }),
+
+  addSub: (sub: string, url: string, note = "") => post<{ id: string; count: number }>("subs", { id: sub, url, note }),
   subNodes: (sub: string) => get<Delay[]>(`subs/${id(sub)}/nodes`),
   refreshSub: (sub: string) => post<{ Total: number; Updated: string[] | null; Missing: string[] | null }>(`subs/${id(sub)}/refresh`),
   testSub: (sub: string, landing: string) => post<Delay[]>(`subs/${id(sub)}/test`, { landing }),
@@ -265,7 +282,7 @@ export const api = {
   nodeReport: (node: string) => post<ExitReport>(`nodes/${id(node)}/report`),
   removeNode: (node: string) => del(`nodes/${id(node)}`),
 
-  addGateway: (gw: { id: string; transit: string; pool: string }) => post("gateways", gw),
+  addGateway: (gw: { id: string; note?: string; transit: string; pool: string }) => post("gateways", gw),
   /** 更换网关的中转：第一个是主用的，其余是候选。 */
   setTransits: (gw: string, transits: string[], skipCheck = false) =>
     post<{ reloaded: boolean; rechecked: string[]; failed: Record<string, string> | null }>(`gateways/${id(gw)}/transits`, { transits, skip_check: skipCheck }),

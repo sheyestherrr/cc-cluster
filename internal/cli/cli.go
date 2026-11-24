@@ -48,12 +48,13 @@ const usage = `cc-cluster：为 Claude Code 管理相互独立的工作槽位。
 配置：
   init                      初始化数据目录
   doctor                    检查这台机器能否运行（不访问外部地址）
-  sub add|list|nodes|test|refresh|rm
+  sub add|list|nodes|note|test|refresh|rm
                             Clash 格式的订阅
-  node add|list|resolve|rm  代理节点（中转 / 落地），可取自订阅
-  gateway add|list|set-transit|up|down|rm
+  node add|list|note|resolve|rm
+                            代理节点（中转 / 落地），可取自订阅
+  gateway add|list|note|set-transit|up|down|rm
                             网关容器
-  slot add|list|up|stop|hold|release|rm|exec|enter|mounts|unmount
+  slot add|list|note|up|stop|hold|release|rm|exec|enter|mounts|unmount
                             工作槽位
   render <网关>             预览网关的核心配置（默认隐藏凭据）
   exit-report [on|off]      启动槽位时是否顺带查询第三方对出口 IP 的评估

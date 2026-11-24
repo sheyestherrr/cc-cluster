@@ -137,14 +137,14 @@ func TestSubscriptionLifecycle(t *testing.T) {
 	ctx := context.Background()
 	const url = "https://sub.example.com/link?token=SECRET-TOKEN"
 
-	sub, err := eng.SubAdd(ctx, "main", url)
+	sub, err := eng.SubAdd(ctx, "main", url, "")
 	if err != nil || len(sub.Proxies) != 2 {
 		t.Fatalf("登记订阅失败: %v %+v", err, sub)
 	}
-	if _, err := eng.SubAdd(ctx, "main", url); err == nil {
+	if _, err := eng.SubAdd(ctx, "main", url, ""); err == nil {
 		t.Fatal("同名订阅应被拒绝")
 	}
-	if _, err := eng.SubAdd(ctx, "other", "ftp://x"); err == nil {
+	if _, err := eng.SubAdd(ctx, "other", "ftp://x", ""); err == nil {
 		t.Fatal("非 HTTP 的订阅地址应被拒绝")
 	}
 

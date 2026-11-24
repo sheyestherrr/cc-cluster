@@ -207,16 +207,25 @@ cc-cluster tmux alice --kill               # 结束它，连同其中的程序
 | 命令 | 作用 |
 | --- | --- |
 | `init` / `doctor` / `version` | 初始化数据目录 / 检查运行环境 / 版本 |
-| `sub add\|list\|nodes\|test\|refresh\|rm` | Clash 格式的订阅 |
-| `node add\|list\|resolve\|report\|rm` | 代理节点（中转 / 落地）；`report` 重新查询落地出口的第三方评估 |
-| `gateway add\|list\|set-transit\|up\|down\|rm` | 网关容器 |
-| `slot add\|list\|up\|stop\|hold\|release\|rm\|exec\|enter\|mounts\|unmount` | 工作槽位 |
+| `sub add\|list\|nodes\|note\|test\|refresh\|rm` | Clash 格式的订阅 |
+| `node add\|list\|note\|resolve\|report\|rm` | 代理节点（中转 / 落地）；`report` 重新查询落地出口的第三方评估 |
+| `gateway add\|list\|note\|set-transit\|up\|down\|rm` | 网关容器 |
+| `slot add\|list\|note\|up\|stop\|hold\|release\|rm\|exec\|enter\|mounts\|unmount` | 工作槽位 |
 | `enter` / `claude` / `tmux` | 进入槽位 / 直接启动 Claude Code / 宿主 tmux 桥接 |
 | `status` / `watch` / `web` / `panel` | 现状 / 持续检测 / 网页界面 / 交互面板 |
 | `render <网关>` | 预览网关的核心配置（默认隐藏凭据） |
 | `exit-report [on\|off]` | 启动槽位时是否顺带查询出口 IP 的第三方评估 |
 
 `slot add` 常用的参数：`--memory 8g`、`--cpus 4`、`--mount 宿主目录[:容器路径[:ro]]`、`--tz Asia/Tokyo`、`--user`、`--hostname`、`--env 名=值`、`--fake-dmi`、`--fake-proc`。
+
+**名称与备注**：订阅、节点、网关、槽位的名称（ID）只能用小写字母、数字和连字符，以字母或数字开头，最长 31 个字符。它会原样用在容器名、主机名、数据目录的文件名和核心配置里，所以只收这些地方都接受的字符；写了下划线或大写时，报错里会给出改好的写法。想用中文、下划线、空格，或者写一句说明，放在备注里：
+
+```sh
+cc-cluster node add kr-home-lg --role landing --note "韩国家宽_LG" …   # 登记时带上
+cc-cluster node note kr-home-lg 韩国家宽 LG 备用                       # 之后修改；不给内容就清掉
+```
+
+备注最长 64 个字符，显示在各个 `list`、`status` 和网页界面里，只用于展示：随时可以改，不影响运行中的槽位。`sub`、`gateway`、`slot` 的用法相同。
 
 ## 要知道的几件事
 

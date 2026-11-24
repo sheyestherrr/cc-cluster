@@ -117,8 +117,8 @@ func (e *Engine) ResolveNode(ctx context.Context, id string) (ip string, err err
 	return n.ConnectIPv4, e.st.SaveNode(n, false)
 }
 
-// SubAdd 登记一个订阅并拉取一次。
-func (e *Engine) SubAdd(ctx context.Context, id, url string) (sub model.Subscription, err error) {
+// SubAdd 登记一个订阅并拉取一次。note 是备注，可以为空。
+func (e *Engine) SubAdd(ctx context.Context, id, url, note string) (sub model.Subscription, err error) {
 	unlock, err := e.st.Lock()
 	if err != nil {
 		return sub, err
@@ -129,13 +129,16 @@ func (e *Engine) SubAdd(ctx context.Context, id, url string) (sub model.Subscrip
 	if err := model.ValidateID("订阅", id); err != nil {
 		return sub, err
 	}
+	if err := model.ValidateNote(note); err != nil {
+		return sub, err
+	}
 	if err := subscription.CheckURL(url); err != nil {
 		return sub, err
 	}
 	if _, err := e.st.Sub(id); err == nil {
 		return sub, fmt.Errorf("订阅 %s 已存在", id)
 	}
-	sub = model.Subscription{ID: id, URL: url}
+	sub = model.Subscription{ID: id, Note: note, URL: url}
 	if err := e.pull(ctx, &sub); err != nil {
 		return sub, err
 	}

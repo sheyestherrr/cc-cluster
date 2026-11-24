@@ -96,6 +96,60 @@ func (e *Engine) SetExitReportAuto(on bool) (err error) {
 	return e.st.SaveCluster(c)
 }
 
+// SetNote 能改备注的对象种类。
+const (
+	KindNode    = "node"
+	KindSub     = "sub"
+	KindGateway = "gateway"
+	KindSlot    = "slot"
+)
+
+// SetNote 修改节点、订阅、网关或槽位的备注；note 为空表示清掉。
+// 备注只用于展示，不影响容器和核心配置，改了不需要重建或重新应用。
+func (e *Engine) SetNote(kind, id, note string) (err error) {
+	unlock, err := e.st.Lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	defer func() { e.record(kind+".note", id, err, note) }()
+	note = strings.TrimSpace(note)
+	if err := model.ValidateNote(note); err != nil {
+		return err
+	}
+	switch kind {
+	case KindNode:
+		n, err := e.st.Node(id)
+		if err != nil {
+			return err
+		}
+		n.Note = note
+		return e.st.SaveNode(n, false)
+	case KindSub:
+		s, err := e.st.Sub(id)
+		if err != nil {
+			return err
+		}
+		s.Note = note
+		return e.st.SaveSub(s, false)
+	case KindGateway:
+		g, err := e.st.Gateway(id)
+		if err != nil {
+			return err
+		}
+		g.Note = note
+		return e.st.SaveGateway(g, false)
+	case KindSlot:
+		sl, err := e.st.Slot(id)
+		if err != nil {
+			return err
+		}
+		sl.Note = note
+		return e.st.SaveSlot(sl, false)
+	}
+	return fmt.Errorf("不认识的对象种类 %q", kind)
+}
+
 // GatewayContainer 返回网关的容器名。
 func (e *Engine) GatewayContainer(id string) string { return e.cl.Name + "-gw-" + id }
 

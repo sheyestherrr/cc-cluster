@@ -1,17 +1,18 @@
 // 改编自 Claude-Hydra（MIT）app/src/pages/EnvironmentsPage.tsx 与 app/src/components/EnvironmentDialog.tsx，v1.1.6：
 // 沿用列表、空状态与分组表单的结构，内容换成 cc-cluster 的网关、节点与订阅。
-import { Gauge, Globe2, Loader2, LogOut, MoreHorizontal, Play, Plus, Power, RefreshCw, Rss, Router, Trash2, Waypoints } from "lucide-react";
+import { Gauge, Globe2, Loader2, LogOut, MoreHorizontal, Pencil, Play, Plus, Power, RefreshCw, Rss, Router, Trash2, Waypoints } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useState } from "react";
 import { ExitCard } from "@/components/ExitCard";
 import { Menu, type MenuEntry } from "@/components/Menu";
+import { NOTE_PLACEHOLDER, NoteDialog, NoteText, type NoteTarget } from "@/components/NoteDialog";
 import { DetailEmpty, DetailGrid, DetailHeader, ErrorBox, KeyValue, Line, Page, PageHeader, RowTitle, Tag, selectableRow } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
-import { ApiError, api, errorText, type Delay, type Gateway, type NodeInfo, type NodeInput, type Role, type State, type Sub } from "@/lib/api";
+import { ApiError, ID_HINT, NOTE_MAX, api, errorText, type Delay, type Gateway, type NodeInfo, type NodeInput, type Role, type State, type Sub } from "@/lib/api";
 import { cn, relativeTime } from "@/lib/utils";
 
 interface Props {
@@ -48,6 +49,7 @@ export function NetworkPage({ state, loadError, refresh }: Props) {
   const [dialog, setDialog] = useState<"gateway" | "node" | "sub" | null>(null);
   const [browsing, setBrowsing] = useState<string | null>(null);
   const [removing, setRemoving] = useState<Removing>(null);
+  const [noting, setNoting] = useState<NoteTarget | null>(null);
   const [sel, setSel] = useState<Selection | null>(null);
 
   const run = async (key: string, label: string, action: () => Promise<unknown>, done?: string | ((r: unknown) => string)) => {
@@ -141,6 +143,7 @@ export function NetworkPage({ state, loadError, refresh }: Props) {
                   busy={busy[`gateway:${g.id}`]}
                   onUp={() => run(`gateway:${g.id}`, "启动中", () => api.gatewayUp(g.id), `网关 ${g.id} 已就绪`)}
                   onDown={(force) => run(`gateway:${g.id}`, "停止中", () => api.gatewayDown(g.id, force), `已停止网关 ${g.id}`)}
+                  onNote={() => setNoting({ kind: "gateways", what: "网关", id: g.id, note: g.note })}
                   onDelete={() => setRemoving({ kind: "gateway", id: g.id, note: g.slots.length ? `它上面还有槽位（${g.slots.join("、")}），需要先删除这些槽位。` : "会删除它的容器和配置。" })}
                 />
               ))}
@@ -159,6 +162,7 @@ export function NetworkPage({ state, loadError, refresh }: Props) {
                   selected={isCurrent("node", n.id)}
                   onSelect={select("node", n.id)}
                   busy={busy[`node:${n.id}`]}
+                  onNote={() => setNoting({ kind: "nodes", what: "节点", id: n.id, note: n.note })}
                   onResolve={() => run(`node:${n.id}`, "解析中", () => api.resolveNode(n.id), (r) => `${n.id} 的首跳地址：${(r as { data: { connect_ipv4: string } }).data.connect_ipv4}`)}
                   onDelete={() => setRemoving({ kind: "node", id: n.id, note: n.used_by.length ? `它正被 ${n.used_by.join("、")} 使用，需要先解除。` : "此节点没有被使用。" })}
                 />
@@ -179,6 +183,7 @@ export function NetworkPage({ state, loadError, refresh }: Props) {
                   onSelect={select("sub", s.id)}
                   busy={busy[`sub:${s.id}`]}
                   onBrowse={() => setBrowsing(s.id)}
+                  onNote={() => setNoting({ kind: "subs", what: "订阅", id: s.id, note: s.note })}
                   onRefresh={() =>
                     run(`sub:${s.id}`, "刷新中", () => api.refreshSub(s.id), (r) => {
                       const d = (r as { data: { Total: number; Updated: string[] | null; Missing: string[] | null } }).data;
@@ -203,6 +208,11 @@ export function NetworkPage({ state, loadError, refresh }: Props) {
         setBrowsing(id);
       }} />
       {state && <SubDialog sub={browsing} state={state} onClose={() => setBrowsing(null)} onChanged={refresh} />}
+      <NoteDialog target={noting} onClose={() => setNoting(null)} onSaved={(text) => {
+        setNoting(null);
+        toast(text);
+        void refresh();
+      }} />
 
       <Dialog
         open={!!removing}
@@ -225,9 +235,10 @@ interface Selectable {
   onSelect: () => void;
 }
 
-function RowShell({ icon: Icon, title, tags, detail, side, busy, action, menu, selected, onSelect }: Selectable & {
+function RowShell({ icon: Icon, title, note, tags, detail, side, busy, action, menu, selected, onSelect }: Selectable & {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
+  note?: string;
   tags?: React.ReactNode;
   detail: React.ReactNode;
   side?: React.ReactNode;
@@ -243,6 +254,7 @@ function RowShell({ icon: Icon, title, tags, detail, side, busy, action, menu, s
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <RowTitle selected={selected} onSelect={onSelect}>{title}</RowTitle>
+          <NoteText note={note} />
           {tags}
         </div>
         <div className="selectable truncate text-[11.5px] text-muted">{detail}</div>
@@ -266,7 +278,7 @@ function RowShell({ icon: Icon, title, tags, detail, side, busy, action, menu, s
   );
 }
 
-function GatewayRow({ g, busy, onUp, onDown, onDelete, ...sel }: Selectable & { g: Gateway; busy?: string; onUp: () => void; onDown: (force: boolean) => void; onDelete: () => void }) {
+function GatewayRow({ g, busy, onUp, onDown, onNote, onDelete, ...sel }: Selectable & { g: Gateway; busy?: string; onUp: () => void; onDown: (force: boolean) => void; onNote: () => void; onDelete: () => void }) {
   const running = g.container === "running";
   const status = running ? "运行中" : g.container === "absent" ? "未创建" : g.container === "unknown" ? "状态未知" : "已停止";
   return (
@@ -274,6 +286,7 @@ function GatewayRow({ g, busy, onUp, onDown, onDelete, ...sel }: Selectable & { 
       {...sel}
       icon={Router}
       title={g.id}
+      note={g.note}
       tags={
         <>
           {g.transit ? <Tag tone="env" title="中转节点">{g.transit}</Tag> : <Tag title="不经中转，各槽位直接连自己的出口节点">不经中转</Tag>}
@@ -297,6 +310,7 @@ function GatewayRow({ g, busy, onUp, onDown, onDelete, ...sel }: Selectable & { 
       menu={[
         { label: "重新应用配置", icon: RefreshCw, onSelect: onUp },
         { label: "强制停止（槽位会断网）", icon: LogOut, onSelect: () => onDown(true), disabled: !running },
+        { label: "备注…", icon: Pencil, onSelect: onNote },
         "sep",
         { label: "删除…", icon: Trash2, danger: true, onSelect: onDelete },
       ]}
@@ -313,7 +327,7 @@ function reportBrief(n: NodeInfo): string {
   return [`出口 ${r.ip}`, where, r.trust_score !== undefined ? `信任分 ${r.trust_score}` : "", flags].filter(Boolean).join(" · ");
 }
 
-function NodeRow({ n, busy, onResolve, onDelete, ...sel }: Selectable & { n: NodeInfo; busy?: string; onResolve: () => void; onDelete: () => void }) {
+function NodeRow({ n, busy, onResolve, onNote, onDelete, ...sel }: Selectable & { n: NodeInfo; busy?: string; onResolve: () => void; onNote: () => void; onDelete: () => void }) {
   const parts = [`${n.type} · ${n.server}:${n.port}`];
   const brief = reportBrief(n);
   if (brief) parts.push(brief);
@@ -323,6 +337,7 @@ function NodeRow({ n, busy, onResolve, onDelete, ...sel }: Selectable & { n: Nod
       {...sel}
       icon={n.role === "landing" ? Globe2 : Waypoints}
       title={n.id}
+      note={n.note}
       tags={
         <>
           <Tag tone={n.role === "landing" ? "env" : undefined}>{roleText[n.role]}</Tag>
@@ -335,6 +350,7 @@ function NodeRow({ n, busy, onResolve, onDelete, ...sel }: Selectable & { n: Nod
       busy={busy}
       menu={[
         { label: "重新解析首跳地址", icon: RefreshCw, onSelect: onResolve, disabled: !n.connect_auto },
+        { label: "备注…", icon: Pencil, onSelect: onNote },
         "sep",
         { label: "删除…", icon: Trash2, danger: true, onSelect: onDelete },
       ]}
@@ -342,17 +358,19 @@ function NodeRow({ n, busy, onResolve, onDelete, ...sel }: Selectable & { n: Nod
   );
 }
 
-function SubRow({ s, busy, onBrowse, onRefresh, onDelete, ...sel }: Selectable & { s: Sub; busy?: string; onBrowse: () => void; onRefresh: () => void; onDelete: () => void }) {
+function SubRow({ s, busy, onBrowse, onRefresh, onNote, onDelete, ...sel }: Selectable & { s: Sub; busy?: string; onBrowse: () => void; onRefresh: () => void; onNote: () => void; onDelete: () => void }) {
   return (
     <RowShell
       {...sel}
       icon={Rss}
       title={s.id}
+      note={s.note}
       detail={`${s.count} 个节点 · ${s.tested_at ? `${s.usable} 个测通（${relativeTime(s.tested_at)}测）` : "还没测过延迟"} · ${relativeTime(s.fetched_at)}拉取`}
       busy={busy}
       action={<Button variant="outline" size="sm" onClick={onBrowse}>选节点…</Button>}
       menu={[
         { label: "重新拉取", icon: RefreshCw, onSelect: onRefresh },
+        { label: "备注…", icon: Pencil, onSelect: onNote },
         "sep",
         { label: "删除…", icon: Trash2, danger: true, onSelect: onDelete },
       ]}
@@ -383,6 +401,7 @@ function NodeDetail({ n, state, busy, onReport }: { n: NodeInfo; state: State; b
       <DetailHeader
         badge={<IconBadge icon={landing ? Globe2 : Waypoints} />}
         title={n.id}
+        note={n.note}
         status={<span className="truncate">{roleText[n.role]} · {n.type}{n.used_by.length ? ` · ${n.used_by.join("、")}在用` : " · 未使用"}</span>}
       />
       <DetailGrid>
@@ -444,6 +463,7 @@ function GatewayDetail({ g, state, refresh }: { g: Gateway; state: State; refres
       <DetailHeader
         badge={<IconBadge icon={Router} />}
         title={g.id}
+        note={g.note}
         status={
           <>
             <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", running && g.core_ready ? "bg-ok shadow-[0_0_0_3px_rgb(var(--ok-soft))]" : "bg-faint")} />
@@ -577,6 +597,7 @@ function SubDetail({ s, state, onBrowse }: { s: Sub; state: State; onBrowse: () 
       <DetailHeader
         badge={<IconBadge icon={Rss} />}
         title={s.id}
+        note={s.note}
         status={<span className="truncate">订阅 · {s.count} 个节点</span>}
         actions={<Button variant="outline" size="sm" onClick={onBrowse}>选节点…</Button>}
       />
@@ -615,11 +636,11 @@ function useResetOnOpen(open: boolean, reset: () => void) {
 
 function AddGatewayDialog({ open, state, onClose, onCreated }: { open: boolean; state: State; onClose: () => void; onCreated: (id: string) => void }) {
   const transits = state.nodes.filter((n) => n.role === "transit");
-  const [gw, setGw] = useState({ id: "", transit: "", pool: "" });
+  const [gw, setGw] = useState({ id: "", note: "", transit: "", pool: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   useResetOnOpen(open, () => {
-    setGw({ id: state.gateways.length ? "" : "main", transit: transits[0]?.id ?? "", pool: freePool(state.gateways) });
+    setGw({ id: state.gateways.length ? "" : "main", note: "", transit: transits[0]?.id ?? "", pool: freePool(state.gateways) });
     setError("");
   });
 
@@ -653,7 +674,10 @@ function AddGatewayDialog({ open, state, onClose, onCreated }: { open: boolean; 
       <div className="space-y-4">
         <div className="list-card">
           <Line label="名称">
-            <Input aria-label="网关名称" value={gw.id} maxLength={32} autoFocus placeholder="小写字母、数字、连字符" onChange={(e) => setGw({ ...gw, id: e.target.value })} />
+            <Input aria-label="网关名称" value={gw.id} maxLength={32} autoFocus placeholder={ID_HINT} onChange={(e) => setGw({ ...gw, id: e.target.value })} />
+          </Line>
+          <Line label="备注">
+            <Input aria-label="网关备注" value={gw.note} maxLength={NOTE_MAX} placeholder={NOTE_PLACEHOLDER} onChange={(e) => setGw({ ...gw, note: e.target.value })} />
           </Line>
           <Line label="中转">
             <Select aria-label="中转节点" value={gw.transit} onChange={(e) => setGw({ ...gw, transit: e.target.value })}>
@@ -672,7 +696,7 @@ function AddGatewayDialog({ open, state, onClose, onCreated }: { open: boolean; 
   );
 }
 
-const emptyNode = (): NodeInput => ({ id: "", role: "landing", type: "socks5", server: "", port: 0, username: "", password: "", tz: "", expect_exit_ip: "" });
+const emptyNode = (): NodeInput => ({ id: "", note: "", role: "landing", type: "socks5", server: "", port: 0, username: "", password: "", tz: "", expect_exit_ip: "" });
 
 function AddNodeDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (id: string) => void }) {
   const [node, setNode] = useState<NodeInput>(emptyNode);
@@ -715,7 +739,10 @@ function AddNodeDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
           <div className="group-label">基础</div>
           <div className="list-card">
             <Line label="名称">
-              <Input aria-label="节点名称" value={node.id} maxLength={32} autoFocus placeholder="小写字母、数字、连字符，例如 home-la" onChange={(e) => setNode({ ...node, id: e.target.value })} />
+              <Input aria-label="节点名称" value={node.id} maxLength={32} autoFocus placeholder={`${ID_HINT}，例如 home-la`} onChange={(e) => setNode({ ...node, id: e.target.value })} />
+            </Line>
+            <Line label="备注">
+              <Input aria-label="节点备注" value={node.note} maxLength={NOTE_MAX} placeholder={NOTE_PLACEHOLDER} onChange={(e) => setNode({ ...node, note: e.target.value })} />
             </Line>
             <Line label="角色">
               <Select aria-label="角色" value={node.role} onChange={(e) => setNode({ ...node, role: e.target.value as Role })}>
@@ -768,11 +795,13 @@ function AddNodeDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
 
 function AddSubDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (id: string, count: number) => void }) {
   const [id, setId] = useState("");
+  const [note, setNote] = useState("");
   const [url, setUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   useResetOnOpen(open, () => {
     setId("");
+    setNote("");
     setUrl("");
     setError("");
   });
@@ -781,7 +810,7 @@ function AddSubDialog({ open, onClose, onCreated }: { open: boolean; onClose: ()
     setSaving(true);
     setError("");
     try {
-      const r = await api.addSub(id.trim(), url.trim());
+      const r = await api.addSub(id.trim(), url.trim(), note.trim());
       onCreated(r.data.id, r.data.count);
     } catch (e) {
       setError(errorText(e));
@@ -807,7 +836,10 @@ function AddSubDialog({ open, onClose, onCreated }: { open: boolean; onClose: ()
       <div className="space-y-4">
         <div className="list-card">
           <Line label="名称">
-            <Input aria-label="订阅名称" value={id} maxLength={32} autoFocus placeholder="小写字母、数字、连字符" onChange={(e) => setId(e.target.value)} />
+            <Input aria-label="订阅名称" value={id} maxLength={32} autoFocus placeholder={ID_HINT} onChange={(e) => setId(e.target.value)} />
+          </Line>
+          <Line label="备注">
+            <Input aria-label="订阅备注" value={note} maxLength={NOTE_MAX} placeholder={NOTE_PLACEHOLDER} onChange={(e) => setNote(e.target.value)} />
           </Line>
           <Line label="订阅地址">
             <Input aria-label="订阅地址" type="password" autoComplete="off" placeholder="https://…" value={url} onChange={(e) => setUrl(e.target.value)} />
@@ -835,7 +867,7 @@ function SubDialog({ sub, state, onClose, onChanged }: { sub: string | null; sta
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState("");
   const [picked, setPicked] = useState<Delay | null>(null);
-  const [form, setForm] = useState<{ id: string; role: Role; tz: string }>({ id: "", role: "transit", tz: "" });
+  const [form, setForm] = useState<{ id: string; note: string; role: Role; tz: string }>({ id: "", note: "", role: "transit", tz: "" });
   const [saving, setSaving] = useState(false);
   const [showDead, setShowDead] = useState(false);
 
@@ -878,7 +910,7 @@ function SubDialog({ sub, state, onClose, onChanged }: { sub: string | null; sta
     setSaving(true);
     setError("");
     try {
-      await api.addNode({ id: form.id.trim(), role: form.role, tz: form.role === "landing" ? form.tz.trim() : "", sub, name: picked.name });
+      await api.addNode({ id: form.id.trim(), note: form.note.trim(), role: form.role, tz: form.role === "landing" ? form.tz.trim() : "", sub, name: picked.name });
       toast(`已登记节点 ${form.id.trim()}（${roleText[form.role]}）。`);
       setPicked(null);
       await onChanged();
@@ -924,7 +956,10 @@ function SubDialog({ sub, state, onClose, onChanged }: { sub: string | null; sta
               把 <span className="font-medium">{picked.name}</span> 登记为节点
             </div>
             <Line label="名称">
-              <Input aria-label="节点名称" value={form.id} maxLength={32} autoFocus placeholder="小写字母、数字、连字符" onChange={(e) => setForm({ ...form, id: e.target.value })} />
+              <Input aria-label="节点名称" value={form.id} maxLength={32} autoFocus placeholder={ID_HINT} onChange={(e) => setForm({ ...form, id: e.target.value })} />
+            </Line>
+            <Line label="备注">
+              <Input aria-label="节点备注" value={form.note} maxLength={NOTE_MAX} placeholder={NOTE_PLACEHOLDER} onChange={(e) => setForm({ ...form, note: e.target.value })} />
             </Line>
             <Line label="角色">
               <Select aria-label="角色" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
@@ -965,7 +1000,7 @@ function SubDialog({ sub, state, onClose, onChanged }: { sub: string | null; sta
                   size="sm"
                   disabled={d.info}
                   onClick={() => {
-                    setForm({ id: "", role: "transit", tz: "" });
+                    setForm({ id: "", note: "", role: "transit", tz: "" });
                     setPicked(d);
                   }}
                 >

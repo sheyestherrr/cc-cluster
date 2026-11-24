@@ -20,6 +20,48 @@ func TestValidateID(t *testing.T) {
 			t.Errorf("%q 应被拒绝", bad)
 		}
 	}
+	// 报错里给出改好的写法，并指向备注。
+	err := ValidateID("节点", "kr_home_lg")
+	if err == nil || !strings.Contains(err.Error(), `"kr-home-lg"`) || !strings.Contains(err.Error(), "备注") {
+		t.Errorf("报错应给出可用的写法并提到备注: %v", err)
+	}
+	if err := ValidateID("节点", "韩国家宽"); err == nil || strings.Contains(err.Error(), "可以改用") {
+		t.Errorf("改不出合法写法时不应给建议: %v", err)
+	}
+}
+
+func TestSuggestID(t *testing.T) {
+	for in, want := range map[string]string{
+		"kr_home_lg":                   "kr-home-lg",
+		"KR Home.LG":                   "kr-home-lg",
+		"_a__b_":                       "a-b",
+		"韩国 lg":                        "lg",
+		"韩国家宽":                         "",
+		"":                             "",
+		strings.Repeat("a", 40):        strings.Repeat("a", 31),
+		strings.Repeat("a", 30) + "_b": strings.Repeat("a", 30),
+	} {
+		got := SuggestID(in)
+		if got != want {
+			t.Errorf("SuggestID(%q) = %q，期望 %q", in, got, want)
+		}
+		if got != "" && ValidateID("节点", got) != nil {
+			t.Errorf("SuggestID(%q) 给出的 %q 本身不合法", in, got)
+		}
+	}
+}
+
+func TestValidateNote(t *testing.T) {
+	for _, ok := range []string{"", "韩国家宽 LG", "kr_home_lg", strings.Repeat("中", MaxNoteLen)} {
+		if err := ValidateNote(ok); err != nil {
+			t.Errorf("%q 应合法: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"a\nb", "a\tb", "a\x1b[31m", strings.Repeat("中", MaxNoteLen+1)} {
+		if err := ValidateNote(bad); err == nil {
+			t.Errorf("%q 应被拒绝", bad)
+		}
+	}
 }
 
 func TestNodeValidate(t *testing.T) {

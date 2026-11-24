@@ -11,15 +11,67 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}$`)
 
 // ValidateID 检查对象 ID：小写字母、数字和连字符，最长 31 个字符。
-// ID 会出现在容器名、文件名和核心配置里的代理名中。
+// ID 会出现在容器名、hostname、文件名和核心配置里的代理名中，所以只收这几样都接受的字符；
+// 想用的名字（中文、下划线、空格）写在备注里，见 ValidateNote。
 func ValidateID(kind, id string) error {
-	if !idRe.MatchString(id) {
-		return fmt.Errorf("%s ID %q 不合法：只能用小写字母、数字和连字符，以字母或数字开头，最长 31 个字符", kind, id)
+	if idRe.MatchString(id) {
+		return nil
+	}
+	msg := fmt.Sprintf("%s ID %q 不合法：只能用小写字母、数字和连字符，以字母或数字开头，最长 31 个字符（它会用在容器名和文件名里）", kind, id)
+	if s := SuggestID(id); s != "" {
+		msg += fmt.Sprintf("；可以改用 %q", s)
+	}
+	if kind != "集群" {
+		msg += "；中文等其他写法可以放在备注里"
+	}
+	return errors.New(msg)
+}
+
+// SuggestID 把一个不合法的 ID 改写成合法的：大写转小写，下划线、空格和点换成连字符，其余不认识的字符去掉。
+// 改不出来（例如全是中文）时返回空串。
+func SuggestID(id string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(id) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_' || r == '.' || r == ' ':
+			// 开头不能是连字符，连续的只留一个。
+			if s := b.String(); s != "" && !strings.HasSuffix(s, "-") {
+				b.WriteByte('-')
+			}
+		}
+	}
+	s := b.String()
+	if len(s) > 31 {
+		s = s[:31]
+	}
+	s = strings.TrimRight(s, "-")
+	if !idRe.MatchString(s) {
+		return ""
+	}
+	return s
+}
+
+// MaxNoteLen 是备注的最大长度（按字符数）。
+const MaxNoteLen = 64
+
+// ValidateNote 检查备注：给人看的一行文字，不参与任何逻辑，所以只限制长度和控制字符。
+func ValidateNote(note string) error {
+	if utf8.RuneCountInString(note) > MaxNoteLen {
+		return fmt.Errorf("备注最长 %d 个字符", MaxNoteLen)
+	}
+	for _, r := range note {
+		if unicode.IsControl(r) {
+			return errors.New("备注只能是一行文字，不能有换行、制表符等控制字符")
+		}
 	}
 	return nil
 }
@@ -54,6 +106,9 @@ var forbiddenProxyKeys = []string{"dialer-proxy", "interface-name", "routing-mar
 // Validate 检查节点。
 func (n Node) Validate() error {
 	if err := ValidateID("节点", n.ID); err != nil {
+		return err
+	}
+	if err := ValidateNote(n.Note); err != nil {
 		return err
 	}
 	if n.Role != RoleTransit && n.Role != RoleLanding {
@@ -168,6 +223,9 @@ func (g *Gateway) Normalize() {
 // Validate 检查网关。
 func (g Gateway) Validate() error {
 	if err := ValidateID("网关", g.ID); err != nil {
+		return err
+	}
+	if err := ValidateNote(g.Note); err != nil {
 		return err
 	}
 	if g.Transit == "" && len(g.Backups) > 0 {
@@ -324,6 +382,9 @@ func CheckMountTarget(target, home string) error {
 // Validate 检查槽位。
 func (s Slot) Validate() error {
 	if err := ValidateID("槽位", s.ID); err != nil {
+		return err
+	}
+	if err := ValidateNote(s.Note); err != nil {
 		return err
 	}
 	if err := ValidateID("网关", s.Gateway); err != nil {

@@ -18,7 +18,7 @@ Claude-Hydra 以 MIT 许可发布，许可全文附在本文件末尾。
 | `src/pages/NetworkPage.tsx` | `src/pages/EnvironmentsPage.tsx`、`src/components/EnvironmentDialog.tsx` | 沿用列表与表单的结构，内容换成网关、节点与订阅 |
 | `src/pages/SystemPage.tsx` | `src/pages/SettingsPage.tsx`、`src/pages/AboutPage.tsx` | 沿用分组与键值行的结构 |
 
-`src/lib/api.ts`、`src/App.tsx`、`src/components/ExitCard.tsx`（出口评估卡片）、各页面右侧的详情栏和各对话框的业务逻辑是本项目自己写的：上游经 Tauri 调用 Rust 后端，
+`src/lib/api.ts`、`src/App.tsx`、`src/components/ExitCard.tsx`（出口评估卡片）、`src/components/NoteDialog.tsx`（备注的显示与编辑）、各页面右侧的详情栏和各对话框的业务逻辑是本项目自己写的：上游经 Tauri 调用 Rust 后端，
 这里改为经 HTTP 调用 cc-cluster 的 Go 接口（`internal/web`）。上游的图标和名称没有使用。
 订阅的拉取与解析在 Go 一侧完成（`internal/subscription`），没有取用上游的 `clashNodes.ts`。
 

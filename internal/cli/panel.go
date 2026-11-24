@@ -415,7 +415,7 @@ func (a *app) menuNode(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			if err := a.addSub(ctx, id, url); err != nil {
+			if err := a.addSub(ctx, id, url, ""); err != nil {
 				return err
 			}
 			if ok, err := a.confirm("现在从里面选一个节点吗？", true); err != nil || !ok {

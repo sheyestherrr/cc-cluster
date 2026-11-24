@@ -68,7 +68,9 @@ type Cluster struct {
 
 // Node 是一个代理节点：Mihomo 原生 proxy 片段加上角色。
 type Node struct {
-	ID   string `json:"id"`
+	ID string `json:"id"`
+	// Note 是给人看的备注（中文、下划线、空格都可以），只用于展示。
+	Note string `json:"note,omitempty"`
 	Role string `json:"role"`
 	// Proxy 是 Mihomo 原生 proxy 片段，不含 name；由管理器控制的字段不允许自带。
 	Proxy map[string]any `json:"proxy"`
@@ -155,7 +157,9 @@ type NodeSource struct {
 // Subscription 是一个 Clash 格式的订阅及其最近一次拉取的节点列表。
 // 订阅地址里通常带有令牌，节点片段里有凭据，整个对象按机密保存。
 type Subscription struct {
-	ID        string    `json:"id"`
+	ID string `json:"id"`
+	// Note 是给人看的备注，只用于展示。
+	Note      string    `json:"note,omitempty"`
 	URL       string    `json:"url"`
 	FetchedAt time.Time `json:"fetched_at"`
 	// TestedAt 是最近一次测延迟的时间；没测过时为零值。
@@ -187,6 +191,8 @@ func (s Subscription) Find(name string) (SubProxy, bool) {
 // Gateway 是一个网关容器的期望配置。
 type Gateway struct {
 	ID string `json:"id"`
+	// Note 是给人看的备注，只用于展示。
+	Note string `json:"note,omitempty"`
 	// Transit 是中转节点 ID；为空表示不经中转，各槽位直连自己的落地。
 	Transit string `json:"transit,omitempty"`
 	// Backups 是候选中转，按顺序：主用的 Transit 不通时核心自动改用其中第一个通的，
@@ -230,7 +236,9 @@ type Mount struct {
 
 // Slot 是一个工作槽位的期望配置。
 type Slot struct {
-	ID      string `json:"id"`
+	ID string `json:"id"`
+	// Note 是给人看的备注，只用于展示；不写进容器。
+	Note    string `json:"note,omitempty"`
 	Gateway string `json:"gateway"`
 	Landing string `json:"landing"`
 	// Subnet 是该槽在网关地址池里的 /30，创建时分配，之后不变。

@@ -145,6 +145,21 @@ func (s *Server) Handler(port int) http.Handler {
 		return nil, c.eng.SetExitReportAuto(in.Auto)
 	})
 
+	// 备注：四类对象同一种写法，note 为空表示清掉。
+	for kind, prefix := range map[string]string{
+		engine.KindSub: "subs", engine.KindNode: "nodes", engine.KindGateway: "gateways", engine.KindSlot: "slots",
+	} {
+		api("POST /api/"+prefix+"/{id}/note", false, func(c *call) (any, error) {
+			var in struct {
+				Note string `json:"note"`
+			}
+			if err := c.body(&in); err != nil {
+				return nil, err
+			}
+			return nil, c.eng.SetNote(kind, c.id, in.Note)
+		})
+	}
+
 	api("POST /api/subs", false, s.subAdd)
 	api("GET /api/subs/{id}/nodes", false, s.subNodes)
 	api("POST /api/subs/{id}/refresh", false, func(c *call) (any, error) { return c.eng.SubRefresh(c.ctx, c.id) })
@@ -308,6 +323,7 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 type nodeView struct {
 	Direct       bool              `json:"direct,omitempty"`
 	ID           string            `json:"id"`
+	Note         string            `json:"note,omitempty"`
 	Role         string            `json:"role"`
 	Type         string            `json:"type"`
 	Server       string            `json:"server"`
@@ -326,6 +342,7 @@ type nodeView struct {
 
 type subView struct {
 	ID        string     `json:"id"`
+	Note      string     `json:"note,omitempty"`
 	Count     int        `json:"count"`
 	FetchedAt time.Time  `json:"fetched_at"`
 	TestedAt  *time.Time `json:"tested_at,omitempty"`
@@ -334,6 +351,7 @@ type subView struct {
 
 type gatewayView struct {
 	ID            string   `json:"id"`
+	Note          string   `json:"note,omitempty"`
 	Transit       string   `json:"transit,omitempty"`
 	Backups       []string `json:"transit_backups,omitempty"`
 	ActiveTransit string   `json:"active_transit,omitempty"`
@@ -347,6 +365,7 @@ type gatewayView struct {
 
 type slotView struct {
 	ID         string        `json:"id"`
+	Note       string        `json:"note,omitempty"`
 	Gateway    string        `json:"gateway"`
 	Landing    string        `json:"landing"`
 	State      string        `json:"state"`
@@ -449,7 +468,7 @@ func (s *Server) state(c *call) (any, error) {
 	}
 	for _, g := range gwSt {
 		out.Gateways = append(out.Gateways, gatewayView{
-			ID: g.Gateway.ID, Transit: g.Gateway.Transit, Backups: g.Gateway.Backups, ActiveTransit: g.ActiveTransit,
+			ID: g.Gateway.ID, Note: g.Gateway.Note, Transit: g.Gateway.Transit, Backups: g.Gateway.Backups, ActiveTransit: g.ActiveTransit,
 			EgressNetwork: g.Gateway.EgressNetwork, Pool: g.Gateway.Pool,
 			Container: g.Container, CoreReady: g.CoreReady, ConfigCurrent: g.ConfigCurrent, Slots: orEmpty(g.Slots),
 		})
@@ -458,7 +477,7 @@ func (s *Server) state(c *call) (any, error) {
 		sl := st.Slot
 		tz, _ := model.EffectiveLocale(sl, landings[sl.Landing])
 		v := slotView{
-			ID: sl.ID, Gateway: sl.Gateway, Landing: sl.Landing, State: st.State, HoldReason: st.HoldReason,
+			ID: sl.ID, Note: sl.Note, Gateway: sl.Gateway, Landing: sl.Landing, State: st.State, HoldReason: st.HoldReason,
 			ExitIP: st.ExitIP, ExitWhere: st.ExitWhere, Hostname: st.Identity.Hostname,
 			User: st.Identity.UserName(), Home: st.Identity.Home(), TZ: tz,
 			Mounts: sl.Mounts, Memory: sl.MemoryBytes, CPUs: sl.CPUs, FakeDMI: sl.FakeDMI, FakeProc: sl.FakeProc,
@@ -477,7 +496,7 @@ func (s *Server) state(c *call) (any, error) {
 	for _, n := range nodes {
 		typ, _ := n.Proxy["type"].(string)
 		v := nodeView{
-			ID: n.ID, Role: n.Role, Type: typ, Server: n.Server(), Port: n.Port(),
+			ID: n.ID, Note: n.Note, Role: n.Role, Type: typ, Server: n.Server(), Port: n.Port(),
 			ConnectIPv4: n.ConnectIPv4, ConnectAuto: n.ConnectAuto, FakeIP: engine.IsFakeIP(n.ConnectIPv4),
 			ExpectExitIP: n.ExpectExitIP, TZ: n.TZ, TZAuto: n.TZAuto, TZFallback: n.TZFallback, ExitReport: n.ExitReport, Direct: n.Direct,
 			Source: n.Source, UsedBy: []string{},
@@ -506,7 +525,7 @@ func (s *Server) state(c *call) (any, error) {
 		return nil, err
 	}
 	for _, sub := range subs {
-		v := subView{ID: sub.ID, Count: len(sub.Proxies), FetchedAt: sub.FetchedAt}
+		v := subView{ID: sub.ID, Note: sub.Note, Count: len(sub.Proxies), FetchedAt: sub.FetchedAt}
 		if !sub.TestedAt.IsZero() {
 			at := sub.TestedAt
 			v.TestedAt = &at
@@ -597,13 +616,14 @@ func delays(in []engine.NodeDelay) []delayView {
 
 func (s *Server) subAdd(c *call) (any, error) {
 	var in struct {
-		ID  string `json:"id"`
-		URL string `json:"url"`
+		ID   string `json:"id"`
+		URL  string `json:"url"`
+		Note string `json:"note"`
 	}
 	if err := c.body(&in); err != nil {
 		return nil, err
 	}
-	sub, err := c.eng.SubAdd(c.ctx, in.ID, strings.TrimSpace(in.URL))
+	sub, err := c.eng.SubAdd(c.ctx, in.ID, strings.TrimSpace(in.URL), strings.TrimSpace(in.Note))
 	if err != nil {
 		return nil, err
 	}
@@ -637,6 +657,7 @@ func (s *Server) subTest(c *call) (any, error) {
 func (s *Server) nodeAdd(c *call) (any, error) {
 	var in struct {
 		ID           string `json:"id"`
+		Note         string `json:"note"`
 		Role         string `json:"role"`
 		TZ           string `json:"tz"`
 		ExpectExitIP string `json:"expect_exit_ip"`
@@ -653,7 +674,7 @@ func (s *Server) nodeAdd(c *call) (any, error) {
 	if err := c.body(&in); err != nil {
 		return nil, err
 	}
-	n := model.Node{ID: in.ID, Role: in.Role, TZ: in.TZ, ExpectExitIP: in.ExpectExitIP}
+	n := model.Node{ID: in.ID, Note: strings.TrimSpace(in.Note), Role: in.Role, TZ: in.TZ, ExpectExitIP: in.ExpectExitIP}
 	if in.Sub != "" {
 		if in.Name == "" {
 			return nil, errors.New("需要选定订阅里的一个节点")
@@ -673,18 +694,20 @@ func (s *Server) nodeAdd(c *call) (any, error) {
 func (s *Server) gatewayAdd(c *call) (any, error) {
 	var in struct {
 		ID      string `json:"id"`
+		Note    string `json:"note"`
 		Transit string `json:"transit"`
 		Pool    string `json:"pool"`
 	}
 	if err := c.body(&in); err != nil {
 		return nil, err
 	}
-	return nil, c.eng.AddGateway(model.Gateway{ID: in.ID, Transit: in.Transit, Pool: in.Pool})
+	return nil, c.eng.AddGateway(model.Gateway{ID: in.ID, Note: strings.TrimSpace(in.Note), Transit: in.Transit, Pool: in.Pool})
 }
 
 func (s *Server) slotAdd(c *call) (any, error) {
 	var in struct {
 		ID       string   `json:"id"`
+		Note     string   `json:"note"`
 		Gateway  string   `json:"gateway"`
 		Landing  string   `json:"landing"`
 		Mounts   []string `json:"mounts"`
@@ -704,7 +727,7 @@ func (s *Server) slotAdd(c *call) (any, error) {
 		return nil, err
 	}
 	sl := model.Slot{
-		ID: in.ID, Gateway: in.Gateway, Landing: in.Landing, UID: os.Getuid(), GID: os.Getgid(),
+		ID: in.ID, Note: strings.TrimSpace(in.Note), Gateway: in.Gateway, Landing: in.Landing, UID: os.Getuid(), GID: os.Getgid(),
 		CPUs: in.CPUs, TZ: in.TZ, FakeDMI: in.FakeDMI, FakeProc: in.FakeProc, TmuxBridge: in.Tmux,
 	}
 	var err error

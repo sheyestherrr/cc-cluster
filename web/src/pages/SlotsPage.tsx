@@ -1,16 +1,17 @@
 // 改编自 Claude-Hydra（MIT）app/src/pages/AccountsPage.tsx，v1.1.6：
 // 沿用列表行、行内菜单与删除确认的结构，内容换成 cc-cluster 的槽位。
-import { Ban, ChevronRight, Copy, Loader2, MoreHorizontal, Play, Plus, Power, RefreshCw, RotateCw, ShieldCheck, Terminal, Trash2 } from "lucide-react";
+import { Ban, ChevronRight, Copy, Loader2, MoreHorizontal, Pencil, Play, Plus, Power, RefreshCw, RotateCw, ShieldCheck, Terminal, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { ExitCard } from "@/components/ExitCard";
 import { Menu } from "@/components/Menu";
+import { NOTE_PLACEHOLDER, NoteDialog, NoteText, type NoteTarget } from "@/components/NoteDialog";
 import { DetailEmpty, DetailGrid, DetailHeader, ErrorBox, KeyValue, Line, Page, PageHeader, RowTitle, Tag, selectableRow } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
-import { ApiError, api, errorText, type Delay, type Slot, type SlotInput, type SlotState, type State } from "@/lib/api";
+import { ApiError, ID_HINT, NOTE_MAX, api, errorText, type Delay, type Slot, type SlotInput, type SlotState, type State } from "@/lib/api";
 import { PALETTE, badgeLetter, cn, colorIndex, formatBytes, relativeTime } from "@/lib/utils";
 
 interface Props {
@@ -39,6 +40,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork }: Props) {
   const [adding, setAdding] = useState(false);
   const [entering, setEntering] = useState<Slot | null>(null);
   const [deleting, setDeleting] = useState<Slot | null>(null);
+  const [noting, setNoting] = useState<NoteTarget | null>(null);
   const [purge, setPurge] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -137,6 +139,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork }: Props) {
                 onHold={() => run(s, "断网中", () => api.slotHold(s.id, "在网页上手动断网"), `已断开 ${s.id} 的网络`)}
                 onRelease={() => release(s)}
                 onEnter={() => setEntering(s)}
+                onNote={() => setNoting({ kind: "slots", what: "槽位", id: s.id, note: s.note })}
                 onDelete={() => {
                   setPurge(false);
                   setDeleting(s);
@@ -163,6 +166,12 @@ export function SlotsPage({ state, loadError, refresh, goNetwork }: Props) {
         toast(warnings.length ? `已登记槽位 ${id}。\n${warnings.join("\n")}` : `已登记槽位 ${id}，点“启动”接线。`);
         await refresh();
       }} />}
+
+      <NoteDialog target={noting} onClose={() => setNoting(null)} onSaved={(text) => {
+        setNoting(null);
+        toast(text);
+        void refresh();
+      }} />
 
       <Dialog
         open={!!entering}
@@ -233,6 +242,7 @@ interface RowProps {
   onHold: () => void;
   onRelease: () => void;
   onEnter: () => void;
+  onNote: () => void;
   onDelete: () => void;
 }
 
@@ -241,7 +251,7 @@ function StateDot({ s }: { s: Slot }) {
   return <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", wired ? "bg-ok shadow-[0_0_0_3px_rgb(var(--ok-soft))]" : s.state === "hold" ? "bg-danger" : "bg-faint")} />;
 }
 
-function SlotRow({ s, busy, selected, onSelect, onUp, onRecreate, onStop, onHold, onRelease, onEnter, onDelete }: RowProps) {
+function SlotRow({ s, busy, selected, onSelect, onUp, onRecreate, onStop, onHold, onRelease, onEnter, onNote, onDelete }: RowProps) {
   const wired = s.state === "ready" || s.state === "pending";
   const running = wired || s.state === "offline";
   return (
@@ -253,6 +263,7 @@ function SlotRow({ s, busy, selected, onSelect, onUp, onRecreate, onStop, onHold
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <RowTitle selected={selected} onSelect={onSelect}>{s.id}</RowTitle>
+          <NoteText note={s.note} />
           <Tag tone="env" title="落地节点">{s.landing}</Tag>
           {s.state === "hold" && <Tag tone="danger" title={s.hold_reason}>已断网</Tag>}
           {s.tmux_bridge && (
@@ -301,6 +312,7 @@ function SlotRow({ s, busy, selected, onSelect, onUp, onRecreate, onStop, onHold
             s.state === "hold"
               ? { label: "解除手动断网", icon: ShieldCheck, onSelect: onRelease }
               : { label: "手动断网", icon: Ban, onSelect: onHold },
+            { label: "备注…", icon: Pencil, onSelect: onNote },
             "sep",
             { label: "删除…", icon: Trash2, onSelect: onDelete, danger: true },
           ]}
@@ -360,6 +372,7 @@ function SlotDetail({ s, state, busy, onUp, onStop, onRelease, onEnter, onReport
           </span>
         }
         title={s.id}
+        note={s.note}
         status={
           <>
             <StateDot s={s} />
@@ -465,7 +478,7 @@ function SlotDetail({ s, state, busy, onUp, onStop, onRelease, onEnter, onReport
   );
 }
 
-const emptySlot = (): SlotInput => ({ id: "", gateway: "", landing: "", mounts: [], memory: "", cpus: 0, user: "", hostname: "", tz: "", fake_dmi: false, fake_proc: false, tmux_bridge: false });
+const emptySlot = (): SlotInput => ({ id: "", note: "", gateway: "", landing: "", mounts: [], memory: "", cpus: 0, user: "", hostname: "", tz: "", fake_dmi: false, fake_proc: false, tmux_bridge: false });
 
 function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; state: State; onClose: () => void; onCreated: (id: string, warnings: string[]) => void }) {
   const landings = state.nodes.filter((n) => n.role === "landing");
@@ -544,7 +557,10 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
           <div className="group-label">基础</div>
           <div className="list-card">
             <Line label="名称">
-              <Input aria-label="槽位名称" value={slot.id} maxLength={32} autoFocus placeholder="小写字母、数字、连字符，例如 work-a" onChange={(e) => setSlot({ ...slot, id: e.target.value })} />
+              <Input aria-label="槽位名称" value={slot.id} maxLength={32} autoFocus placeholder={`${ID_HINT}，例如 work-a`} onChange={(e) => setSlot({ ...slot, id: e.target.value })} />
+            </Line>
+            <Line label="备注">
+              <Input aria-label="槽位备注" value={slot.note} maxLength={NOTE_MAX} placeholder={NOTE_PLACEHOLDER} onChange={(e) => setSlot({ ...slot, note: e.target.value })} />
             </Line>
             <Line label="出口">
               <Select aria-label="出口的来源" value={direct ? "direct" : "landing"} onChange={(e) => {

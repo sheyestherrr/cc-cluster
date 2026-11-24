@@ -27,10 +27,36 @@ func (a *app) subcommand(group, list string, args []string) (string, []string, e
 	return args[0], args[1:], nil
 }
 
+// noteHelp 是各个 add 命令里 --note 的说明。
+const noteHelp = "备注：给人看的名字或说明，中文、下划线、空格都可以，只用于显示（ID 要用在容器名和文件名里，所以字符受限）"
+
+// setNote 实现各对象的 note 子命令：<对象> note <ID> [备注…]；不给备注就清掉。
+func (a *app) setNote(kind, group, what string, args []string) error {
+	fs := a.newFlags(group+" note", group+" note <"+what+"> [备注]    设置备注（中文、下划线、空格都可以，只用于显示）；不给备注就清掉")
+	id, err := parseWithID(fs, args)
+	if err != nil {
+		return err
+	}
+	note := strings.TrimSpace(strings.Join(fs.Args(), " "))
+	eng, _, err := a.open(context.Background(), false)
+	if err != nil {
+		return err
+	}
+	if err := eng.SetNote(kind, id, note); err != nil {
+		return err
+	}
+	if note == "" {
+		fmt.Fprintf(a.out, "已清掉%s %s 的备注\n", what, id)
+	} else {
+		fmt.Fprintf(a.out, "%s %s 的备注：%s\n", what, id, note)
+	}
+	return nil
+}
+
 // ---- node ----
 
 func (a *app) cmdNode(args []string) error {
-	sub, rest, err := a.subcommand("node", "add|list|report|resolve|rm", args)
+	sub, rest, err := a.subcommand("node", "add|list|note|report|resolve|rm", args)
 	if err != nil {
 		return err
 	}
@@ -39,6 +65,8 @@ func (a *app) cmdNode(args []string) error {
 		return a.nodeAdd(rest)
 	case "list", "ls":
 		return a.nodeList(rest)
+	case "note":
+		return a.setNote(engine.KindNode, "node", "节点", rest)
 	case "rm":
 		fs := a.newFlags("node rm", "node rm <节点>")
 		id, err := parseWithID(fs, rest)
@@ -102,11 +130,12 @@ func (a *app) nodeAdd(args []string) error {
 	sub := fs.String("sub", "", "从这个订阅里取节点（先用 sub add 登记订阅）")
 	subName := fs.String("name", "", "配合 --sub：订阅里的节点名称；不填时先测延迟，中转默认用延迟最低的，落地列出来让你选")
 	forLanding := fs.String("landing", "", "配合 --sub 选中转：接上这个落地节点按整条链路测速，只在能接通它的节点里挑")
+	fs.StringVar(&n.Note, "note", "", noteHelp)
 	id, err := parseWithID(fs, args)
 	if err != nil {
 		return err
 	}
-	n.ID = id
+	n.ID, n.Note = id, strings.TrimSpace(n.Note)
 
 	ctx := context.Background()
 	if *sub != "" {
@@ -264,15 +293,15 @@ func (a *app) nodeList(args []string) error {
 		return err
 	}
 	w := a.table()
-	fmt.Fprintln(w, "节点\t角色\t类型\t服务器\t首跳地址\t预期出口\t时区\t来源")
+	fmt.Fprintln(w, "节点\t角色\t类型\t服务器\t首跳地址\t预期出口\t时区\t来源\t备注")
 	for _, n := range nodes {
 		typ, _ := n.Proxy["type"].(string)
 		src := "-"
 		if n.Source != nil {
 			src = n.Source.Sub + " / " + n.Source.Name
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s:%d\t%s\t%s\t%s\t%s\n", n.ID, n.Role, typ, n.Server(), n.Port(),
-			orDash(n.ConnectIPv4), orDash(n.ExpectExitIP), orDash(n.TZ), src)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s:%d\t%s\t%s\t%s\t%s\t%s\n", n.ID, n.Role, typ, n.Server(), n.Port(),
+			orDash(n.ConnectIPv4), orDash(n.ExpectExitIP), orDash(n.TZ), src, orDash(n.Note))
 	}
 	return w.Flush()
 }
@@ -280,13 +309,15 @@ func (a *app) nodeList(args []string) error {
 // ---- gateway ----
 
 func (a *app) cmdGateway(ctx context.Context, args []string) error {
-	sub, rest, err := a.subcommand("gateway", "add|list|set-transit|up|down|rm", args)
+	sub, rest, err := a.subcommand("gateway", "add|list|note|set-transit|up|down|rm", args)
 	if err != nil {
 		return err
 	}
 	switch sub {
 	case "add":
 		return a.gatewayAdd(rest)
+	case "note":
+		return a.setNote(engine.KindGateway, "gateway", "网关", rest)
 	case "set-transit":
 		fs := a.newFlags("gateway set-transit", "gateway set-transit <网关> <主用中转> [候选中转…]")
 		var topt engine.TransitOptions
@@ -383,11 +414,13 @@ func (a *app) gatewayAdd(args []string) error {
 	fs.Var(&echo, "echo-url", "出口 IP 探测地址，可重复（默认使用内置的几个公共地址）")
 	fs.StringVar(&g.Image, "image", "", "网关镜像；不填用 init 时设定的")
 	fs.StringVar(&g.LogLevel, "log-level", model.DefaultLogLevel, "核心日志级别：silent|error|warning|info|debug")
+	fs.StringVar(&g.Note, "note", "", noteHelp)
 	id, err := parseWithID(fs, args)
 	if err != nil {
 		return err
 	}
 	g.ID, g.DNS, g.EchoURLs, g.ConnectURLs, g.Backups = id, dns, echo, connect, backups
+	g.Note = strings.TrimSpace(g.Note)
 	eng, _, err := a.open(context.Background(), false)
 	if err != nil {
 		return err
@@ -405,7 +438,7 @@ func (a *app) printGateways(ctx context.Context, eng *engine.Engine) error {
 		return err
 	}
 	w := a.table()
-	fmt.Fprintln(w, "网关\t中转\t出口网络\t容器\t核心就绪\t配置最新\t槽位")
+	fmt.Fprintln(w, "网关\t中转\t出口网络\t容器\t核心就绪\t配置最新\t槽位\t备注")
 	for _, s := range sts {
 		transit := orDash(s.Gateway.Transit)
 		if n := len(s.Gateway.Backups); n > 0 {
@@ -414,8 +447,8 @@ func (a *app) printGateways(ctx context.Context, eng *engine.Engine) error {
 				transit += "（在用 " + s.ActiveTransit + "）"
 			}
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Gateway.ID, transit, s.Gateway.EgressNetwork,
-			s.Container, yesNo(s.CoreReady), yesNo(s.ConfigCurrent), orDash(strings.Join(s.Slots, ",")))
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Gateway.ID, transit, s.Gateway.EgressNetwork,
+			s.Container, yesNo(s.CoreReady), yesNo(s.ConfigCurrent), orDash(strings.Join(s.Slots, ",")), orDash(s.Gateway.Note))
 	}
 	return w.Flush()
 }
@@ -423,13 +456,15 @@ func (a *app) printGateways(ctx context.Context, eng *engine.Engine) error {
 // ---- slot ----
 
 func (a *app) cmdSlot(ctx context.Context, args []string) error {
-	sub, rest, err := a.subcommand("slot", "add|list|up|stop|hold|release|rm|exec|enter", args)
+	sub, rest, err := a.subcommand("slot", "add|list|note|up|stop|hold|release|rm|exec|enter", args)
 	if err != nil {
 		return err
 	}
 	switch sub {
 	case "add":
 		return a.slotAdd(rest)
+	case "note":
+		return a.setNote(engine.KindSlot, "slot", "槽位", rest)
 	case "list", "ls", "status":
 		if err := parse(a.newFlags("slot list", "slot list"), rest); err != nil {
 			return err
@@ -588,11 +623,12 @@ func (a *app) slotAdd(args []string) error {
 	fs.BoolVar(&s.FakeProc, "fake-proc", false, "让 /proc/cpuinfo 与 /proc/meminfo 按 --cpus / --memory 的限额显示（静态内容，不随用量变化）；设了 --cpus 时还把容器绑到前 N 个核上")
 	fs.BoolVar(&s.TmuxBridge, "tmux-bridge", false, "开启宿主 tmux 桥接：槽内的 Claude 可以经 tmux-mcp 操作宿主上该槽专用的 tmux（宿主命令不受该槽的网络约束）")
 	fs.StringVar(&s.TmuxTools, "tmux-tools", "", "桥接开放的工具范围，deny:项,项 或 allow:项,项；不填为 "+model.DefaultTmuxTools)
+	fs.StringVar(&s.Note, "note", "", noteHelp)
 	id, err := parseWithID(fs, args)
 	if err != nil {
 		return err
 	}
-	s.ID = id
+	s.ID, s.Note = id, strings.TrimSpace(s.Note)
 	if *direct != "" && (s.Gateway != "" || s.Landing != "") {
 		return errors.New("--direct 不与 --gateway、--landing 同用：直出的网关和出口节点由管理器准备")
 	}
@@ -679,19 +715,22 @@ func (a *app) printSlots(ctx context.Context, eng *engine.Engine) error {
 		if !s.AppliedAt.IsZero() {
 			at = s.AppliedAt.Local().Format("2006-01-02 15:04:05")
 		}
-		note := s.HoldReason
+		// 备注列先放用户写的备注，再放状态说明（断网原因、宿主桥接）。
+		var notes []string
+		for _, v := range []string{s.Slot.Note, s.HoldReason} {
+			if v != "" {
+				notes = append(notes, v)
+			}
+		}
 		if s.Slot.TmuxBridge {
 			b := "宿主桥接"
 			if !s.TmuxAlive {
 				b += "（tmux 未运行）"
 			}
-			if note != "" {
-				note += "；"
-			}
-			note += b
+			notes = append(notes, b)
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Slot.ID, s.State, s.Slot.Gateway, s.Slot.Landing,
-			orDash(s.ExitIP), orDash(s.ExitWhere), at, s.Identity.Hostname, orDash(note))
+			orDash(s.ExitIP), orDash(s.ExitWhere), at, s.Identity.Hostname, orDash(strings.Join(notes, "；")))
 	}
 	return w.Flush()
 }
