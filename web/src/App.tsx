@@ -5,6 +5,7 @@ import { api, errorText, type State } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
 import { NetworkPage } from "@/pages/NetworkPage";
 import { SlotsPage } from "@/pages/SlotsPage";
+import { SubsPage } from "@/pages/SubsPage";
 import { SystemPage } from "@/pages/SystemPage";
 
 /** 页面开着的时候每隔这么久重新读取一次现状：容器可能被命令行或别的操作改动。 */
@@ -49,7 +50,8 @@ export default function App() {
     <AppShell activePage={page} onPageChange={setPage} theme={theme} onThemeChange={setTheme}
       status={state ? { ready, total: state.slots.length } : null}>
       {page === "slots" && <SlotsPage state={state} loadError={loadError} refresh={refresh} goNetwork={() => setPage("network")} />}
-      {page === "network" && <NetworkPage state={state} loadError={loadError} refresh={refresh} />}
+      {page === "network" && <NetworkPage state={state} loadError={loadError} refresh={refresh} goSubs={() => setPage("subs")} />}
+      {page === "subs" && <SubsPage state={state} loadError={loadError} refresh={refresh} />}
       {page === "system" && <SystemPage state={state} refresh={refresh} theme={theme} onThemeChange={setTheme} />}
     </AppShell>
   );

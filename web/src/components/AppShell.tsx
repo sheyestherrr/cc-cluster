@@ -1,12 +1,12 @@
 // 改编自 Claude-Hydra（MIT）app/src/components/AppShell.tsx，v1.1.6：
 // 去掉窗口控制、更新提示和应用图标，导航项换成本项目的。
-import { Boxes, Moon, Network, Settings, Sun, SunMoon } from "lucide-react";
+import { Boxes, Moon, Network, Rss, Settings, Sun, SunMoon } from "lucide-react";
 import type React from "react";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { ThemeMode } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
-export type PageId = "slots" | "network" | "system";
+export type PageId = "slots" | "network" | "subs" | "system";
 
 type Icon = React.ComponentType<{ className?: string }>;
 interface NavItem { id: PageId; label: string; icon: Icon }
@@ -14,9 +14,10 @@ interface NavItem { id: PageId; label: string; icon: Icon }
 const main: NavItem[] = [
   { id: "slots", label: "槽位", icon: Boxes },
   { id: "network", label: "节点与网关", icon: Network },
+  { id: "subs", label: "订阅", icon: Rss },
 ];
 const footer: NavItem[] = [{ id: "system", label: "系统", icon: Settings }];
-export const pageTitles: Record<PageId, string> = { slots: "槽位", network: "节点与网关", system: "系统" };
+export const pageTitles: Record<PageId, string> = { slots: "槽位", network: "节点与网关", subs: "订阅", system: "系统" };
 
 /** 和标签页图标（favicon.svg）同一个图形：两个容器，上面一个出口。 */
 function Logo({ className }: { className?: string }) {

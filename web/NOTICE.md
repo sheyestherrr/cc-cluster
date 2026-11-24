@@ -15,7 +15,8 @@ Claude-Hydra 以 MIT 许可发布，许可全文附在本文件末尾。
 | `src/components/PageHeader.tsx` | `src/components/PageHeader.tsx` | 页头与分组原样；内容区加了“列表 + 右侧详情栏”的两栏布局和可选中的行，这部分是本项目自己写的 |
 | `src/components/AppShell.tsx` | `src/components/AppShell.tsx` | 去掉窗口控制、更新提示和应用图标，导航项换成本项目的 |
 | `src/pages/SlotsPage.tsx` | `src/pages/AccountsPage.tsx` | 沿用列表行与菜单的结构，内容换成槽位 |
-| `src/pages/NetworkPage.tsx` | `src/pages/EnvironmentsPage.tsx`、`src/components/EnvironmentDialog.tsx` | 沿用列表与表单的结构，内容换成网关、节点与订阅 |
+| `src/pages/NetworkPage.tsx` | `src/pages/EnvironmentsPage.tsx`、`src/components/EnvironmentDialog.tsx` | 沿用列表与表单的结构，内容换成网关与节点 |
+| `src/pages/SubsPage.tsx`、`src/components/RowShell.tsx` | 同上（经 `NetworkPage.tsx`） | 订阅原先是 `NetworkPage.tsx` 里的一组，后来单独成页；列表行的组件一起搬了出来 |
 | `src/pages/SystemPage.tsx` | `src/pages/SettingsPage.tsx`、`src/pages/AboutPage.tsx` | 沿用分组与键值行的结构 |
 
 `src/lib/api.ts`、`src/App.tsx`、`src/components/ExitCard.tsx`（出口评估卡片）、`src/components/NoteDialog.tsx`（备注的显示与编辑）、各页面右侧的详情栏和各对话框的业务逻辑是本项目自己写的：上游经 Tauri 调用 Rust 后端，
@@ -24,6 +25,9 @@ Claude-Hydra 以 MIT 许可发布，许可全文附在本文件末尾。
 
 `src/components/Flag.tsx`（国旗与行首的地区图标）、`src/favicon.svg` 也是本项目自己写的。国旗的图形来自依赖
 [country-flag-icons](https://gitlab.com/catamphetamine/country-flag-icons)（MIT）的 3x2 SVG，构建时原样放进产物。
+
+订阅页“订阅列表 + 节点列表 + 筛选栏”的安排参考了 [Resin](https://github.com/Resinat/Resin)（MIT）的订阅页与节点池页，
+没有取用它的前端代码；分享链接的解析取自它的 Go 代码，来源与许可见 `internal/subscription/NOTICE.md`。
 
 ## Claude-Hydra 的许可（MIT）
 
