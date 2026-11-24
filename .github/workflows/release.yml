@@ -2,7 +2,7 @@
 #
 # 三个任务权限分开：
 #   build   只有读权限：跑检查、装前端依赖并构建（这一步会执行第三方包的代码），产出发布包。
-#   image   只多一个推镜像的权限：构建网关镜像并推到 GHCR。
+#   image   只多一个推镜像的权限：构建网关镜像和 worker 镜像并推到 GHCR。
 #   publish 只多一个写 Release 的权限：不检出代码、不执行仓库里的任何东西，只上传 build 的产物。
 #
 # 其余约定同 ci.yml：Action 按提交哈希固定，标签名等外部输入经环境变量传入并先校验。
@@ -98,10 +98,22 @@ jobs:
           retention-days: 7
 
   image:
-    name: 网关镜像
+    name: ${{ matrix.title }}镜像
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # worker 镜像的 arm64 一份要在模拟器里装一遍软件包，比网关镜像慢得多。
+    timeout-minutes: 60
+    strategy:
+      # 两个镜像互不依赖：一个失败不要把另一个推到一半时取消。
+      fail-fast: false
+      matrix:
+        include:
+          - name: gateway
+            title: 网关
+          # 不传 TMUX_VERSION：镜像里只有发行版自带的 tmux。
+          # 要用宿主 tmux 桥接、而宿主的 tmux 是别的版本时，由使用者在本机 make image-worker。
+          - name: worker
+            title: worker
     permissions:
       contents: read
       packages: write
@@ -117,8 +129,9 @@ jobs:
           GHCR_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
           IMAGE_TAGS: ${{ needs.build.outputs.image_tags }}
+          NAME: ${{ matrix.name }}
         run: |
-          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cc-cluster-gateway"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cc-cluster-${NAME}"
           printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
           docker buildx create --use --name release
           read -r -a names <<< "${IMAGE_TAGS}"
@@ -133,7 +146,7 @@ jobs:
             --label "org.opencontainers.image.version=${VERSION}" \
             "${tags[@]}" \
             --push \
-            images/gateway
+            "images/${NAME}"
 
   publish:
     name: 发布 Release
@@ -159,12 +172,15 @@ jobs:
           PRERELEASE: ${{ needs.build.outputs.prerelease }}
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cc-cluster-gateway"
+          worker="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cc-cluster-worker"
           notes="${RUNNER_TEMP}/notes.md"
           if [ "${KIND}" = nightly ]; then
             {
               echo "master 上最新一次提交的自动构建（${VERSION}，提交 ${GITHUB_SHA}），每次推送都会被覆盖。不是正式版本。"
               echo
               echo "网关镜像：\`${image}:nightly\`"
+              echo
+              echo "worker 镜像：\`${worker}:nightly\`"
               echo
               echo "下载后用 \`sha256sum --check SHA256SUMS\` 核对。"
             } > "${notes}"
@@ -182,6 +198,8 @@ jobs:
 
           {
             echo "网关镜像：\`${image}:${VERSION}\`"
+            echo
+            echo "worker 镜像：\`${worker}:${VERSION}\`"
             echo
             echo "下载后用 \`sha256sum --check SHA256SUMS\` 核对。"
           } > "${notes}"

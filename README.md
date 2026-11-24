@@ -66,18 +66,21 @@ install -m 0755 cc-cluster_nightly_linux_amd64/cc-cluster ~/.local/bin/
 cc-cluster version
 ```
 
-### 2. 准备两个镜像
+### 2. 拉取两个镜像
 
 ```sh
-# 网关镜像：直接拉取（标签与你下载的版本一致）
+# 标签与你下载的版本一致：nightly，或正式版的版本号
 docker pull ghcr.io/sheyestherrr/cc-cluster-gateway:nightly
-
-# worker 镜像：要在本机构建。它里面的 tmux 按宿主的版本编译，这样宿主桥接才连得上
-git clone https://github.com/sheyestherrr/cc-cluster.git
-make -C cc-cluster image-worker        # 得到 cc-cluster-worker:dev，只需要 docker 和 make
+docker pull ghcr.io/sheyestherrr/cc-cluster-worker:nightly
 ```
 
-想自己构建网关镜像也可以：`make -C cc-cluster image-gateway`，得到 `cc-cluster-gateway:dev`。
+不想用发布的镜像，或者要用[宿主 tmux 桥接](#宿主-tmux-桥接可选)，可以在本机构建（只需要 docker 和 make）：
+
+```sh
+git clone https://github.com/sheyestherrr/cc-cluster.git
+make -C cc-cluster image-gateway       # 得到 cc-cluster-gateway:dev
+make -C cc-cluster image-worker        # 得到 cc-cluster-worker:dev，里面的 tmux 按这台机器的 tmux 版本编译
+```
 
 ### 3. 初始化
 
@@ -86,11 +89,13 @@ make -C cc-cluster image-worker        # 得到 cc-cluster-worker:dev，只需�
 ```sh
 export CC_CLUSTER_DATA=~/cc-data        # 或者每次加 --data-dir
 
-cc-cluster init --gateway-image ghcr.io/sheyestherrr/cc-cluster-gateway:nightly
+cc-cluster init \
+  --gateway-image ghcr.io/sheyestherrr/cc-cluster-gateway:nightly \
+  --worker-image ghcr.io/sheyestherrr/cc-cluster-worker:nightly
 cc-cluster doctor                       # 检查这台机器能否运行；不访问外部地址
 ```
 
-`doctor` 全部通过就可以往下走了。
+`doctor` 全部通过就可以往下走了。用本机构建的镜像时不用带这两个参数，默认就是 `cc-cluster-gateway:dev` 和 `cc-cluster-worker:dev`。
 
 ## 五分钟上手
 
@@ -184,7 +189,18 @@ cc-cluster              # 不带参数：终端里的交互面板，按编号选
 
 ## 宿主 tmux 桥接（可选）
 
-需要让槽内的 Claude Code 驱动宿主上的程序（EDA、GDB 等）时，按槽位开启：
+需要让槽内的 Claude Code 驱动宿主上的程序（EDA、GDB 等）时，按槽位开启。
+
+**先准备镜像。** 槽内的 tmux 只是客户端，要去连宿主上的 tmux，两边的版本必须相同，否则连不上。发布的 worker 镜像里是 Debian 自带的那一版（`docker run --rm <镜像> tmux -V` 可以看），和宿主的 `tmux -V` 不一样时，在本机构建一个（见[安装](#2-拉取两个镜像)），并让要用桥接的槽位使用它：
+
+```sh
+make -C cc-cluster image-worker                                   # 按宿主的 tmux 版本编译，得到 cc-cluster-worker:dev
+cc-cluster slot add alice … --image cc-cluster-worker:dev --tmux-bridge
+```
+
+槽位的镜像在登记时确定。已有的槽位要换镜像：`slot rm`（不加 `--purge`，HOME 与身份保留）后用同一个名字重新 `slot add --image …`。
+
+**开启与使用：**
 
 ```sh
 cc-cluster tmux alice --on                 # 或登记时 slot add … --tmux-bridge
@@ -198,7 +214,7 @@ cc-cluster tmux alice --kill               # 结束它，连同其中的程序
 
 > **经桥接执行的命令是宿主上的命令**：用的是你的权限和宿主的网络，不走该槽的出口，手动断网也拦不住。只给需要它的槽位开启。
 
-宿主升级 tmux 后要重建 worker 镜像并 `slot up --recreate`（客户端和 server 版本必须一致）。macOS 上不可用。
+宿主升级 tmux 后要重新 `make image-worker` 并 `slot up --recreate`（客户端和 server 版本必须一致）。macOS 上不可用。
 
 ## 命令速查
 
@@ -289,7 +305,7 @@ make repo-check     # 检查有没有把订阅地址、代理密码、数据目�
 
 - 网页界面的风格、基础组件和页面骨架取自 [Claude-Hydra](https://github.com/jin-yu-liu/Claude-Hydra)（MIT），订阅导入的做法也参考了它；取用的文件、改动和许可全文见 [web/NOTICE.md](web/NOTICE.md)。
 - 网关核心是 [Mihomo](https://github.com/MetaCubeX/mihomo)。
-- 宿主桥接使用 [tmux-mcp](https://github.com/bnomei/tmux-mcp)（MIT），由 worker 镜像经 npm 安装；镜像里的 [tmux](https://github.com/tmux/tmux)（ISC）在构建时从官方源码包编译。本仓库不含它们的代码。
+- 宿主桥接使用 [tmux-mcp](https://github.com/bnomei/tmux-mcp)（MIT），由 worker 镜像经 npm 安装；镜像里的 [tmux](https://github.com/tmux/tmux)（ISC）来自发行版的软件包，本机构建时改为从官方源码包编译。本仓库不含它们的代码。
 - 默认 worker 镜像的软件包选择参考了 Claude Code 官方的开发容器，Dockerfile 为重新编写。
 
 发布包的 `licenses/` 目录里附有随二进制分发的第三方代码的许可说明。

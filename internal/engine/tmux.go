@@ -363,7 +363,7 @@ func (e *Engine) bridgeUp(ctx context.Context, sl model.Slot, worker string) boo
 		host, _ := e.TmuxVersion(ctx)
 		hint := ""
 		if host != "" && host != client {
-			hint = "；两端版本不同，用 make image-worker 重建 worker 镜像（它会按宿主的版本编译 tmux）后再 slot up --recreate"
+			hint = "；两端版本不同：用 make image-worker 在本机构建 worker 镜像（它会按宿主的版本编译 tmux），让该槽使用构建出的镜像，再 slot up --recreate"
 		}
 		e.logf("宿主 tmux 桥接不可用：槽内连不上宿主的 tmux（%s）。宿主是 %s，worker 镜像里是 %s%s", truncate(out, 200), orUnknown(host), client, hint)
 		return false
