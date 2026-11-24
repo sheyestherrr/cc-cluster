@@ -16,7 +16,19 @@ const main: NavItem[] = [
   { id: "network", label: "节点与网关", icon: Network },
 ];
 const footer: NavItem[] = [{ id: "system", label: "系统", icon: Settings }];
-const titles: Record<PageId, string> = { slots: "槽位", network: "节点与网关", system: "系统" };
+export const pageTitles: Record<PageId, string> = { slots: "槽位", network: "节点与网关", system: "系统" };
+
+/** 和标签页图标（favicon.svg）同一个图形：两个容器，上面一个出口。 */
+function Logo({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 32" aria-hidden className={className}>
+      <rect className="fill-fg" width="32" height="32" rx="7" />
+      <rect className="fill-[#a5b4fc] dark:fill-[#4f46e5]" x="11.5" y="6" width="9" height="9" rx="2.5" />
+      <rect className="fill-card" x="6" y="17" width="9" height="9" rx="2.5" />
+      <rect className="fill-card" x="17" y="17" width="9" height="9" rx="2.5" />
+    </svg>
+  );
+}
 
 const nextTheme: Record<ThemeMode, ThemeMode> = { system: "light", light: "dark", dark: "system" };
 const themeLabel: Record<ThemeMode, string> = { system: "跟随系统", light: "浅色", dark: "深色" };
@@ -75,9 +87,7 @@ export function AppShell({ activePage, onPageChange, theme, onThemeChange, statu
     <div className="flex h-screen overflow-hidden bg-bg text-fg">
       <aside className="flex w-[204px] shrink-0 flex-col border-r-[0.5px] border-line bg-bg">
         <div className="flex h-12 shrink-0 items-center gap-2 pl-4">
-          <span className="flex h-[18px] w-[18px] items-center justify-center rounded-[5px] bg-fg text-card">
-            <Boxes className="h-3 w-3" />
-          </span>
+          <Logo className="h-[18px] w-[18px] shrink-0" />
           <span className="truncate text-[13.5px] font-semibold tracking-[0.01em]">cc-cluster</span>
         </div>
 
@@ -101,7 +111,7 @@ export function AppShell({ activePage, onPageChange, theme, onThemeChange, statu
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-12 shrink-0 items-center justify-between gap-3 pl-5 pr-3">
-          <div className="min-w-0 truncate text-[13.5px] font-semibold">{titles[activePage]}</div>
+          <div className="min-w-0 truncate text-[13.5px] font-semibold">{pageTitles[activePage]}</div>
           <button
             onClick={() => onThemeChange(nextTheme[theme])}
             title={`主题：${themeLabel[theme]}（点击切换）`}
