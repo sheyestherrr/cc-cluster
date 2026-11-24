@@ -154,18 +154,27 @@ type NodeSource struct {
 	Name string `json:"name"`
 }
 
-// Subscription 是一个 Clash 格式的订阅及其最近一次拉取的节点列表。
-// 订阅地址里通常带有令牌，节点片段里有凭据，整个对象按机密保存。
+// Subscription 是一个订阅及其最近一次解析出的节点列表。来源有两种：远程订阅给的是地址（URL），
+// 定期去拉取；本地订阅是把订阅内容或分享链接直接贴进来（Content），没有地址。
+// 订阅地址里通常带有令牌，内容和节点片段里有凭据，整个对象按机密保存。
 type Subscription struct {
 	ID string `json:"id"`
 	// Note 是给人看的备注，只用于展示。
-	Note      string    `json:"note,omitempty"`
-	URL       string    `json:"url"`
+	Note string `json:"note,omitempty"`
+	URL  string `json:"url"`
+	// Content 是本地订阅的原文。
+	Content   string    `json:"content,omitempty"`
 	FetchedAt time.Time `json:"fetched_at"`
+	// Format 是最近一次解析认出的格式（clash 或 links）；Skipped 是分享链接里没能解析的行数。
+	Format  string `json:"format,omitempty"`
+	Skipped int    `json:"skipped,omitempty"`
 	// TestedAt 是最近一次测延迟的时间；没测过时为零值。
 	TestedAt time.Time  `json:"tested_at"`
 	Proxies  []SubProxy `json:"proxies"`
 }
+
+// Local 报告这是不是本地订阅（内容是贴进来的，没有地址可拉取）。
+func (s Subscription) Local() bool { return s.URL == "" }
 
 // DelayFailed 是 SubProxy.DelayMS 里表示"测过但不通"的值。
 const DelayFailed = -1

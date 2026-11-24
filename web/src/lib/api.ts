@@ -186,6 +186,22 @@ export interface Sub {
   fetched_at: string;
   tested_at?: string;
   usable: number;
+  /** 本地订阅：内容是贴进来的，没有地址可拉取。 */
+  local?: boolean;
+  format?: "clash" | "links";
+  /** 分享链接里没能解析的行数。 */
+  skipped?: number;
+}
+
+export type SubSource = { url: string } | { content: string };
+
+/** 刷新或修改订阅之后的结果（字段名是 Go 一侧原样给出的）。 */
+export interface RefreshResult {
+  Total: number;
+  Skipped: number;
+  Updated: string[] | null;
+  Renamed: string[] | null;
+  Missing: string[] | null;
 }
 
 export interface State {
@@ -278,9 +294,12 @@ export const api = {
   /** 设置备注；空串表示清掉。 */
   setNote: (kind: NoteKind, target: string, note: string) => post(`${kind}/${id(target)}/note`, { note }),
 
-  addSub: (sub: string, url: string, note = "") => post<{ id: string; count: number }>("subs", { id: sub, url, note }),
+  /** 添加订阅：source 里给 url 是远程订阅，给 content 是本地订阅（贴进来的分享链接、base64 订阅或 Clash 配置）。 */
+  addSub: (sub: string, source: SubSource, note = "") => post<{ id: string; count: number; skipped: number }>("subs", { id: sub, note, ...source }),
+  /** 修改订阅的来源；append 为真时把 content 接在本地订阅现有内容的后面。 */
+  setSubSource: (sub: string, source: SubSource & { append?: boolean }) => post<RefreshResult>(`subs/${id(sub)}/source`, source),
   subNodes: (sub: string) => get<Delay[]>(`subs/${id(sub)}/nodes`),
-  refreshSub: (sub: string) => post<{ Total: number; Updated: string[] | null; Renamed: string[] | null; Missing: string[] | null }>(`subs/${id(sub)}/refresh`),
+  refreshSub: (sub: string) => post<RefreshResult>(`subs/${id(sub)}/refresh`),
   testSub: (sub: string, landing: string) => post<Delay[]>(`subs/${id(sub)}/test`, { landing }),
   removeSub: (sub: string) => del(`subs/${id(sub)}`),
 

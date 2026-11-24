@@ -406,7 +406,7 @@ func (a *app) wizardGateway(ctx context.Context) error {
 
 func (a *app) menuNode(ctx context.Context) error {
 	items := []menuItem{
-		{"导入订阅（Clash 格式的订阅地址）", func(ctx context.Context) error {
+		{"导入订阅（订阅地址）", func(ctx context.Context) error {
 			id, err := a.ask("给这个订阅起个名字", "sub")
 			if err != nil {
 				return err
@@ -415,7 +415,7 @@ func (a *app) menuNode(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			if err := a.addSub(ctx, id, url, ""); err != nil {
+			if err := a.addSub(ctx, id, "", engine.SubInput{URL: url}); err != nil {
 				return err
 			}
 			if ok, err := a.confirm("现在从里面选一个节点吗？", true); err != nil || !ok {

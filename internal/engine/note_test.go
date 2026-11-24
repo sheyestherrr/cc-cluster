@@ -23,7 +23,7 @@ func TestSetNote(t *testing.T) {
 	if err := eng.AddNode(ctx, model.Node{ID: "bad", Role: model.RoleLanding, Proxy: proxy, Note: "两行\n备注"}); err == nil {
 		t.Fatal("带换行的备注应被拒绝")
 	}
-	if _, err := eng.SubAdd(ctx, "air", "https://sub.example.com/x", "机场 A"); err != nil {
+	if _, err := eng.SubAdd(ctx, "air", "机场 A", SubInput{URL: "https://sub.example.com/x"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := eng.AddGateway(model.Gateway{ID: "solo", Note: "直连"}); err != nil {

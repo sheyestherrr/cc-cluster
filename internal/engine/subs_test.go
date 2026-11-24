@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net/netip"
 	"os"
@@ -137,14 +138,14 @@ func TestSubscriptionLifecycle(t *testing.T) {
 	ctx := context.Background()
 	const url = "https://sub.example.com/link?token=SECRET-TOKEN"
 
-	sub, err := eng.SubAdd(ctx, "main", url, "")
+	sub, err := eng.SubAdd(ctx, "main", "", SubInput{URL: url})
 	if err != nil || len(sub.Proxies) != 2 {
 		t.Fatalf("登记订阅失败: %v %+v", err, sub)
 	}
-	if _, err := eng.SubAdd(ctx, "main", url, ""); err == nil {
+	if _, err := eng.SubAdd(ctx, "main", "", SubInput{URL: url}); err == nil {
 		t.Fatal("同名订阅应被拒绝")
 	}
-	if _, err := eng.SubAdd(ctx, "other", "ftp://x", ""); err == nil {
+	if _, err := eng.SubAdd(ctx, "other", "", SubInput{URL: "ftp://x"}); err == nil {
 		t.Fatal("非 HTTP 的订阅地址应被拒绝")
 	}
 
@@ -221,3 +222,82 @@ func TestSubscriptionLifecycle(t *testing.T) {
 		t.Fatal("删除订阅后，取自它的节点应保留")
 	}
 }
+
+func TestLocalSubscription(t *testing.T) {
+	eng, st := newTestEngine(t, nil, nil) // 本地订阅不应去拉取任何地址
+	ctx := context.Background()
+	const hk = "trojan://SECRET-PW@203.0.113.2:443#HK 01"
+	const jp = "socks5://user:pw@203.0.113.9:1080#JP 02"
+
+	for what, in := range map[string]SubInput{
+		"什么都没给":  {},
+		"两样都给":   {URL: "https://sub.example.com/x", Content: hk},
+		"贴的是网址":  {Content: "https://sub.example.com/link?token=abc\n"},
+		"认不出的内容": {Content: "hello world"},
+	} {
+		if _, err := eng.SubAdd(ctx, "bad", "", in); err == nil {
+			t.Errorf("%s：应报错", what)
+		}
+	}
+
+	// 贴 base64 订阅：存下来的是解开后的明文；有一行认不出来。
+	sub, err := eng.SubAdd(ctx, "mine", "自己的节点", SubInput{Content: b64(hk + "\nwireguard://x\n")})
+	if err != nil || len(sub.Proxies) != 1 || sub.Skipped != 1 || !sub.Local() || sub.Format != "links" {
+		t.Fatalf("登记本地订阅失败: %v %+v", err, sub)
+	}
+	if !strings.HasPrefix(sub.Content, "trojan://") {
+		t.Fatalf("本地内容应存成明文: %q", sub.Content)
+	}
+	if err := eng.NodeFromSub(ctx, model.Node{ID: "hk", Role: model.RoleLanding}, "mine", "HK 01"); err != nil {
+		t.Fatal(err)
+	}
+
+	// 追加一条链接。
+	res, err := eng.SubSet(ctx, "mine", SubInput{Content: jp, Append: true})
+	if err != nil || res.Total != 2 || res.Skipped != 1 || len(res.Missing) != 0 {
+		t.Fatalf("追加失败: %+v %v", res, err)
+	}
+	if _, err := eng.SubSet(ctx, "mine", SubInput{Content: "proxies:\n  - {name: a, type: socks5, server: 203.0.113.1, port: 1}\n", Append: true}); err == nil {
+		t.Fatal("Clash 配置不能追加到分享链接后面")
+	}
+	// 新内容解析不了时订阅保持原样。
+	if _, err := eng.SubSet(ctx, "mine", SubInput{Content: "hello world"}); err == nil {
+		t.Fatal("认不出的内容应报错")
+	}
+	if sub, _ = st.Sub("mine"); len(sub.Proxies) != 2 {
+		t.Fatalf("修改失败后订阅应保持原样: %+v", sub)
+	}
+	// 本地订阅的刷新只是重新解析。
+	if res, err := eng.SubRefresh(ctx, "mine"); err != nil || res.Total != 2 {
+		t.Fatalf("刷新本地订阅: %+v %v", res, err)
+	}
+
+	// 整体替换：HK 换了口令，取自它的节点跟着更新；JP 不在了。
+	res, err = eng.SubSet(ctx, "mine", SubInput{Content: "trojan://NEW-PW@203.0.113.2:443#HK 01"})
+	if err != nil || res.Total != 1 || len(res.Updated) != 1 || res.Updated[0] != "hk" {
+		t.Fatalf("替换内容: %+v %v", res, err)
+	}
+	if n, _ := st.Node("hk"); n.Proxy["password"] != "NEW-PW" {
+		t.Fatalf("节点应随内容更新: %+v", n.Proxy)
+	}
+
+	// 改成远程订阅：内容清掉，从地址拉取。
+	yaml := "proxies:\n  - {name: \"HK 01\", type: trojan, server: 203.0.113.2, port: 443, password: REMOTE}\n"
+	fetchSubscription = func(ctx context.Context, url string) ([]byte, error) { return []byte(yaml), nil }
+	if _, err := eng.SubSet(ctx, "mine", SubInput{URL: "https://sub.example.com/x?token=SECRET-TOKEN"}); err != nil {
+		t.Fatal(err)
+	}
+	if sub, _ = st.Sub("mine"); sub.Local() || sub.Content != "" || sub.Format != "clash" {
+		t.Fatalf("应变成远程订阅: %+v", sub)
+	}
+
+	ops, err := os.ReadFile(st.Dir() + "/ops.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(ops), "SECRET") || strings.Contains(string(ops), "203.0.113") {
+		t.Fatalf("操作记录里不应出现订阅的内容或地址:\n%s", ops)
+	}
+}
+
+func b64(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }

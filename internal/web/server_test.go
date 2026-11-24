@@ -151,6 +151,41 @@ func TestStateAndNodeLifecycle(t *testing.T) {
 	}
 }
 
+func TestLocalSubscriptionAPI(t *testing.T) {
+	srv, h := newTestServer(t)
+	call := func(method, path, body string) (int, string) {
+		code, _, raw := do(t, h, method, path, "127.0.0.1:7878", srv.Token(), body)
+		return code, raw
+	}
+	// 贴分享链接建一个本地订阅：不访问任何地址。
+	code, raw := call("POST", "/api/subs", `{"id":"mine","note":"自己的","content":"trojan://s3cret-pass@203.0.113.2:443#🇭🇰 香港 01\nwireguard://x"}`)
+	if code != http.StatusOK || !strings.Contains(raw, `"count":1`) || !strings.Contains(raw, `"skipped":1`) {
+		t.Fatalf("添加本地订阅失败: %d %s", code, raw)
+	}
+	if code, raw = call("POST", "/api/nodes", `{"id":"hk","role":"landing","sub":"mine","name":"🇭🇰 香港 01"}`); code != http.StatusOK {
+		t.Fatalf("从订阅登记节点失败: %d %s", code, raw)
+	}
+	// 订阅节点带出从名称认出的地区和已登记的节点；不带凭据。
+	code, raw = call("GET", "/api/subs/mine/nodes", "")
+	if code != http.StatusOK || !strings.Contains(raw, `"region":"HK"`) || !strings.Contains(raw, `"nodes":["hk"]`) || strings.Contains(raw, "s3cret-pass") {
+		t.Errorf("订阅节点列表不对: %d %s", code, raw)
+	}
+	// 追加一条；现状里说明它是本地订阅，同样不带内容。
+	if code, raw = call("POST", "/api/subs/mine/source", `{"content":"socks5://u:pw@203.0.113.9:1080#JP","append":true}`); code != http.StatusOK || !strings.Contains(raw, `"Total":2`) {
+		t.Fatalf("追加失败: %d %s", code, raw)
+	}
+	code, raw = call("GET", "/api/state", "")
+	if code != http.StatusOK || !strings.Contains(raw, `"local":true`) || !strings.Contains(raw, `"format":"links"`) || !strings.Contains(raw, `"region":"HK"`) {
+		t.Errorf("现状里的订阅或节点地区不对: %d %s", code, raw)
+	}
+	if strings.Contains(raw, "s3cret-pass") || strings.Contains(raw, "trojan://") {
+		t.Errorf("现状里不应出现订阅内容: %s", raw)
+	}
+	if code, raw = call("POST", "/api/subs/mine/source", `{"content":"https://sub.example.com/link?token=abc"}`); code != http.StatusBadRequest || !strings.Contains(raw, "订阅地址") {
+		t.Errorf("贴网址应提示填到订阅地址里: %d %s", code, raw)
+	}
+}
+
 func TestShellQuote(t *testing.T) {
 	for in, want := range map[string]string{
 		"/data/cc":       "/data/cc",

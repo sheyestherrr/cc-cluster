@@ -811,7 +811,7 @@ function AddSubDialog({ open, onClose, onCreated }: { open: boolean; onClose: ()
     setSaving(true);
     setError("");
     try {
-      const r = await api.addSub(id.trim(), url.trim(), note.trim());
+      const r = await api.addSub(id.trim(), { url: url.trim() }, note.trim());
       onCreated(r.data.id, r.data.count);
     } catch (e) {
       setError(errorText(e));

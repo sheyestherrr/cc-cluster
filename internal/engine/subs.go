@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/netip"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/sheyestherrr/cc-cluster/internal/model"
@@ -117,84 +118,198 @@ func (e *Engine) ResolveNode(ctx context.Context, id string) (ip string, err err
 	return n.ConnectIPv4, e.st.SaveNode(n, false)
 }
 
-// SubAdd 登记一个订阅并拉取一次。note 是备注，可以为空。
-func (e *Engine) SubAdd(ctx context.Context, id, url, note string) (sub model.Subscription, err error) {
+// MaxSubContent 是本地订阅内容的大小上限。
+const MaxSubContent = 512 << 10
+
+// SubInput 是登记或修改订阅时给出的来源。URL 与 Content 只能给一个：给 URL 是远程订阅，
+// 给 Content 是本地订阅，内容是贴进来的分享链接、base64 订阅或 Clash 配置。
+type SubInput struct {
+	URL     string
+	Content string
+	// Append 只在修改本地订阅时有用：把 Content 接在现有内容后面，而不是整体替换。
+	Append bool
+}
+
+func (in *SubInput) check() error {
+	in.URL = strings.TrimSpace(in.URL)
+	if strings.TrimSpace(in.Content) == "" {
+		in.Content = ""
+	}
+	switch {
+	case in.URL == "" && in.Content == "":
+		return errors.New("需要订阅地址，或者订阅内容（分享链接、base64 订阅或 Clash 配置）")
+	case in.URL != "" && in.Content != "":
+		return errors.New("订阅地址和订阅内容只能给一个")
+	case in.URL != "":
+		return subscription.CheckURL(in.URL)
+	case len(in.Content) > MaxSubContent:
+		return fmt.Errorf("订阅内容超过 %d KB", MaxSubContent>>10)
+	case subscription.LooksLikeSubURL(in.Content):
+		return errors.New("贴进来的是一个网址，不是订阅内容：远程订阅请填在订阅地址里")
+	}
+	return nil
+}
+
+// setSource 把来源写到订阅上。本地内容存成明文（整段 base64 的先解开），以后才好往后追加。
+func setSource(sub *model.Subscription, in SubInput) error {
+	if in.URL != "" {
+		if in.Append {
+			return errors.New("只有本地订阅可以追加内容")
+		}
+		sub.URL, sub.Content = in.URL, ""
+		return nil
+	}
+	content := subscription.Canonical(in.Content)
+	if in.Append {
+		switch {
+		case !sub.Local():
+			return errors.New("只有本地订阅可以追加内容")
+		case sub.Format != subscription.FormatLinks:
+			return errors.New("现有内容不是分享链接，不能往后追加；请整体替换")
+		}
+		rep, err := subscription.ParseReport([]byte(content))
+		if err != nil {
+			return err
+		}
+		if rep.Format != subscription.FormatLinks {
+			return errors.New("追加的内容得是分享链接；Clash 配置只能整体替换")
+		}
+		content = strings.TrimRight(sub.Content, "\n") + "\n" + content
+		if len(content) > MaxSubContent {
+			return fmt.Errorf("订阅内容超过 %d KB", MaxSubContent>>10)
+		}
+	}
+	sub.URL, sub.Content = "", content
+	return nil
+}
+
+// SubAdd 登记一个订阅并取一次节点：远程订阅从本机去拉取，本地订阅直接解析贴进来的内容。
+// note 是备注，可以为空。
+func (e *Engine) SubAdd(ctx context.Context, id, note string, in SubInput) (sub model.Subscription, err error) {
 	unlock, err := e.st.Lock()
 	if err != nil {
 		return sub, err
 	}
 	defer unlock()
-	// 操作记录里不写订阅地址：地址里通常带着令牌。
-	defer func() { e.record("sub.add", id, err, fmt.Sprintf("%d 个节点", len(sub.Proxies))) }()
+	// 操作记录里不写订阅地址和内容：里面带着令牌和凭据。
+	defer func() {
+		e.record("sub.add", id, err, fmt.Sprintf("%s，%d 个节点", sourceText(sub), len(sub.Proxies)))
+	}()
 	if err := model.ValidateID("订阅", id); err != nil {
 		return sub, err
 	}
 	if err := model.ValidateNote(note); err != nil {
 		return sub, err
 	}
-	if err := subscription.CheckURL(url); err != nil {
+	in.Append = false
+	if err := in.check(); err != nil {
 		return sub, err
 	}
 	if _, err := e.st.Sub(id); err == nil {
 		return sub, fmt.Errorf("订阅 %s 已存在", id)
 	}
-	sub = model.Subscription{ID: id, Note: note, URL: url}
+	sub = model.Subscription{ID: id, Note: note}
+	if err := setSource(&sub, in); err != nil {
+		return sub, err
+	}
 	if err := e.pull(ctx, &sub); err != nil {
 		return sub, err
 	}
 	return sub, e.st.SaveSub(sub, true)
 }
 
+func sourceText(sub model.Subscription) string {
+	if sub.Local() {
+		return "本地"
+	}
+	return "远程"
+}
+
+// pull 取一次订阅内容并解析，结果写在 sub 上；失败时 sub 不变。
 func (e *Engine) pull(ctx context.Context, sub *model.Subscription) error {
-	body, err := fetchSubscription(ctx, sub.URL)
+	body := []byte(sub.Content)
+	if !sub.Local() {
+		var err error
+		if body, err = fetchSubscription(ctx, sub.URL); err != nil {
+			return err
+		}
+	}
+	rep, err := subscription.ParseReport(body)
 	if err != nil {
 		return err
 	}
-	proxies, err := subscription.Parse(body)
-	if err != nil {
-		return err
-	}
-	sub.Proxies, sub.FetchedAt = proxies, time.Now().UTC()
+	sub.Proxies, sub.Format, sub.Skipped, sub.FetchedAt = rep.Proxies, rep.Format, len(rep.Skipped), time.Now().UTC()
 	return nil
 }
 
 // RefreshResult 是刷新订阅的结果。
 type RefreshResult struct {
 	Total   int      // 订阅里的节点数
+	Skipped int      // 分享链接里没能解析的行数
 	Updated []string // 片段有变化、已更新的节点 ID
 	Renamed []string // 订阅里只是改了名、已跟着改过来的节点 ID
 	Missing []string // 订阅里已经找不到的节点 ID；它们保持原样
 }
 
-// SubRefresh 重新拉取订阅，并更新取自它的节点。网关上已经生效的配置不会自动改变：
-// 之后执行 gateway up 或 slot up 才应用。
-//
-// 节点先按名称对上订阅里的条目；名称不在了，但有一项的配置与它完全相同，就认为只是改了名。
-// 配置没变的条目保留上一次的测速结果。
+func (res RefreshResult) detail() string {
+	detail := fmt.Sprintf("%d 个节点，更新 %d 个已登记的节点，%d 个已不在订阅里", res.Total, len(res.Updated), len(res.Missing))
+	if len(res.Renamed) > 0 {
+		detail += fmt.Sprintf("，%d 个改了名", len(res.Renamed))
+	}
+	return detail
+}
+
+// SubRefresh 重新取一次订阅（远程订阅重新拉取，本地订阅重新解析），并更新取自它的节点。
+// 网关上已经生效的配置不会自动改变：之后执行 gateway up 或 slot up 才应用。
 func (e *Engine) SubRefresh(ctx context.Context, id string) (res RefreshResult, err error) {
 	unlock, err := e.st.Lock()
 	if err != nil {
 		return res, err
 	}
 	defer unlock()
-	defer func() {
-		detail := fmt.Sprintf("更新 %d 个节点，%d 个已不在订阅里", len(res.Updated), len(res.Missing))
-		if len(res.Renamed) > 0 {
-			detail += fmt.Sprintf("，%d 个改了名", len(res.Renamed))
-		}
-		e.record("sub.refresh", id, err, detail)
-	}()
+	defer func() { e.record("sub.refresh", id, err, res.detail()) }()
 	sub, err := e.st.Sub(id)
 	if err != nil {
 		return res, err
 	}
+	return e.reload(ctx, &sub)
+}
+
+// SubSet 修改订阅的来源：换地址、换内容，或者往本地订阅后面追加分享链接；远程与本地之间也可以互换。
+// 改完立即取一次，并像刷新那样更新取自它的节点。新的来源取不到或解析不了时，订阅保持原样。
+func (e *Engine) SubSet(ctx context.Context, id string, in SubInput) (res RefreshResult, err error) {
+	unlock, err := e.st.Lock()
+	if err != nil {
+		return res, err
+	}
+	defer unlock()
+	sub, err := e.st.Sub(id)
+	if err != nil {
+		return res, err
+	}
+	defer func() { e.record("sub.set", id, err, sourceText(sub)+"，"+res.detail()) }()
+	if err := in.check(); err != nil {
+		return res, err
+	}
+	if err := setSource(&sub, in); err != nil {
+		return res, err
+	}
+	return e.reload(ctx, &sub)
+}
+
+// reload 按 sub 上的来源取一次节点、保存，并更新取自它的已登记节点。
+//
+// 节点先按名称对上订阅里的条目；名称不在了，但有一项的配置与它完全相同，就认为只是改了名。
+// 配置没变的条目保留上一次的测速结果。
+func (e *Engine) reload(ctx context.Context, sub *model.Subscription) (res RefreshResult, err error) {
+	id := sub.ID
 	delays := map[string]int{}
 	for _, p := range sub.Proxies {
 		if p.DelayMS != 0 {
 			delays[model.ProxyHash(p.Proxy)] = p.DelayMS
 		}
 	}
-	if err := e.pull(ctx, &sub); err != nil {
+	if err := e.pull(ctx, sub); err != nil {
 		return res, err
 	}
 	byHash := map[string]string{}
@@ -205,10 +320,10 @@ func (e *Engine) SubRefresh(ctx context.Context, id string) (res RefreshResult, 
 			byHash[h] = p.Name
 		}
 	}
-	if err := e.st.SaveSub(sub, false); err != nil {
+	if err := e.st.SaveSub(*sub, false); err != nil {
 		return res, err
 	}
-	res.Total = len(sub.Proxies)
+	res.Total, res.Skipped = len(sub.Proxies), sub.Skipped
 
 	nodes, err := e.st.Nodes()
 	if err != nil {

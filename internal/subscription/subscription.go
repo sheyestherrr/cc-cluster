@@ -142,6 +142,33 @@ func ParseReport(body []byte) (Report, error) {
 	return rep, nil
 }
 
+// Canonical 返回适合保存的本地订阅内容：统一换行、去掉首尾空白；整段是 base64 的解开存明文，
+// 这样以后往后面追加分享链接时内容仍然能解析。
+func Canonical(content string) string {
+	text := normalizeText([]byte(content))
+	if text == "" {
+		return ""
+	}
+	if _, ok, _ := parseText(text); !ok {
+		if decoded, isBase64 := decodeWhole(text); isBase64 {
+			return normalizeText([]byte(decoded))
+		}
+	}
+	return text
+}
+
+// LooksLikeSubURL 报告贴进来的内容是不是只有一个普通网址（多半是把订阅地址贴错了地方）。
+// 写明端口、不带路径的 http(s) 地址是代理的分享链接，不算。
+func LooksLikeSubURL(content string) bool {
+	text := normalizeText([]byte(content))
+	lower := strings.ToLower(text)
+	if strings.ContainsAny(text, "\n ") || !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
+		return false
+	}
+	_, _, ok := parseProxyURL(text)
+	return !ok
+}
+
 // normalizeText 去掉 BOM、统一换行并去掉首尾空白。
 func normalizeText(body []byte) string {
 	text := strings.TrimPrefix(string(body), "\xEF\xBB\xBF")

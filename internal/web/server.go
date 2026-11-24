@@ -163,6 +163,7 @@ func (s *Server) Handler(port int) http.Handler {
 	api("POST /api/subs", false, s.subAdd)
 	api("GET /api/subs/{id}/nodes", false, s.subNodes)
 	api("POST /api/subs/{id}/refresh", false, func(c *call) (any, error) { return c.eng.SubRefresh(c.ctx, c.id) })
+	api("POST /api/subs/{id}/source", false, s.subSet)
 	api("POST /api/subs/{id}/test", true, s.subTest)
 	api("DELETE /api/subs/{id}", false, func(c *call) (any, error) { return nil, c.eng.SubRemove(c.id) })
 
@@ -350,6 +351,11 @@ type subView struct {
 	FetchedAt time.Time  `json:"fetched_at"`
 	TestedAt  *time.Time `json:"tested_at,omitempty"`
 	Usable    int        `json:"usable"`
+	// Local 表示内容是贴进来的（没有地址可拉取）；地址和内容本身不随现状返回。
+	Local bool `json:"local,omitempty"`
+	// Format 是 clash 或 links；Skipped 是分享链接里没能解析的行数。
+	Format  string `json:"format,omitempty"`
+	Skipped int    `json:"skipped,omitempty"`
 }
 
 type gatewayView struct {
@@ -529,7 +535,7 @@ func (s *Server) state(c *call) (any, error) {
 		return nil, err
 	}
 	for _, sub := range subs {
-		v := subView{ID: sub.ID, Note: sub.Note, Count: len(sub.Proxies), FetchedAt: sub.FetchedAt}
+		v := subView{ID: sub.ID, Note: sub.Note, Count: len(sub.Proxies), FetchedAt: sub.FetchedAt, Local: sub.Local(), Format: sub.Format, Skipped: sub.Skipped}
 		if !sub.TestedAt.IsZero() {
 			at := sub.TestedAt
 			v.TestedAt = &at
@@ -633,18 +639,32 @@ func (c *call) delays(in []engine.NodeDelay) ([]delayView, error) {
 
 func (s *Server) subAdd(c *call) (any, error) {
 	var in struct {
-		ID   string `json:"id"`
-		URL  string `json:"url"`
-		Note string `json:"note"`
+		ID      string `json:"id"`
+		URL     string `json:"url"`
+		Content string `json:"content"`
+		Note    string `json:"note"`
 	}
 	if err := c.body(&in); err != nil {
 		return nil, err
 	}
-	sub, err := c.eng.SubAdd(c.ctx, in.ID, strings.TrimSpace(in.URL), strings.TrimSpace(in.Note))
+	sub, err := c.eng.SubAdd(c.ctx, in.ID, strings.TrimSpace(in.Note), engine.SubInput{URL: in.URL, Content: in.Content})
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"id": sub.ID, "count": len(sub.Proxies)}, nil
+	return map[string]any{"id": sub.ID, "count": len(sub.Proxies), "skipped": sub.Skipped}, nil
+}
+
+// subSet 修改订阅的来源。现有的地址和内容不提供读取：换地址就填新的，本地订阅可以整体替换或往后追加。
+func (s *Server) subSet(c *call) (any, error) {
+	var in struct {
+		URL     string `json:"url"`
+		Content string `json:"content"`
+		Append  bool   `json:"append"`
+	}
+	if err := c.body(&in); err != nil {
+		return nil, err
+	}
+	return c.eng.SubSet(c.ctx, c.id, engine.SubInput{URL: in.URL, Content: in.Content, Append: in.Append})
 }
 
 func (s *Server) subNodes(c *call) (any, error) {
