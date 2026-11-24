@@ -119,6 +119,8 @@ func (e *Engine) watchSlot(ctx context.Context, sl model.Slot) (w model.Watch, c
 			}
 		}
 	}
+	// 每一轮的结果另记一笔历史，界面上画成时间线。
+	e.recordMetric(model.Metric{T: w.At, Kind: model.MetricWatch, Slot: sl.ID, Status: w.Status, ExitIP: w.ExitIP})
 	if err := e.st.SaveWatch(sl.ID, w); err != nil {
 		return w, true, err
 	}

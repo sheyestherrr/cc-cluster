@@ -384,6 +384,80 @@ func TestEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("流量与连接归到各自的槽位", func(t *testing.T) {
+		e.t = t
+		began := time.Now()
+		// 槽 A 开一条 6 秒的长连接，期间采样两次，结束后再采样一次。
+		stream := make(chan string, 1)
+		go func() {
+			res, err := e.dk.Exec(e.ctx, e.eng.WorkerContainer("a"), []string{fakenet, "stream", ipTarget, "8081"}, dockerapi.ExecOptions{})
+			if err != nil {
+				stream <- "ERR " + err.Error()
+				return
+			}
+			stream <- strings.TrimSpace(res.Stdout)
+		}()
+		time.Sleep(1500 * time.Millisecond)
+		tr := engine.NewTraffic()
+		must(t, e.eng.SampleInto(e.ctx, tr))
+		time.Sleep(2 * time.Second)
+		must(t, e.eng.SampleInto(e.ctx, tr))
+
+		find := func(slot string) *engine.Conn {
+			for _, c := range tr.Conns(slot) {
+				if c.Port == 8081 {
+					return &c
+				}
+			}
+			return nil
+		}
+		snap := tr.Snapshot()
+		a, b := snap.Slots["a"], snap.Slots["b"]
+		t.Logf("采样：a=%+v b=%+v 连接 a=%+v b=%+v", a, b, tr.Conns("a"), tr.Conns("b"))
+		if !snap.Recording {
+			t.Error("这个进程应拿到写历史的互斥")
+		}
+		if _, ok := snap.Slots["b"]; !ok || a.Down == 0 || a.Up == 0 {
+			t.Errorf("两个接了线的槽位都应有读数，A 的网卡上应有流量: a=%+v b=%+v", a, b)
+		}
+		if a.DownBps <= 0 || b.DownBps != 0 {
+			t.Errorf("两次采样之间只有 A 在收数据: a=%v b=%v", a.DownBps, b.DownBps)
+		}
+		if c := find("a"); c == nil {
+			t.Error("A 的长连接应出现在 A 的当前连接里")
+		} else if c.Host != ipTarget || c.Net != "tcp" || c.Down == 0 || !strings.Contains(c.Chain, "la") || c.Start.Before(began.Add(-time.Minute)) || c.Start.After(time.Now()) {
+			t.Errorf("A 的长连接：目标、流量、链路或开始时间不对: %+v", *c)
+		}
+		if c := find("b"); c != nil {
+			t.Errorf("A 的连接不应算到 B 头上: %+v", *c)
+		}
+
+		e.expect("长连接正常结束", `^TICKS 12 closed$`, <-stream)
+		time.Sleep(1500 * time.Millisecond)
+		must(t, e.eng.SampleInto(e.ctx, tr))
+		if c := find("a"); c != nil {
+			t.Errorf("连接结束后不应还在当前连接里: %+v", *c)
+		}
+		ended, err := e.st.Conns("a", began, time.Now().Add(time.Minute))
+		must(t, err)
+		var got *model.ConnRecord
+		for i := range ended {
+			if ended[i].Port == 8081 {
+				got = &ended[i]
+			}
+		}
+		if got == nil || got.Host != ipTarget || got.Down == 0 || got.End.Before(got.Start) {
+			t.Errorf("结束的连接应记进 A 的连接历史: %+v（全部 %+v）", got, ended)
+		}
+		if other, _ := e.st.Conns("b", began, time.Now().Add(time.Minute)); len(other) != 0 {
+			for _, c := range other {
+				if c.Port == 8081 {
+					t.Errorf("B 的连接历史里不应有 A 的连接: %+v", c)
+				}
+			}
+		}
+	})
+
 	t.Run("网关自身的出站限制", func(t *testing.T) {
 		e.t = t
 		e.expect("主路由表没有默认路由", `^0$`, e.gw("ip route show default | wc -l"))

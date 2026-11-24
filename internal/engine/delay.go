@@ -190,7 +190,20 @@ func (e *Engine) SubTest(ctx context.Context, id string, opt DelayOptions) (res 
 	if err := e.st.SaveSub(cur, false); err != nil {
 		return nil, err
 	}
-	return SubDelays(cur), nil
+	res = SubDelays(cur)
+	// 测通了几个另记一笔历史，看一个订阅的质量随时间的变化。提示项不算在内。
+	m := model.Metric{T: cur.TestedAt, Kind: model.MetricSub, Sub: cur.ID}
+	for _, d := range res {
+		if d.Info {
+			continue
+		}
+		m.Total++
+		if d.DelayMS > 0 {
+			m.Usable++
+		}
+	}
+	e.recordMetric(m)
+	return res, nil
 }
 
 // measureDelays 返回与 proxies 一一对应的延迟（毫秒），不通的是 model.DelayFailed。

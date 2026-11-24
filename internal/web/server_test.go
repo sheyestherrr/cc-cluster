@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/sheyestherrr/cc-cluster/internal/model"
 	"github.com/sheyestherrr/cc-cluster/internal/store"
@@ -183,6 +184,62 @@ func TestLocalSubscriptionAPI(t *testing.T) {
 	}
 	if code, raw = call("POST", "/api/subs/mine/source", `{"content":"https://sub.example.com/link?token=abc"}`); code != http.StatusBadRequest || !strings.Contains(raw, "订阅地址") {
 		t.Errorf("贴网址应提示填到订阅地址里: %d %s", code, raw)
+	}
+}
+
+func TestTrafficAndHistoryAPI(t *testing.T) {
+	srv, h := newTestServer(t)
+	call := func(method, path, body string) (int, string) {
+		code, _, raw := do(t, h, method, path, "127.0.0.1:7878", srv.Token(), body)
+		return code, raw
+	}
+	// 没有采样过：实时的数是空的，接口照常应答。
+	if code, raw := call("GET", "/api/traffic", ""); code != http.StatusOK || !strings.Contains(raw, `"slots":{}`) || !strings.Contains(raw, `"recording":false`) {
+		t.Fatalf("实时流量: %d %s", code, raw)
+	}
+	if code, raw := call("GET", "/api/slots/nope/connections", ""); code != http.StatusBadRequest {
+		t.Fatalf("不存在的槽位应报错: %d %s", code, raw)
+	}
+
+	st, err := store.Open(srv.opt.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := st.AppendMetrics([]model.Metric{
+		{T: now.Add(-10 * time.Minute), Kind: model.MetricTraffic, Slot: "alice", Span: 300, Up: 1000, Down: 20000, Conns: 3},
+		{T: now.Add(-9 * time.Minute), Kind: model.MetricWatch, Slot: "alice", Status: "ok", ExitIP: "198.51.100.20"},
+		{T: now.Add(-8 * time.Minute), Kind: model.MetricSub, Sub: "air", Usable: 12, Total: 30},
+		{T: now.Add(-40 * time.Hour), Kind: model.MetricTraffic, Slot: "alice", Span: 300, Up: 7, Down: 7},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	code, raw := call("GET", "/api/history", "")
+	var hist struct {
+		Data struct {
+			Step    int
+			Traffic []struct{ Up, Down int64 }
+			Totals  map[string]struct{ Up, Down int64 }
+			Watch   map[string][]struct{ Status, ExitIP string }
+			Subs    map[string][]struct{ Usable, Total int }
+		}
+	}
+	if err := json.Unmarshal([]byte(raw), &hist); code != http.StatusOK || err != nil {
+		t.Fatalf("历史: %d %v %s", code, err, raw)
+	}
+	d := hist.Data
+	if d.Step != 300 || len(d.Traffic) < 288 || d.Totals["alice"].Up != 1000 || d.Totals["alice"].Down != 20000 || len(d.Watch["alice"]) != 1 || d.Subs["air"][0].Usable != 12 {
+		t.Fatalf("默认看最近 24 小时，5 分钟一档: step=%d n=%d %+v %+v %+v", d.Step, len(d.Traffic), d.Totals, d.Watch, d.Subs)
+	}
+	// 看 7 天：一小时一档，40 小时前的那条也在内。
+	code, raw = call("GET", "/api/history?hours=168", "")
+	if err := json.Unmarshal([]byte(raw), &hist); code != http.StatusOK || err != nil || hist.Data.Step != 3600 || hist.Data.Totals["alice"].Up != 1007 {
+		t.Fatalf("7 天的历史: %d %v step=%d %+v", code, err, hist.Data.Step, hist.Data.Totals)
+	}
+
+	// 连接历史要槽位存在。
+	if code, raw := call("GET", "/api/slots/alice/connlog", ""); code != http.StatusBadRequest {
+		t.Fatalf("不存在的槽位应报错: %d %s", code, raw)
 	}
 }
 

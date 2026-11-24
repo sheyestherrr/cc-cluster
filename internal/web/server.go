@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,6 +59,8 @@ type Options struct {
 	// NoWatch 关闭服务运行期间的持续检测；WatchInterval 是它的间隔，0 用默认值。
 	NoWatch       bool
 	WatchInterval time.Duration
+	// NoSample 关闭服务运行期间对各槽位流量与连接的采样，测试用。
+	NoSample bool
 }
 
 // Server 是网页服务。
@@ -65,6 +68,8 @@ type Server struct {
 	opt    Options
 	token  string
 	assets fs.FS
+	// traffic 是采样循环在内存里的状态：各槽位此刻的速率与连接。
+	traffic *engine.Traffic
 }
 
 // New 创建网页服务并生成这一次运行的访问令牌。
@@ -73,7 +78,7 @@ func New(opt Options) (*Server, error) {
 	if _, err := rand.Read(b); err != nil {
 		return nil, err
 	}
-	s := &Server{opt: opt, token: hex.EncodeToString(b), assets: opt.Assets}
+	s := &Server{opt: opt, token: hex.EncodeToString(b), assets: opt.Assets, traffic: engine.NewTraffic()}
 	if s.assets == nil {
 		sub, err := fs.Sub(distFS, "dist")
 		if err != nil {
@@ -94,19 +99,30 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 		return errors.New("网页界面只能监听本机回环地址")
 	}
 	srv := &http.Server{Handler: s.Handler(addr.Port), ReadHeaderTimeout: 10 * time.Second}
+	open := func(ctx context.Context) (*engine.Engine, error) {
+		st, err := store.Open(s.opt.DataDir)
+		if err != nil {
+			return nil, err
+		}
+		dk, err := dockerapi.New(ctx, "")
+		if err != nil {
+			return nil, err
+		}
+		return engine.New(st, dk, io.Discard)
+	}
 	// 网页开着的时候顺带做持续检测：隔一段时间看一眼各槽的连通性与出口，出口变了就断网保持。
 	if !s.opt.NoWatch {
-		go engine.Watch(ctx, s.opt.WatchInterval, func(ctx context.Context) (*engine.Engine, error) {
-			st, err := store.Open(s.opt.DataDir)
-			if err != nil {
-				return nil, err
-			}
-			dk, err := dockerapi.New(ctx, "")
-			if err != nil {
-				return nil, err
-			}
-			return engine.New(st, dk, io.Discard)
-		})
+		go engine.Watch(ctx, s.opt.WatchInterval, open)
+	}
+	// 也顺带采样各槽位的流量与连接：界面上的实时数和历史趋势都从这里来。
+	sampled := make(chan struct{})
+	if s.opt.NoSample {
+		close(sampled)
+	} else {
+		go func() {
+			defer close(sampled)
+			engine.SampleLoop(ctx, s.traffic, 0, open)
+		}()
 	}
 	done := make(chan struct{})
 	go func() {
@@ -120,6 +136,13 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	}()
 	err := srv.Serve(ln)
 	close(done)
+	if ctx.Err() != nil {
+		// 等采样循环把还没落盘的那一段写完；等不到也不要紧，下次启动时按计数补上。
+		select {
+		case <-sampled:
+		case <-time.After(3 * time.Second):
+		}
+	}
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
@@ -230,6 +253,20 @@ func (s *Server) Handler(port int) http.Handler {
 	api("DELETE /api/slots/{id}", true, func(c *call) (any, error) {
 		return nil, c.eng.SlotRemove(c.ctx, c.id, c.r.URL.Query().Get("purge") == "1")
 	})
+
+	// 流量与连接：实时的数来自这个进程里的采样循环，历史来自数据目录。
+	api("GET /api/traffic", false, func(c *call) (any, error) { return s.traffic.Snapshot(), nil })
+	api("GET /api/slots/{id}/connections", false, func(c *call) (any, error) {
+		if _, err := c.st.Slot(c.id); err != nil {
+			return nil, err
+		}
+		return s.traffic.Conns(c.id), nil
+	})
+	api("GET /api/history", false, func(c *call) (any, error) { return c.eng.History(time.Now(), hoursParam(c.r)) })
+	api("GET /api/slots/{id}/connlog", false, func(c *call) (any, error) {
+		limit, _ := strconv.Atoi(c.r.URL.Query().Get("limit"))
+		return c.eng.ConnLog(c.id, time.Now(), hoursParam(c.r), limit)
+	})
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "没有这个接口"})
 	})
@@ -311,6 +348,15 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request, withDocker boo
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": out, "log": lines})
+}
+
+// hoursParam 读出查询串里的 hours（往回看多少小时）；没有或写得不对时是 0，由引擎取默认值。
+func hoursParam(r *http.Request) time.Duration {
+	h, err := strconv.Atoi(r.URL.Query().Get("hours"))
+	if err != nil || h <= 0 {
+		return 0
+	}
+	return time.Duration(h) * time.Hour
 }
 
 func splitLines(s string) []string {

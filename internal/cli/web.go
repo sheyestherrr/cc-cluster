@@ -83,11 +83,18 @@ func (a *app) cmdWatch(ctx context.Context, args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	fmt.Fprintf(a.out, "每 %s 检测一遍已就绪槽位的连通性与出口；出口变了会给该槽断网并保持。按 Ctrl-C 停止。\n", *interval)
-	engine.Watch(ctx, *interval, func(ctx context.Context) (*engine.Engine, error) {
+	fmt.Fprintf(a.out, "每 %s 检测一遍已就绪槽位的连通性与出口；出口变了会给该槽断网并保持。运行期间同时记录各槽位的流量与连接。按 Ctrl-C 停止。\n", *interval)
+	open := func(ctx context.Context) (*engine.Engine, error) {
 		eng, _, err := a.open(ctx, true)
 		return eng, err
-	})
+	}
+	sampled := make(chan struct{})
+	go func() {
+		defer close(sampled)
+		engine.SampleLoop(ctx, engine.NewTraffic(), 0, open)
+	}()
+	engine.Watch(ctx, *interval, open)
+	<-sampled // 等采样循环把还没落盘的那一段写完
 	return nil
 }
 
