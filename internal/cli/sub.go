@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/sheyestherrr/cc-cluster/internal/engine"
 	"github.com/sheyestherrr/cc-cluster/internal/model"
@@ -36,13 +37,17 @@ func (a *app) cmdSub(ctx context.Context, args []string) error {
 			return err
 		}
 		w := a.table()
-		fmt.Fprintln(w, "订阅\t来源\t节点数\t最近更新\t备注")
+		fmt.Fprintln(w, "订阅\t来源\t节点数\t最近更新\t自动刷新\t状态\t备注")
 		for _, s := range subs {
-			source := "远程"
+			source, every := "远程", engine.EveryText(s)
 			if s.Local() {
-				source = "本地"
+				source, every = "本地", "-"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\n", s.ID, source, len(s.Proxies), s.FetchedAt.Local().Format("2006-01-02 15:04:05"), orDash(s.Note))
+			status := "正常"
+			if s.LastError != "" {
+				status = fmt.Sprintf("%s 刷新失败：%s", s.CheckedAt.Local().Format("01-02 15:04"), s.LastError)
+			}
+			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%s\n", s.ID, source, len(s.Proxies), s.FetchedAt.Local().Format("2006-01-02 15:04:05"), every, status, orDash(s.Note))
 		}
 		return w.Flush()
 	case "nodes":
@@ -124,28 +129,47 @@ func (a *app) cmdSub(ctx context.Context, args []string) error {
 		a.printRefresh(id, res)
 		return nil
 	case "set":
-		fs := a.newFlags("sub set", "sub set <订阅> [--url-file 文件 | --file 文件] [--append]")
+		fs := a.newFlags("sub set", "sub set <订阅> [--url-file 文件 | --file 文件] [--append] [--every 间隔]")
 		urlFile := fs.String("url-file", "", urlFileHelp)
 		file := fs.String("file", "", contentFileHelp)
 		appendTo := fs.Bool("append", false, "把 --file 的分享链接接在本地订阅现有内容的后面，而不是整体替换")
+		every := fs.String("every", "", "远程订阅自动刷新的间隔，例如 12h、30m；off 表示不自动刷新。自动刷新在 cc-cluster web 或 cc-cluster watch 运行期间进行")
 		id, err := parseWithID(fs, rest)
 		if err != nil {
 			return err
 		}
-		in, err := a.subInput(*urlFile, *file, false)
-		if err != nil {
-			return err
+		var interval time.Duration
+		if *every != "" && *every != "off" {
+			if interval, err = time.ParseDuration(*every); err != nil || interval <= 0 {
+				return fmt.Errorf("--every 的写法不对：%q；用 12h、30m 这样的间隔，或 off", *every)
+			}
 		}
-		in.Append = *appendTo
 		eng, _, err := a.open(ctx, false)
 		if err != nil {
 			return err
 		}
-		res, err := eng.SubSet(ctx, id, in)
-		if err != nil {
-			return err
+		if *urlFile != "" || *file != "" || *every == "" {
+			in, err := a.subInput(*urlFile, *file, false)
+			if err != nil {
+				return err
+			}
+			in.Append = *appendTo
+			res, err := eng.SubSet(ctx, id, in)
+			if err != nil {
+				return err
+			}
+			a.printRefresh(id, res)
 		}
-		a.printRefresh(id, res)
+		if *every != "" {
+			if err := eng.SubSetEvery(id, interval); err != nil {
+				return err
+			}
+			if interval == 0 {
+				fmt.Fprintf(a.out, "订阅 %s 不再自动刷新\n", id)
+			} else {
+				fmt.Fprintf(a.out, "订阅 %s 每 %s 自动刷新一次（在 cc-cluster web 或 cc-cluster watch 运行期间）\n", id, interval)
+			}
+		}
 		return nil
 	case "rm":
 		id, err := parseWithID(a.newFlags("sub rm", "sub rm <订阅>"), rest)

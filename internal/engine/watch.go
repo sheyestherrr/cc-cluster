@@ -151,7 +151,8 @@ func (e *Engine) holdIfUnchanged(ctx context.Context, id, expect, reason string)
 	return e.disconnect(ctx, slot, false)
 }
 
-// Watch 每隔 interval 检测一遍，直到 ctx 结束。open 每一轮新开一个 Engine（数据目录与 Docker 连接），
+// Watch 每隔 interval 检测一遍，直到 ctx 结束；每一轮之后顺带刷新到了时间的远程订阅。
+// open 每一轮新开一个 Engine（数据目录与 Docker 连接），
 // 用完由调用方回收；这样长时间运行时不握着旧的状态。第一轮在启动后稍等片刻就做。
 func Watch(ctx context.Context, interval time.Duration, open func(context.Context) (*Engine, error)) {
 	if interval <= 0 {
@@ -174,6 +175,10 @@ func Watch(ctx context.Context, interval time.Duration, open func(context.Contex
 		}
 		rctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		_, _ = eng.WatchOnce(rctx)
+		cancel()
+		// 顺带刷新到了时间的远程订阅：管理器没有别的常驻进程可以做这件事。
+		rctx, cancel = context.WithTimeout(ctx, 2*time.Minute)
+		eng.RefreshDueSubs(rctx)
 		cancel()
 	}
 }

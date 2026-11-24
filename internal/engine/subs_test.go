@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sheyestherrr/cc-cluster/internal/model"
 	"github.com/sheyestherrr/cc-cluster/internal/store"
@@ -297,6 +298,76 @@ func TestLocalSubscription(t *testing.T) {
 	}
 	if strings.Contains(string(ops), "SECRET") || strings.Contains(string(ops), "203.0.113") {
 		t.Fatalf("操作记录里不应出现订阅的内容或地址:\n%s", ops)
+	}
+}
+
+func TestSubscriptionAutoRefresh(t *testing.T) {
+	yaml := "proxies:\n  - {name: A, type: socks5, server: 203.0.113.1, port: 1080}\n"
+	eng, st := newTestEngine(t, &yaml, nil)
+	ctx := context.Background()
+	if _, err := eng.SubAdd(ctx, "air", "", SubInput{URL: "https://sub.example.com/x?token=SECRET-TOKEN"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.SubAdd(ctx, "mine", "", SubInput{Content: "socks5://203.0.113.9:1080"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.SubSetEvery("air", time.Minute); err == nil {
+		t.Error("太短的间隔应被拒绝")
+	}
+	if err := eng.SubSetEvery("mine", time.Hour); err == nil {
+		t.Error("本地订阅不应能设置自动刷新")
+	}
+	if err := eng.SubSetEvery("air", time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	// 还没到时间：不刷新。
+	yaml = "proxies:\n  - {name: A, type: socks5, server: 203.0.113.1, port: 1080}\n  - {name: B, type: socks5, server: 203.0.113.2, port: 1080}\n"
+	if n := eng.RefreshDueSubs(ctx); n != 0 {
+		t.Fatalf("没到时间不应刷新: %d", n)
+	}
+	// 把上次检查的时间拨回去两小时：到时间了。
+	backdate := func() {
+		sub, _ := st.Sub("air")
+		sub.CheckedAt = time.Now().Add(-2 * time.Hour)
+		if err := st.SaveSub(sub, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	backdate()
+	if n := eng.RefreshDueSubs(ctx); n != 1 {
+		t.Fatalf("到时间应刷新一个: %d", n)
+	}
+	sub, _ := st.Sub("air")
+	if len(sub.Proxies) != 2 || sub.LastError != "" || time.Since(sub.CheckedAt) > time.Minute {
+		t.Fatalf("刷新后的订阅不对: %+v", sub)
+	}
+	// 拉取失败：节点保持原样，记下失败的时间和原因；下次到时间才再试。
+	fetchSubscription = func(ctx context.Context, url string) ([]byte, error) {
+		return nil, errors.New("订阅服务器返回 HTTP 502")
+	}
+	backdate()
+	if n := eng.RefreshDueSubs(ctx); n != 0 {
+		t.Fatalf("失败的不算: %d", n)
+	}
+	sub, _ = st.Sub("air")
+	if len(sub.Proxies) != 2 || !strings.Contains(sub.LastError, "502") || time.Since(sub.CheckedAt) > time.Minute || time.Since(sub.FetchedAt) > time.Hour {
+		t.Fatalf("失败后的订阅不对: %+v", sub)
+	}
+	if n := eng.RefreshDueSubs(ctx); n != 0 {
+		t.Fatal("刚失败过，没到时间不应再试")
+	}
+	if err := eng.SubSetEvery("air", 0); err != nil {
+		t.Fatal(err)
+	}
+	// 远程改成本地时自动刷新随之关掉。
+	if err := eng.SubSetEvery("air", time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.SubSet(ctx, "air", SubInput{Content: "socks5://203.0.113.9:1080"}); err != nil {
+		t.Fatal(err)
+	}
+	if sub, _ = st.Sub("air"); sub.EveryMin != 0 || sub.LastError != "" {
+		t.Fatalf("改成本地后不应再自动刷新: %+v", sub)
 	}
 }
 

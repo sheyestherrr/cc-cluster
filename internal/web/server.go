@@ -164,6 +164,18 @@ func (s *Server) Handler(port int) http.Handler {
 	api("GET /api/subs/{id}/nodes", false, s.subNodes)
 	api("POST /api/subs/{id}/refresh", false, func(c *call) (any, error) { return c.eng.SubRefresh(c.ctx, c.id) })
 	api("POST /api/subs/{id}/source", false, s.subSet)
+	api("POST /api/subs/{id}/every", false, func(c *call) (any, error) {
+		var in struct {
+			Minutes int `json:"minutes"`
+		}
+		if err := c.body(&in); err != nil {
+			return nil, err
+		}
+		if in.Minutes < 0 {
+			return nil, errors.New("间隔不能是负数")
+		}
+		return nil, c.eng.SubSetEvery(c.id, time.Duration(in.Minutes)*time.Minute)
+	})
 	api("POST /api/subs/{id}/test", true, s.subTest)
 	api("DELETE /api/subs/{id}", false, func(c *call) (any, error) { return nil, c.eng.SubRemove(c.id) })
 
@@ -356,6 +368,11 @@ type subView struct {
 	// Format 是 clash 或 links；Skipped 是分享链接里没能解析的行数。
 	Format  string `json:"format,omitempty"`
 	Skipped int    `json:"skipped,omitempty"`
+	// EveryMin 是自动刷新的间隔（分钟），0 表示只手动刷新；CheckedAt 是最近一次尝试的时间，
+	// LastError 是那次失败的原因。
+	EveryMin  int        `json:"every_min,omitempty"`
+	CheckedAt *time.Time `json:"checked_at,omitempty"`
+	LastError string     `json:"last_error,omitempty"`
 }
 
 type gatewayView struct {
@@ -535,7 +552,11 @@ func (s *Server) state(c *call) (any, error) {
 		return nil, err
 	}
 	for _, sub := range subs {
-		v := subView{ID: sub.ID, Note: sub.Note, Count: len(sub.Proxies), FetchedAt: sub.FetchedAt, Local: sub.Local(), Format: sub.Format, Skipped: sub.Skipped}
+		v := subView{ID: sub.ID, Note: sub.Note, Count: len(sub.Proxies), FetchedAt: sub.FetchedAt, Local: sub.Local(), Format: sub.Format, Skipped: sub.Skipped, EveryMin: sub.EveryMin, LastError: sub.LastError}
+		if !sub.CheckedAt.IsZero() {
+			at := sub.CheckedAt
+			v.CheckedAt = &at
+		}
 		if !sub.TestedAt.IsZero() {
 			at := sub.TestedAt
 			v.TestedAt = &at

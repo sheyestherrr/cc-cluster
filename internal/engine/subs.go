@@ -179,7 +179,7 @@ func setSource(sub *model.Subscription, in SubInput) error {
 			return fmt.Errorf("订阅内容超过 %d KB", MaxSubContent>>10)
 		}
 	}
-	sub.URL, sub.Content = "", content
+	sub.URL, sub.Content, sub.EveryMin = "", content, 0
 	return nil
 }
 
@@ -239,7 +239,90 @@ func (e *Engine) pull(ctx context.Context, sub *model.Subscription) error {
 		return err
 	}
 	sub.Proxies, sub.Format, sub.Skipped, sub.FetchedAt = rep.Proxies, rep.Format, len(rep.Skipped), time.Now().UTC()
+	sub.CheckedAt, sub.LastError = sub.FetchedAt, ""
 	return nil
+}
+
+// 自动刷新间隔的范围。
+const (
+	MinSubEvery = 10 * time.Minute
+	MaxSubEvery = 30 * 24 * time.Hour
+)
+
+// SubSetEvery 设置远程订阅自动刷新的间隔；0 表示不自动刷新。
+func (e *Engine) SubSetEvery(id string, every time.Duration) (err error) {
+	unlock, err := e.st.Lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	defer func() { e.record("sub.every", id, err, everyText(every)) }()
+	sub, err := e.st.Sub(id)
+	if err != nil {
+		return err
+	}
+	switch {
+	case every == 0:
+	case sub.Local():
+		return errors.New("本地订阅的内容是贴进来的，没有地址可拉取，不需要自动刷新")
+	case every < MinSubEvery || every > MaxSubEvery:
+		return fmt.Errorf("自动刷新的间隔要在 %s 到 %d 天之间", everyText(MinSubEvery), int(MaxSubEvery.Hours()/24))
+	}
+	sub.EveryMin = int(every / time.Minute)
+	return e.st.SaveSub(sub, false)
+}
+
+func everyText(every time.Duration) string {
+	switch {
+	case every <= 0:
+		return "不自动刷新"
+	case every%(24*time.Hour) == 0:
+		return fmt.Sprintf("每 %d 天", every/(24*time.Hour))
+	case every%time.Hour == 0:
+		return fmt.Sprintf("每 %d 小时", every/time.Hour)
+	}
+	return fmt.Sprintf("每 %d 分钟", every/time.Minute)
+}
+
+// EveryText 返回订阅自动刷新间隔的显示文本。
+func EveryText(sub model.Subscription) string {
+	return everyText(time.Duration(sub.EveryMin) * time.Minute)
+}
+
+// RefreshDueSubs 刷新到了时间的远程订阅，返回刷新成功的个数。失败的记在订阅和操作记录里，
+// 下一次到时间再试。
+func (e *Engine) RefreshDueSubs(ctx context.Context) int {
+	subs, err := e.st.Subs()
+	if err != nil {
+		return 0
+	}
+	done := 0
+	for _, sub := range subs {
+		if sub.Local() || sub.EveryMin <= 0 || ctx.Err() != nil {
+			continue
+		}
+		last := sub.CheckedAt
+		if last.IsZero() {
+			last = sub.FetchedAt
+		}
+		if time.Since(last) < time.Duration(sub.EveryMin)*time.Minute {
+			continue
+		}
+		if _, err := e.SubRefresh(ctx, sub.ID); err == nil {
+			done++
+		}
+	}
+	return done
+}
+
+// noteFailure 在订阅上记下一次失败的尝试；节点列表保持上一次成功时的样子。
+func (e *Engine) noteFailure(id string, cause error) {
+	sub, err := e.st.Sub(id)
+	if err != nil {
+		return
+	}
+	sub.CheckedAt, sub.LastError = time.Now().UTC(), cause.Error()
+	_ = e.st.SaveSub(sub, false)
 }
 
 // RefreshResult 是刷新订阅的结果。
@@ -272,7 +355,10 @@ func (e *Engine) SubRefresh(ctx context.Context, id string) (res RefreshResult, 
 	if err != nil {
 		return res, err
 	}
-	return e.reload(ctx, &sub)
+	if res, err = e.reload(ctx, &sub); err != nil {
+		e.noteFailure(id, err)
+	}
+	return res, err
 }
 
 // SubSet 修改订阅的来源：换地址、换内容，或者往本地订阅后面追加分享链接；远程与本地之间也可以互换。

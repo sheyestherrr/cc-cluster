@@ -191,6 +191,11 @@ export interface Sub {
   format?: "clash" | "links";
   /** 分享链接里没能解析的行数。 */
   skipped?: number;
+  /** 自动刷新的间隔（分钟）；没有或 0 表示只手动刷新。 */
+  every_min?: number;
+  /** 最近一次尝试取订阅的时间；last_error 是那次失败的原因。 */
+  checked_at?: string;
+  last_error?: string;
 }
 
 export type SubSource = { url: string } | { content: string };
@@ -298,6 +303,8 @@ export const api = {
   addSub: (sub: string, source: SubSource, note = "") => post<{ id: string; count: number; skipped: number }>("subs", { id: sub, note, ...source }),
   /** 修改订阅的来源；append 为真时把 content 接在本地订阅现有内容的后面。 */
   setSubSource: (sub: string, source: SubSource & { append?: boolean }) => post<RefreshResult>(`subs/${id(sub)}/source`, source),
+  /** 设置远程订阅自动刷新的间隔（分钟）；0 表示不自动刷新。 */
+  setSubEvery: (sub: string, minutes: number) => post(`subs/${id(sub)}/every`, { minutes }),
   subNodes: (sub: string) => get<Delay[]>(`subs/${id(sub)}/nodes`),
   refreshSub: (sub: string) => post<RefreshResult>(`subs/${id(sub)}/refresh`),
   testSub: (sub: string, landing: string) => post<Delay[]>(`subs/${id(sub)}/test`, { landing }),

@@ -165,6 +165,12 @@ type Subscription struct {
 	// Content 是本地订阅的原文。
 	Content   string    `json:"content,omitempty"`
 	FetchedAt time.Time `json:"fetched_at"`
+	// EveryMin 是自动刷新的间隔（分钟），0 表示只手动刷新；只有远程订阅用得上。
+	// 自动刷新随持续检测一起做（cc-cluster web 运行期间，或 cc-cluster watch）。
+	EveryMin int `json:"every_min,omitempty"`
+	// CheckedAt 是最近一次尝试取订阅的时间，LastError 是那次失败的原因；成功时 CheckedAt 与 FetchedAt 相同、LastError 为空。
+	CheckedAt time.Time `json:"checked_at"`
+	LastError string    `json:"last_error,omitempty"`
 	// Format 是最近一次解析认出的格式（clash 或 links）；Skipped 是分享链接里没能解析的行数。
 	Format  string `json:"format,omitempty"`
 	Skipped int    `json:"skipped,omitempty"`
