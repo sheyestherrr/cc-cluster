@@ -6,12 +6,14 @@ import { ExitCard } from "@/components/ExitCard";
 import { Menu } from "@/components/Menu";
 import { NOTE_PLACEHOLDER, NoteDialog, NoteText, type NoteTarget } from "@/components/NoteDialog";
 import { DetailEmpty, DetailGrid, DetailHeader, ErrorBox, KeyValue, Line, Page, PageHeader, RowTitle, Tag, selectableRow } from "@/components/PageHeader";
+import { SlotTraffic } from "@/components/SlotTraffic";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
-import { ApiError, ID_HINT, NOTE_MAX, api, errorText, type Delay, type Slot, type SlotInput, type SlotState, type State } from "@/lib/api";
+import { ApiError, ID_HINT, NOTE_MAX, api, errorText, type Delay, type History, type Slot, type SlotInput, type SlotLive, type SlotState, type State } from "@/lib/api";
+import { usePolling } from "@/lib/live";
 import { PALETTE, badgeLetter, cn, colorIndex, formatBytes, relativeTime } from "@/lib/utils";
 
 interface Props {
@@ -43,6 +45,9 @@ export function SlotsPage({ state, loadError, refresh, goNetwork }: Props) {
   const [noting, setNoting] = useState<NoteTarget | null>(null);
   const [purge, setPurge] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  // 各槽位此刻的流量和最近 24 小时的趋势，给详情栏用。
+  const traffic = usePolling(api.traffic, 5000);
+  const history = usePolling(() => api.history(24), 60_000);
 
   const run = async (s: Slot, label: string, action: () => Promise<unknown>, done?: string | ((r: unknown) => string)) => {
     setBusy((b) => ({ ...b, [s.id]: label }));
@@ -81,6 +86,8 @@ export function SlotsPage({ state, loadError, refresh, goNetwork }: Props) {
       key={current.id}
       s={current}
       state={state}
+      live={traffic?.slots[current.id]}
+      history={history}
       busy={busy[current.id]}
       onUp={() => up(current)}
       onStop={() => stop(current)}
@@ -343,6 +350,10 @@ function Hop({ label, name, tone }: { label: string; name: string; tone?: "brand
 interface DetailProps {
   s: Slot;
   state: State;
+  /** 此刻的流量；没接线或还没采样到时没有。 */
+  live?: SlotLive;
+  /** 最近 24 小时的趋势。 */
+  history: History | null;
   busy?: string;
   onUp: () => void;
   onStop: () => void;
@@ -352,7 +363,7 @@ interface DetailProps {
 }
 
 /** 右边的详情栏：出口评估、链路、槽内环境和挂载。 */
-function SlotDetail({ s, state, busy, onUp, onStop, onRelease, onEnter, onReport }: DetailProps) {
+function SlotDetail({ s, state, live, history, busy, onUp, onStop, onRelease, onEnter, onReport }: DetailProps) {
   const wired = s.state === "ready" || s.state === "pending";
   const running = wired || s.state === "offline";
   const landing = state.nodes.find((n) => n.id === s.landing);
@@ -436,9 +447,14 @@ function SlotDetail({ s, state, busy, onUp, onStop, onRelease, onEnter, onReport
             </KeyValue>
           </div>
         </section>
+      </DetailGrid>
 
-        <section>
-          <div className="group-label">槽内环境</div>
+      <SlotTraffic s={s} live={live} history={history} />
+
+      <div className="mt-5">
+        <DetailGrid>
+          <section>
+            <div className="group-label">槽内环境</div>
           <div className="list-card">
             <KeyValue k="用户" v={`${s.user}@${s.hostname}`} />
             <KeyValue k="HOME" v={s.home} />
@@ -473,7 +489,8 @@ function SlotDetail({ s, state, busy, onUp, onStop, onRelease, onEnter, onReport
             ))}
           </div>
         </section>
-      </DetailGrid>
+        </DetailGrid>
+      </div>
     </>
   );
 }

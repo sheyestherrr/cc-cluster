@@ -241,6 +241,105 @@ export interface Check {
   detail: string;
 }
 
+/** 一个槽位此刻的流量：速率是最近两次采样之间的平均（字节每秒），up / down 是接线以来的累计字节。 */
+export interface SlotLive {
+  up_bps: number;
+  down_bps: number;
+  up: number;
+  down: number;
+  conns: number;
+}
+
+/** 各槽位此刻的流量。at 是最近一次采样的时间（还没采样过时是公元 1 年）；recording 表示这个进程在写历史。 */
+export interface Traffic {
+  at: string;
+  recording: boolean;
+  slots: Record<string, SlotLive>;
+}
+
+/** 一条当前的连接。看得到目标、流量和时长，看不到 HTTPS 的路径与内容。 */
+export interface Conn {
+  id: string;
+  net: string;
+  host: string;
+  port: number;
+  up: number;
+  down: number;
+  start: string;
+  chain?: string;
+}
+
+/** 一档里的流量：up / down 是这一档里的字节，conns 是同时连接数的峰值。 */
+export interface TrafficPoint {
+  up: number;
+  down: number;
+  conns: number;
+}
+
+export interface HistoryPoint extends TrafficPoint {
+  /** 这一档开始的时间。 */
+  t: string;
+  slots?: Record<string, TrafficPoint>;
+}
+
+export type WatchStatus = "ok" | "unreachable" | "changed";
+
+/** 持续检测里状态没有变的一段。 */
+export interface WatchSpan {
+  from: string;
+  to: string;
+  status: WatchStatus;
+  exit_ip?: string;
+  checks: number;
+}
+
+export interface SubPoint {
+  t: string;
+  usable: number;
+  total: number;
+}
+
+/** 一段时间里的趋势；step 是每一档的秒数。 */
+export interface History {
+  from: string;
+  to: string;
+  step: number;
+  traffic: HistoryPoint[];
+  totals: Record<string, TrafficPoint>;
+  watch: Record<string, WatchSpan[]>;
+  subs: Record<string, SubPoint[]>;
+}
+
+/** 一条已经结束的连接。 */
+export interface ConnRecord {
+  slot: string;
+  start: string;
+  end: string;
+  net?: string;
+  host: string;
+  port?: number;
+  up?: number;
+  down?: number;
+  chain?: string;
+}
+
+export interface HostStat {
+  host: string;
+  count: number;
+  up: number;
+  down: number;
+  last: string;
+}
+
+/** 一个槽位的连接历史：最近结束的若干条（新的在前），和按流量排的目标。 */
+export interface ConnLog {
+  from: string;
+  to: string;
+  total: number;
+  records: ConnRecord[];
+  hosts: HostStat[];
+}
+
 export interface Op {
   time: string;
   op: string;
@@ -295,6 +394,13 @@ export const api = {
   state: () => get<State>("state"),
   doctor: () => get<Check[]>("doctor"),
   ops: () => get<Op[]>("ops"),
+
+  /** 各槽位此刻的流量（来自 cc-cluster web 进程里的采样）。 */
+  traffic: () => get<Traffic>("traffic"),
+  /** 最近 hours 小时的趋势：流量、持续检测的时间线、订阅测通的个数。 */
+  history: (hours: number) => get<History>(`history?hours=${hours}`),
+  slotConns: (slot: string) => get<Conn[]>(`slots/${id(slot)}/connections`),
+  slotConnLog: (slot: string, hours: number, limit = 100) => get<ConnLog>(`slots/${id(slot)}/connlog?hours=${hours}&limit=${limit}`),
 
   /** 设置备注；空串表示清掉。 */
   setNote: (kind: NoteKind, target: string, note: string) => post(`${kind}/${id(target)}/note`, { note }),

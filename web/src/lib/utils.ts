@@ -48,6 +48,34 @@ export function clockTime(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("zh-CN", { hour12: false });
 }
 
+/** 字节数写成带单位的短形式：812 B、3.4 KB、120 MB。 */
+export function bytesText(n?: number): string {
+  const v = n ?? 0;
+  if (v < 1024) return `${Math.round(v)} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let x = v / 1024;
+  let i = 0;
+  while (x >= 1024 && i < units.length - 1) {
+    x /= 1024;
+    i++;
+  }
+  return `${x >= 100 ? Math.round(x) : +x.toFixed(1)} ${units[i]}`;
+}
+
+/** 速率（字节每秒）。 */
+export function rateText(bps?: number): string {
+  return `${bytesText(bps)}/s`;
+}
+
+/** 一段时间的短写法：8 秒、5 分钟、2.5 小时。 */
+export function spanText(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} 秒`;
+  if (s < 3600) return `${Math.round(s / 60)} 分钟`;
+  if (s < 86400) return `${+(s / 3600).toFixed(1)} 小时`;
+  return `${+(s / 86400).toFixed(1)} 天`;
+}
+
 export function formatBytes(n?: number): string {
   if (!n) return "";
   const gib = n / 2 ** 30;
