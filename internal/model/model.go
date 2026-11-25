@@ -17,7 +17,7 @@ const (
 	DefaultClusterName   = "cc"
 	DefaultGatewayImage  = "cc-cluster-gateway:dev"
 	DefaultWorkerImage   = "cc-cluster-worker:dev"
-	DefaultEgressNetwork = "cc-egress"
+	DefaultEgressNetwork = "cc-egress" // 只用来补全早期没有记录出口网络的网关；新建的网关用 <容器名前缀>-egress
 	DefaultPool          = "10.213.250.0/24"
 	DefaultDNS           = "https://1.1.1.1/dns-query"
 	DefaultShell         = "/bin/bash"

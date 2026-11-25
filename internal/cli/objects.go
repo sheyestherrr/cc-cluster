@@ -408,7 +408,7 @@ func (a *app) gatewayAdd(args []string) error {
 	fs.Var(&backups, "backup", "候选中转，可重复、按顺序：主用的不通时核心自动改用，恢复后切回；出口由落地决定，不随之改变")
 	fs.Var(&connect, "connect-url", "连通性检查访问的地址，可重复（默认是 Google 和 Cloudflare 的 204 地址）；出口探测之前先用它分段检查链路")
 	fs.StringVar(&g.Transit, "transit", "", "中转节点；不填表示不经中转，各槽位直连自己的落地（或直出的节点）")
-	fs.StringVar(&g.EgressNetwork, "egress-network", model.DefaultEgressNetwork, "出口所在的 Docker 网络；不存在时创建为普通 bridge 网络")
+	fs.StringVar(&g.EgressNetwork, "egress-network", "", "出口所在的 Docker 网络（默认 <容器名前缀>-egress）；不存在时创建为普通 bridge 网络")
 	fs.StringVar(&g.Pool, "pool", model.DefaultPool, "分给各槽 /30 的私网地址池")
 	fs.Var(&dns, "dns", "核心使用的 DNS 服务器，可重复；主机部分必须是 IP（默认 "+model.DefaultDNS+"）")
 	fs.Var(&echo, "echo-url", "出口 IP 探测地址，可重复（默认使用内置的几个公共地址）")

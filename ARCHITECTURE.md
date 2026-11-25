@@ -32,7 +32,7 @@ veth 是 Docker 自己建容器网络用的设备，能跑 Docker 的内核一�
 | 对象 | 网络 | 权限 | 说明 |
 | --- | --- | --- | --- |
 | worker | `--network none`，由助手接一条到网关的 veth | 去掉全部能力，`no-new-privileges`，私有 cgroup 命名空间 | 一个槽位一个；HOME、hostname、MAC、machine-id 首次生成后固定 |
-| 网关 | 出口网络 `cc-egress`，加上每个槽位一条 veth | 只有 `NET_ADMIN` 和 `/dev/net/tun` | 核心（Mihomo）加一个监督脚本；面向 worker 的地址上不监听任何端口 |
+| 网关 | 出口网络（默认 `<容器名前缀>-egress`，每个用户一个），加上每个槽位一条 veth | 只有 `NET_ADMIN` 和 `/dev/net/tun` | 核心（Mihomo）加一个监督脚本；面向 worker 的地址上不监听任何端口 |
 | 助手 | 临时加入目标容器的网络命名空间 | 只有 `NET_ADMIN`，执行完即退出 | 接线、撤线、从 worker 的位置实测出口 |
 | 管理器 | 宿主上的 `cc-cluster` 进程 | 当前用户，经 Docker 的 Unix socket 操作 | 命令行、交互面板、网页界面共用同一套实现（`internal/engine`） |
 

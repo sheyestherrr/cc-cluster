@@ -228,7 +228,7 @@ func (e *Engine) measureDelays(ctx context.Context, proxies []map[string]any, vi
 	}
 	network := opt.Network
 	if network == "" {
-		network = model.DefaultEgressNetwork
+		network = e.DefaultEgressNetwork()
 	}
 	image := e.cl.GatewayImage
 	if has, err := e.dk.ImageExists(ctx, image); err != nil {

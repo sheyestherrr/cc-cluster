@@ -160,6 +160,10 @@ func (e *Engine) ProtectedPaths() []string {
 	return out
 }
 
+// DefaultEgressNetwork 返回新建网关默认的出口网络名：<容器名前缀>-egress。
+// 同一台机器上的每个用户（前缀不同）各有一个，谁清理自己的网络都不影响别人。
+func (e *Engine) DefaultEgressNetwork() string { return e.cl.Name + "-egress" }
+
 // GatewayContainer 返回网关的容器名。
 func (e *Engine) GatewayContainer(id string) string { return e.cl.Name + "-gw-" + id }
 

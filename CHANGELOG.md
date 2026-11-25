@@ -23,6 +23,7 @@ One section per release, newest first. Versions follow `vMAJOR.MINOR.PATCH`; pre
 - 网页界面换成取自 [Resin](https://github.com/Resinat/Resin)（MIT）的版面与样式：卡片加详情页，只有浅色主题。
 - 数据目录默认是 `~/.cc-cluster`，不必再设置 `CC_CLUSTER_DATA`。原来放在别处的，继续用这个环境变量或 `--data-dir` 指过去即可。
 - `init` 的默认容器名前缀从 `cc` 改为 `cc-<用户名>`，同一台机器上多个用户的容器不再重名。已有的数据目录保持原来的前缀。
+- 新建网关的出口网络默认是 `<前缀>-egress`，每个用户一个，不再共用 `cc-egress`。已有的网关不变。
 - `web` 默认端口 7878 被占用时自动往后找空闲端口；同一个数据目录重复执行不会再开一个，只打印现有的地址。
 - 槽内用户名默认是 `user`，不再随机挑选；新建槽位时可以改。已有槽位不变。
 - 槽内的提示符改为两行：用户名、目录和时间，下一行输入。已有槽位在重建 worker 后生效。
@@ -53,6 +54,7 @@ The first versioned release. Until now there was only a rolling `nightly` build 
 - The web UI now uses the layout and styles of [Resin](https://github.com/Resinat/Resin) (MIT): card grids with detail pages, light theme only.
 - The data directory defaults to `~/.cc-cluster`; setting `CC_CLUSTER_DATA` is no longer required. If yours lives elsewhere, keep pointing at it with that variable or `--data-dir`.
 - The default container-name prefix for `init` changed from `cc` to `cc-<username>`, so several users on one machine no longer collide. Existing data directories keep their prefix.
+- New gateways use `<prefix>-egress` as their egress network, one per user, instead of a shared `cc-egress`. Existing gateways are unchanged.
 - `web` moves on to the next free port when the default 7878 is taken, and running it twice for the same data directory prints the existing address instead of starting a second instance.
 - The in-slot username defaults to `user` instead of a random name and can be changed when creating a slot. Existing slots are unchanged.
 - The in-slot prompt is now two lines: username, directory and time, then the input line. Existing slots pick it up after their worker is recreated.

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/sheyestherrr/cc-cluster/internal/engine"
-	"github.com/sheyestherrr/cc-cluster/internal/model"
 )
 
 // cmdSub 管理订阅：远程的订阅地址，或者贴进来的订阅内容与分享链接。
@@ -82,7 +81,7 @@ func (a *app) cmdSub(ctx context.Context, args []string) error {
 		var opt engine.DelayOptions
 		fs.StringVar(&opt.URL, "url", "", "测速时访问的地址（默认 "+engine.DefaultDelayURL+"）")
 		fs.DurationVar(&opt.Timeout, "timeout", 0, "单个节点的时限，超过算不通（默认 5s，接落地时 8s）")
-		fs.StringVar(&opt.Network, "egress-network", "", "从哪个 Docker 网络发起，应与网关的出口网络相同（默认 "+model.DefaultEgressNetwork+"）")
+		fs.StringVar(&opt.Network, "egress-network", "", "从哪个 Docker 网络发起，应与网关的出口网络相同（默认 <容器名前缀>-egress）")
 		fs.StringVar(&opt.Landing, "landing", "", "接上这个落地节点测整条链路：节点自己能用不代表它肯转发到落地，挑中转时用它")
 		id, err := parseWithID(fs, rest)
 		if err != nil {

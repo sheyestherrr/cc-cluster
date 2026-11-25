@@ -83,6 +83,9 @@ func (e *Engine) AddGateway(g model.Gateway) (err error) {
 	}
 	defer unlock()
 	defer func() { e.record("gateway.add", g.ID, err, "") }()
+	if g.EgressNetwork == "" {
+		g.EgressNetwork = e.DefaultEgressNetwork()
+	}
 	g.Normalize()
 	if err := g.Validate(); err != nil {
 		return err
