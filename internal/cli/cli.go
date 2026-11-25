@@ -31,8 +31,11 @@ var Version = "dev"
 const usage = `cc-cluster：为 Claude Code 管理相互独立的工作槽位。
 每个槽位的 worker 容器默认没有网络，全部流量由网关容器透明转发到绑定的落地。
 
-用法：
-  cc-cluster                              在终端里不带参数运行：打开交互面板，按编号选择
+平时只需要两个：
+  cc-cluster                在项目目录里运行：选一个槽位，进去启动 Claude Code 或打开终端
+  cc-cluster web            打开网页界面（在后台运行）：增删槽位、节点、订阅都在这里；web stop 停止
+
+下面是完整的命令，给脚本、排查和没有浏览器的机器用：
   cc-cluster [--data-dir 目录] <命令> [参数]
 
 数据目录默认是 ~/.cc-cluster；用 --data-dir 或环境变量 CC_CLUSTER_DATA 可以换成别的。
@@ -43,9 +46,9 @@ const usage = `cc-cluster：为 Claude Code 管理相互独立的工作槽位。
   tmux   <槽位>             接入该槽的宿主 tmux；--on / --off 开关宿主桥接，--kill 结束它
   status                    显示网关与槽位的现状
   traffic [槽位]            各槽位的流量；给了槽位时列出它当前的连接和连过的目标
-  web                       启动网页界面（只监听本机）；运行期间顺带做持续检测，并记录流量与连接的历史
+  web [stop]                网页界面，默认放在后台；运行期间做持续检测，并记录流量与连接的历史（--foreground 在前台运行）
   watch                     持续检测各槽的连通性与出口，出口变了就断网保持（--once 只测一遍）；同样记录历史
-  panel                     打开交互面板
+  panel                     文字菜单的交互面板
 
 配置：
   init                      初始化数据目录
@@ -104,7 +107,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var err error
 	switch {
 	case len(rest) == 0 && a.interactive:
-		err = a.panel(ctx)
+		err = a.home(ctx)
 	case len(rest) == 0:
 		fmt.Fprint(stderr, usage)
 		return 2
