@@ -61,6 +61,8 @@ type Options struct {
 	WatchInterval time.Duration
 	// NoSample 关闭服务运行期间对各槽位流量与连接的采样，测试用。
 	NoSample bool
+	// Token 是访问令牌；为空时生成一个只在这一次运行里有效的。
+	Token string
 }
 
 // Server 是网页服务。
@@ -72,13 +74,16 @@ type Server struct {
 	traffic *engine.Traffic
 }
 
-// New 创建网页服务并生成这一次运行的访问令牌。
+// New 创建网页服务。没有给访问令牌时生成一个。
 func New(opt Options) (*Server, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return nil, err
+	token := opt.Token
+	if token == "" {
+		var err error
+		if token, err = NewToken(); err != nil {
+			return nil, err
+		}
 	}
-	s := &Server{opt: opt, token: hex.EncodeToString(b), assets: opt.Assets, traffic: engine.NewTraffic()}
+	s := &Server{opt: opt, token: token, assets: opt.Assets, traffic: engine.NewTraffic()}
 	if s.assets == nil {
 		sub, err := fs.Sub(distFS, "dist")
 		if err != nil {
@@ -87,6 +92,15 @@ func New(opt Options) (*Server, error) {
 		s.assets = sub
 	}
 	return s, nil
+}
+
+// NewToken 生成一个访问令牌：32 个十六进制字符。
+func NewToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // Token 返回访问令牌。它只应出现在打印给用户的地址里（放在 # 之后，不会发给服务器）。
@@ -332,7 +346,7 @@ func (c *call) body(v any) error {
 func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request, withDocker bool, fn func(*call) (any, error)) {
 	w.Header().Set("Cache-Control", "no-store")
 	if subtle.ConstantTimeCompare([]byte(r.Header.Get(TokenHeader)), []byte(s.token)) != 1 {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "访问令牌不对：请用 cc-cluster web 打印出来的地址打开"})
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "访问令牌不对：在终端里执行 cc-cluster web，用它打印出来的地址打开"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), opTimeout)

@@ -2,12 +2,15 @@
 
 const TOKEN_KEY = "cc-cluster-token";
 
-/** 访问令牌来自地址里 # 之后的部分：读出来放进会话存储，再把它从地址栏去掉。 */
+/**
+ * 访问令牌来自地址里 # 之后的部分：读出来记在这个浏览器里，再把它从地址栏去掉。
+ * 令牌是固定的，记住之后直接打开地址就能进，不用每次都带着它。
+ */
 function readToken(): string {
   const m = /(?:^#|&)token=([0-9a-f]+)/.exec(window.location.hash);
   if (m) {
     try {
-      sessionStorage.setItem(TOKEN_KEY, m[1]);
+      localStorage.setItem(TOKEN_KEY, m[1]);
     } catch {
       /* 存不了就只在这次加载里用 */
     }
@@ -15,7 +18,7 @@ function readToken(): string {
     return m[1];
   }
   try {
-    return sessionStorage.getItem(TOKEN_KEY) ?? "";
+    return localStorage.getItem(TOKEN_KEY) ?? "";
   } catch {
     return "";
   }
@@ -23,14 +26,19 @@ function readToken(): string {
 
 const token = readToken();
 
-/** 接口报错：message 是给用户看的说明，log 是出错之前的进度。 */
+/** 接口报错：message 是给用户看的说明，log 是出错之前的进度，status 是 HTTP 状态码（连不上时为 0）。 */
 export class ApiError extends Error {
   log: string[];
-  constructor(message: string, log: string[] = []) {
+  status: number;
+  constructor(message: string, log: string[] = [], status = 0) {
     super(message);
     this.log = log;
+    this.status = status;
   }
 }
+
+/** 这个错误是不是“没有令牌或令牌不对”。 */
+export const isUnauthorized = (e: unknown) => e instanceof ApiError && e.status === 401;
 
 export interface Result<T> {
   data: T;
@@ -46,15 +54,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new ApiError("连不上 cc-cluster web：它可能已经停止，在终端里重新运行后用新打印的地址打开。");
+    throw new ApiError("连不上 cc-cluster：网页界面可能已经停止，在终端里执行 cc-cluster web 重新启动。");
   }
   let payload: { data?: T; error?: string; log?: string[] };
   try {
     payload = await resp.json();
   } catch {
-    throw new ApiError(`接口返回了无法识别的内容（HTTP ${resp.status}）`);
+    throw new ApiError(`接口返回了无法识别的内容（HTTP ${resp.status}）`, [], resp.status);
   }
-  if (!resp.ok || payload.error) throw new ApiError(payload.error ?? `HTTP ${resp.status}`, payload.log ?? []);
+  if (!resp.ok || payload.error) throw new ApiError(payload.error ?? `HTTP ${resp.status}`, payload.log ?? [], resp.status);
   return { data: payload.data as T, log: payload.log ?? [] };
 }
 

@@ -64,6 +64,27 @@ func TestRunningWeb(t *testing.T) {
 	}
 }
 
+func TestWebTokenIsStable(t *testing.T) {
+	dir := t.TempDir()
+	a, err := webToken(dir)
+	if err != nil || !tokenRe.MatchString(a) {
+		t.Fatalf("应生成一个令牌: %q %v", a, err)
+	}
+	if fi, err := os.Stat(webTokenPath(dir)); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("令牌文件应当只有自己能读: %v", err)
+	}
+	if b, _ := webToken(dir); b != a {
+		t.Fatalf("再取一次应当是同一个: %s %s", a, b)
+	}
+	// 文件被写坏了就换一个新的，而不是把坏内容当令牌用。
+	if err := os.WriteFile(webTokenPath(dir), []byte("not-a-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := webToken(dir); err != nil || c == a || !tokenRe.MatchString(c) {
+		t.Fatalf("坏文件应被换成新令牌: %q %v", c, err)
+	}
+}
+
 func TestDefaultClusterName(t *testing.T) {
 	name := defaultClusterName()
 	if name != model.DefaultClusterName && !strings.HasPrefix(name, model.DefaultClusterName+"-") {

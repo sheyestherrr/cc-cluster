@@ -1,7 +1,7 @@
 // 应用的入口：定时读取集群的现状，按当前页面渲染。
 import { useCallback, useEffect, useState } from "react";
 import { AppShell, pageTitles, type PageId } from "@/components/AppShell";
-import { api, errorText, type State } from "@/lib/api";
+import { api, errorText, isUnauthorized, type State } from "@/lib/api";
 import { NetworkPage } from "@/pages/NetworkPage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { SlotsPage } from "@/pages/SlotsPage";
@@ -18,13 +18,16 @@ export default function App() {
   const [slot, setSlot] = useState<string | null>(null);
   const [state, setState] = useState<State | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [locked, setLocked] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
       setState(await api.state());
       setLoadError(null);
+      setLocked(false);
     } catch (e) {
       setLoadError(errorText(e));
+      setLocked(isUnauthorized(e));
     }
   }, []);
 
@@ -55,6 +58,20 @@ export default function App() {
   }, []);
 
   const ready = state?.slots.filter((s) => s.state === "ready" || s.state === "pending").length ?? 0;
+
+  // 没有令牌（第一次用这个浏览器，或令牌换过）：只显示怎么拿到链接，不显示一堆读取失败的页面。
+  if (locked) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-6">
+        <div className="card max-w-[520px] p-7">
+          <h2 className="text-[20px]">需要访问链接</h2>
+          <p className="mt-3 text-[14px] leading-7 text-fg-2">在运行 cc-cluster 的那台机器的终端里执行：</p>
+          <pre className="mono mt-2 rounded-xl border border-line bg-white/70 px-3.5 py-2.5 text-[14px]">cc-cluster web</pre>
+          <p className="mt-3 text-[14px] leading-7 text-fg-2">用它打印出来的带 <span className="mono">#token=</span> 的地址打开一次。之后这个浏览器会记住，直接输地址就能进。</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <AppShell activePage={page} onPageChange={go} cluster={cluster} status={state ? { ready, total: state.slots.length } : null}>

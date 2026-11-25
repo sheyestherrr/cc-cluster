@@ -194,6 +194,9 @@ func (a *app) enter(ctx context.Context, req enterRequest) error {
 		fmt.Fprintf(a.errw, "槽位 %s 已就绪：出口 %s\n", req.Slot, res.ExitSummary())
 	}
 
+	// 持续检测跟着后台的网页界面运行；人在终端里进入槽位时顺手确认它开着。
+	a.ensureWeb()
+
 	docker, err := exec.LookPath("docker")
 	if err != nil {
 		return errors.New("进入槽位需要 docker 命令行，PATH 里没有找到")
