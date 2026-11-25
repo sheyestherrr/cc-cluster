@@ -42,7 +42,7 @@ report() { # report <规则名> <位置> <说明>
 # ---- 一、不该进版本库的路径 ----
 # 数据目录与运行期文件、本地的真实配置、临时材料、只读参考、构建产物、密钥与订阅地址文件，
 # 以及维护者本机的材料（助手配置、笔记与草稿）：它们不随仓库发布。
-paths_common='^(tmp|slots|state|run|_ref|dist|docs|vendor|\.claude|\.agents|\.notes\.git)/|^AGENTS\.md$|(^|/)node_modules/|\.(log|sock|pem|key|p12|pfx|url)$|(^|/)\.env$|(^|/)\.?credentials(\.json)?$|(^|/)(cluster\.env|proxies\.conf)$|^internal/web/dist/(assets/|index\.html$)'
+paths_common='^(tmp|slots|state|run|_ref|dist|docs/task-archives|vendor|\.claude|\.agents|\.notes\.git)/|^docs/方案|^AGENTS\.md$|(^|/)node_modules/|\.(log|sock|pem|key|p12|pfx|url)$|(^|/)\.env$|(^|/)\.?credentials(\.json)?$|(^|/)(cluster\.env|proxies\.conf)$|^internal/web/dist/(assets/|index\.html$)'
 # bin/ 现在是构建产物；历史上（改用 Go 之前）它放的是脚本，所以只对当前的文件查。
 paths_tree="$paths_common|^bin/"
 
