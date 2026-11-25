@@ -3,8 +3,9 @@
 #
 #   sh scripts/web.sh [数据目录] [cc-cluster web 的参数，例如 --port 8080]
 #
-# 数据目录的取法依次是：第一个参数、环境变量 CC_CLUSTER_DATA、仓库里的 tmp/web-data。
+# 数据目录的取法依次是：第一个参数（也可以写成 --data-dir 目录）、环境变量 CC_CLUSTER_DATA、仓库里的 tmp/web-data。
 # 用到最后一种且它还不存在时，脚本会先执行一次 cc-cluster init（容器名前缀为 ccweb）。
+# 没有数据、只想看界面长什么样，用 scripts/preview.sh（编出来的数据，不需要 Docker）。
 #
 # 每次启动前都重新构建（make release，需要 Go、Node.js 与 pnpm），看到的总是当前源码。
 # 只想用现成的二进制、跳过构建：NOBUILD=1 sh scripts/web.sh
@@ -21,8 +22,20 @@ DEFAULT_DATA=tmp/web-data
 
 case "${1:-}" in
 -h | --help)
-	sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
 	exit 0
+	;;
+--data-dir=*)
+	DATA=${1#--data-dir=}
+	shift
+	;;
+--data-dir)
+	[ $# -ge 2 ] || {
+		echo "--data-dir 后面要跟目录" >&2
+		exit 2
+	}
+	DATA=$2
+	shift 2
 	;;
 "" | -*)
 	DATA=${CC_CLUSTER_DATA:-$DEFAULT_DATA}
