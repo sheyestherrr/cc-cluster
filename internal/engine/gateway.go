@@ -212,7 +212,7 @@ func (e *Engine) ensureGateway(ctx context.Context, p *gatewayPlan) (*gatewayRun
 		if has, err := e.dk.ImageExists(ctx, p.image); err != nil {
 			return nil, err
 		} else if !has {
-			return nil, fmt.Errorf("本地没有网关镜像 %s；先执行 make images", p.image)
+			return nil, fmt.Errorf("本地没有网关镜像 %s；先%s", p.image, imageHint(p.image))
 		}
 		if err := e.ensureEgressNetwork(ctx, p.gw.EgressNetwork); err != nil {
 			return nil, err

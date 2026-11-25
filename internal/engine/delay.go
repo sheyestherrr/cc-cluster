@@ -234,7 +234,7 @@ func (e *Engine) measureDelays(ctx context.Context, proxies []map[string]any, vi
 	if has, err := e.dk.ImageExists(ctx, image); err != nil {
 		return nil, err
 	} else if !has {
-		return nil, fmt.Errorf("本地没有网关镜像 %s；先执行 make images", image)
+		return nil, fmt.Errorf("本地没有网关镜像 %s；先%s", image, imageHint(image))
 	}
 	if err := e.ensureEgressNetwork(ctx, network); err != nil {
 		return nil, err

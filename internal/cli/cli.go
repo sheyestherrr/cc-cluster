@@ -60,6 +60,7 @@ const usage = `cc-cluster：为 Claude Code 管理相互独立的工作槽位。
                             工作槽位
   render <网关>             预览网关的核心配置（默认隐藏凭据）
   exit-report [on|off]      启动槽位时是否顺带查询第三方对出口 IP 的评估
+  images                    查看或更换网关镜像与默认的 worker 镜像（升级之后用）
   version                   显示版本
 
 每个命令和子命令都可以加 -h 查看参数，例如 cc-cluster slot add -h。
@@ -140,6 +141,8 @@ func (a *app) dispatch(ctx context.Context, cmd string, args []string) error {
 		return a.cmdWatch(ctx, args)
 	case "exit-report":
 		return a.cmdExitReport(ctx, args)
+	case "images":
+		return a.cmdImages(ctx, args)
 	}
 	ctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
@@ -279,12 +282,55 @@ func defaultClusterName() string {
 	return model.DefaultClusterName + "-" + s
 }
 
+// imageRepo 是发布的镜像所在的仓库前缀。
+const imageRepo = "ghcr.io/sheyestherrr/cc-cluster-"
+
+// defaultImages 返回 init 默认使用的两个镜像：发布版用与自己同版本的发布镜像，
+// 从源码构建的（版本号不是 v 开头）用本机 make images 得到的那两个。
+func defaultImages() (gateway, worker string) {
+	if len(Version) > 1 && Version[0] == 'v' && Version[1] >= '0' && Version[1] <= '9' {
+		return imageRepo + "gateway:" + Version, imageRepo + "worker:" + Version
+	}
+	return model.DefaultGatewayImage, model.DefaultWorkerImage
+}
+
+// cmdImages 查看或更换网关镜像与默认的 worker 镜像。
+func (a *app) cmdImages(ctx context.Context, args []string) error {
+	fs := a.newFlags("images", "images [--gateway-image 镜像] [--worker-image 镜像]    不带参数显示现状")
+	gateway := fs.String("gateway-image", "", "换成这个网关镜像")
+	worker := fs.String("worker-image", "", "换成这个默认的 worker 镜像")
+	if err := parse(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		fs.Usage()
+		return errUsage
+	}
+	eng, _, err := a.open(ctx, false)
+	if err != nil {
+		return err
+	}
+	before := eng.Cluster()
+	if *gateway != "" || *worker != "" {
+		if err := eng.SetImages(*gateway, *worker); err != nil {
+			return err
+		}
+	}
+	c := eng.Cluster()
+	fmt.Fprintf(a.out, "网关镜像：%s\nworker 镜像：%s\n", c.GatewayImage, c.WorkerImage)
+	if c != before {
+		fmt.Fprintln(a.out, "已经在运行的容器仍在用原来的镜像：网关停止后再启动、槽位重建 worker 之后换成新的（网页里各自的页面上有这两个操作）。")
+	}
+	return nil
+}
+
 func (a *app) cmdInit(args []string) error {
 	fs := a.newFlags("init", "init [参数]")
 	var c model.Cluster
+	gwImage, wImage := defaultImages()
 	fs.StringVar(&c.Name, "name", defaultClusterName(), "容器名前缀，用来区分同一台机器上的多个用户和数据目录")
-	fs.StringVar(&c.GatewayImage, "gateway-image", model.DefaultGatewayImage, "网关镜像")
-	fs.StringVar(&c.WorkerImage, "worker-image", model.DefaultWorkerImage, "默认的 worker 镜像")
+	fs.StringVar(&c.GatewayImage, "gateway-image", gwImage, "网关镜像")
+	fs.StringVar(&c.WorkerImage, "worker-image", wImage, "默认的 worker 镜像")
 	fs.BoolVar(&c.NoExitReport, "no-exit-report", false, "启动槽位时不顺带查询第三方对出口 IP 的评估（之后可用 exit-report on|off 更改）")
 	if err := parse(fs, args); err != nil {
 		return err

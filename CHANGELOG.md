@@ -7,8 +7,12 @@ One section per release, newest first. Versions follow `vMAJOR.MINOR.PATCH`; pre
 ## 未发布 / Unreleased
 
 - 网页界面：各页的标题加粗；侧栏左上角只留放大的 `cc-cluster`，去掉副标题和底部的“只在本机提供服务”；槽位详情里用户名与主机名分开显示。
+- 升级后可以更换镜像：新增 `cc-cluster images` 和系统页的“更换镜像”；重新运行安装脚本会自动把数据目录里的发布镜像换成新版本的。运行中的容器重建后才用上新镜像。
+- 发布版的 `cc-cluster init` 默认使用与自己同版本的发布镜像，不再是只有从源码构建才有的 `:dev`。
 
 - Web UI: page titles are bold again; the sidebar header shows only a larger `cc-cluster`, without the tagline or the "local only" footer; the slot detail shows username and hostname separately.
+- Images can be changed after an upgrade: a new `cc-cluster images` command and a "change images" action on the System page. Re-running the install script switches a data directory that uses the published images to the new version. Running containers pick up the new image once recreated.
+- In release builds, `cc-cluster init` defaults to the published images of the same version instead of the source-build-only `:dev` tags.
 
 ## v0.0.1
 

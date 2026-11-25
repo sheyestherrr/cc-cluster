@@ -97,6 +97,40 @@ func (e *Engine) SetExitReportAuto(on bool) (err error) {
 	return e.st.SaveCluster(c)
 }
 
+// SetImages 更换网关镜像和默认的 worker 镜像；留空的那个不变。
+// 只改设置：已经在运行的容器继续用原来的镜像，重建之后才换成新的。
+func (e *Engine) SetImages(gateway, worker string) (err error) {
+	unlock, err := e.st.Lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	c, err := e.st.Cluster()
+	if err != nil {
+		return err
+	}
+	if gateway = strings.TrimSpace(gateway); gateway != "" {
+		c.GatewayImage = gateway
+	}
+	if worker = strings.TrimSpace(worker); worker != "" {
+		c.WorkerImage = worker
+	}
+	defer func() { e.record("cluster.images", "", err, "网关 "+c.GatewayImage+"，worker "+c.WorkerImage) }()
+	for _, img := range []string{c.GatewayImage, c.WorkerImage} {
+		if strings.ContainsAny(img, " \t\n") {
+			return fmt.Errorf("镜像名 %q 里不能有空白", img)
+		}
+	}
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if err := e.st.SaveCluster(c); err != nil {
+		return err
+	}
+	e.cl = c
+	return nil
+}
+
 // SetNote 能改备注的对象种类。
 const (
 	KindNode    = "node"

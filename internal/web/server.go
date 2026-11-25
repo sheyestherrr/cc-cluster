@@ -167,6 +167,16 @@ func (s *Server) Handler(port int) http.Handler {
 		}
 		return nil, c.eng.SetExitReportAuto(in.Auto)
 	})
+	api("POST /api/settings/images", false, func(c *call) (any, error) {
+		var in struct {
+			GatewayImage string `json:"gateway_image"`
+			WorkerImage  string `json:"worker_image"`
+		}
+		if err := c.body(&in); err != nil {
+			return nil, err
+		}
+		return nil, c.eng.SetImages(in.GatewayImage, in.WorkerImage)
+	})
 
 	// 备注：四类对象同一种写法，note 为空表示清掉。
 	for kind, prefix := range map[string]string{

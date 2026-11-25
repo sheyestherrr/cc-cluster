@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/sheyestherrr/cc-cluster/internal/dockerapi"
@@ -165,9 +166,9 @@ func (e *Engine) Doctor(ctx context.Context) []Check {
 
 	gwImage := e.cl.GatewayImage
 	hasGW, err := e.dk.ImageExists(ctx, gwImage)
-	add("网关镜像 "+gwImage, hasGW && err == nil, imageDetail(hasGW, err, "执行 make images 构建"))
+	add("网关镜像 "+gwImage, hasGW && err == nil, imageDetail(hasGW, err, imageHint(gwImage)))
 	hasW, err := e.dk.ImageExists(ctx, e.cl.WorkerImage)
-	add("worker 镜像 "+e.cl.WorkerImage, hasW && err == nil, imageDetail(hasW, err, "执行 make images 构建，或在 slot add 时用 --image 指定"))
+	add("worker 镜像 "+e.cl.WorkerImage, hasW && err == nil, imageDetail(hasW, err, imageHint(e.cl.WorkerImage)))
 	if !hasGW {
 		add("容器内网络能力", false, "缺少网关镜像，跳过")
 		return out
@@ -210,4 +211,12 @@ func imageDetail(has bool, err error, hint string) string {
 		return "本地没有；" + hint
 	}
 	return "已在本地"
+}
+
+// imageHint 说明本地缺一个镜像时该怎么办：带仓库地址的拉取，本机构建的名字用 make。
+func imageHint(image string) string {
+	if strings.Contains(image, "/") {
+		return "执行 docker pull " + image
+	}
+	return "从源码执行 make images 构建"
 }

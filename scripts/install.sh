@@ -86,10 +86,16 @@ docker pull "$WORKER_IMAGE"
 if [ "${CC_CLUSTER_NO_INIT:-}" = 1 ]; then
 	say "按要求跳过了初始化。"
 elif [ -e "$DATA" ]; then
-	say "数据目录 $DATA 已经存在，保持原样。"
+	# 升级：数据目录里用的是本项目发布的镜像时，把它换成这个版本的；自己指定的镜像不动。
+	if grep -q "\"ghcr.io/$REPO-gateway:" "$DATA/cluster.json" 2>/dev/null &&
+		"$BIN_DIR/cc-cluster" --data-dir "$DATA" images --gateway-image "$GATEWAY_IMAGE" --worker-image "$WORKER_IMAGE" >/dev/null 2>&1; then
+		say "数据目录 $DATA 已经存在：镜像换成了 $VERSION 的。"
+		say "运行中的容器仍在用原来的镜像；在网页里把网关停止后再启动、给槽位重建 worker 之后换成新的。"
+	else
+		say "数据目录 $DATA 已经存在，保持原样。"
+	fi
 else
 	"$BIN_DIR/cc-cluster" --data-dir "$DATA" init --gateway-image "$GATEWAY_IMAGE" --worker-image "$WORKER_IMAGE"
-	say "已初始化数据目录 $DATA"
 fi
 
 say ""

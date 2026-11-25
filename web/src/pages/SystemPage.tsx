@@ -1,11 +1,14 @@
 // 系统：数据目录、出口评估的开关、运行环境检查与操作记录。
 // 卡片、键值格与数据表的样式取自 Resin（MIT）webui 的样式表，内容是本项目的。
-import { CheckCircle2, Loader2, RefreshCw, Stethoscope, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, Pencil, RefreshCw, Stethoscope, XCircle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { SwitchItem } from "@/components/Form";
+import { Field, FormGrid, SwitchItem } from "@/components/Form";
 import { ErrorBox, Page, PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Badge, Card } from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
 import { api, errorText, type Check, type Op, type State } from "@/lib/api";
 import { opDetail, opName } from "@/lib/ops";
 import { clockTime } from "@/lib/utils";
@@ -41,6 +44,26 @@ export function SystemPage({ state, refresh }: Props) {
   const [checking, setChecking] = useState(false);
   const [ops, setOps] = useState<Op[] | null>(null);
   const [error, setError] = useState("");
+  const [images, setImages] = useState<{ gateway: string; worker: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
+
+  const saveImages = async () => {
+    if (!images) return;
+    setSaving(true);
+    setError("");
+    try {
+      await api.setImages(images.gateway.trim(), images.worker.trim());
+      await Promise.all([refresh(), loadOps()]);
+      setImages(null);
+      toast("镜像已更换，重建容器后生效");
+    } catch (e) {
+      setError(errorText(e));
+      setImages(null);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const loadOps = useCallback(async () => {
     try {
@@ -84,7 +107,11 @@ export function SystemPage({ state, refresh }: Props) {
 
       <div className="grid items-stretch gap-3.5 min-[1100px]:grid-cols-2">
         <Card className="panel">
-          <PanelHead title="数据" hint="数据目录与所用镜像" />
+          <PanelHead title="数据" hint="数据目录与所用镜像">
+            <Button variant="outline" size="sm" disabled={!state} onClick={() => state && setImages({ gateway: state.cluster.gateway_image, worker: state.cluster.worker_image })}>
+              <Pencil />更换镜像
+            </Button>
+          </PanelHead>
           <div className="kv-grid">
             <KV k="版本" v={state?.version} />
             <KV k="容器名前缀" v={state?.cluster.name} />
@@ -163,6 +190,29 @@ export function SystemPage({ state, refresh }: Props) {
           </div>
         )}
       </Card>
+
+      <Dialog
+        open={!!images}
+        onClose={() => setImages(null)}
+        title="更换镜像"
+        description="升级之后用。只改设置：运行中的容器仍用原来的镜像，网关停止后再启动、槽位重建 worker 之后换成新的。镜像要先在这台机器上拉取好。"
+        className="mid"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setImages(null)}>取消</Button>
+            <Button onClick={saveImages} disabled={saving || !images?.gateway.trim() || !images?.worker.trim()}>{saving ? "保存中…" : "保存"}</Button>
+          </>
+        }
+      >
+        <FormGrid>
+          <Field label="网关镜像" wide>
+            <Input aria-label="网关镜像" spellCheck={false} value={images?.gateway ?? ""} onChange={(e) => images && setImages({ ...images, gateway: e.target.value })} />
+          </Field>
+          <Field label="worker 镜像" wide hint="新建槽位默认用它；单独指定过镜像的槽位不变。">
+            <Input aria-label="worker 镜像" spellCheck={false} value={images?.worker ?? ""} onChange={(e) => images && setImages({ ...images, worker: e.target.value })} />
+          </Field>
+        </FormGrid>
+      </Dialog>
 
       <Card className="panel">
         <PanelHead title="致谢" hint="用到的开源项目" />

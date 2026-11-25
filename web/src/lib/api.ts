@@ -426,6 +426,7 @@ export const api = {
   setTransits: (gw: string, transits: string[], skipCheck = false) =>
     post<{ reloaded: boolean; rechecked: string[]; failed: Record<string, string> | null }>(`gateways/${id(gw)}/transits`, { transits, skip_check: skipCheck }),
   setExitReportAuto: (auto: boolean) => post("settings/exit-report", { auto }),
+  setImages: (gateway_image: string, worker_image: string) => post("settings/images", { gateway_image, worker_image }),
   gatewayUp: (gw: string) => post(`gateways/${id(gw)}/up`),
   gatewayDown: (gw: string, force: boolean) => post(`gateways/${id(gw)}/down`, { force }),
   removeGateway: (gw: string) => del(`gateways/${id(gw)}`),

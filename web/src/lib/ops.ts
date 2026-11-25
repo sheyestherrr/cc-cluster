@@ -28,6 +28,7 @@ const names: Record<string, string> = {
   "tmux.start": "启动宿主 tmux",
   "tmux.kill": "关闭宿主 tmux",
   "cluster.exit-report": "设置出口评估",
+  "cluster.images": "更换镜像",
   watch: "持续检测",
 };
 

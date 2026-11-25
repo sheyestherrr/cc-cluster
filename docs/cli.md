@@ -129,8 +129,9 @@ cc-cluster slot add research --direct "air:节点名" && cc-cluster slot up rese
 | `status` / `traffic` / `watch` / `web` / `panel` | 现状 / 流量与连接 / 持续检测 / 网页界面 / 交互面板 |
 | `render <网关>` | 预览网关的核心配置（默认隐藏凭据） |
 | `exit-report [on\|off]` | 启动槽位时是否顺带查询出口 IP 的第三方评估 |
+| `images [--gateway-image 镜像] [--worker-image 镜像]` | 查看或更换网关镜像与默认的 worker 镜像；运行中的容器重建后才用上新的 |
 
-`init` 的参数：`--gateway-image`、`--worker-image` 指定两个镜像（默认是本机构建的 `cc-cluster-gateway:dev` 和 `cc-cluster-worker:dev`），`--name` 是容器名前缀，默认是 `cc-<你的用户名>`，所以容器叫 `cc-<用户名>-w-<槽位>`、`cc-<用户名>-gw-<网关>`，同一台机器上的多个用户互不重名；一个用户用多个数据目录时各给一个不同的前缀。
+`init` 的参数：`--gateway-image`、`--worker-image` 指定两个镜像（发布版默认是与自己同版本的发布镜像，从源码构建的默认是本机构建的 `cc-cluster-gateway:dev` 和 `cc-cluster-worker:dev`），`--name` 是容器名前缀，默认是 `cc-<你的用户名>`，所以容器叫 `cc-<用户名>-w-<槽位>`、`cc-<用户名>-gw-<网关>`，同一台机器上的多个用户互不重名；一个用户用多个数据目录时各给一个不同的前缀。
 
 `web` 的参数：`--port` 指定端口（默认 7878，不指定时被占用会自动往后找空闲的；指定了就只用这一个）。同一个数据目录只会有一个网页界面在运行，重复执行会打印现有的地址。
 
