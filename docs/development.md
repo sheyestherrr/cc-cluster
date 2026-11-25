@@ -4,6 +4,8 @@
 
 ```sh
 make check          # go vet、gofmt 检查、单元测试；不需要 Docker
+make lint           # staticcheck（要另外安装：go install honnef.co/go/tools/cmd/staticcheck@latest）
+make web-test       # 前端的单元测试（Node.js 自带的测试运行器）
 make build          # bin/cc-cluster（没有执行过 make web 时不带网页界面）
 make release        # make web + make build：带网页界面的单个二进制
 make images         # 网关镜像与 worker 镜像

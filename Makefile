@@ -3,6 +3,7 @@
 GO          ?= go
 DOCKER      ?= docker
 PNPM        ?= pnpm
+STATICCHECK ?= staticcheck
 PKGS        := ./cmd/... ./internal/...
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 GATEWAY_IMG ?= cc-cluster-gateway:dev
@@ -17,7 +18,7 @@ DIST_PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 DIST_TAG       ?= $(VERSION)
 DIST_DIR       := dist
 
-.PHONY: build web release dist test vet fmt check repo-check images image-gateway image-worker e2e clean
+.PHONY: build web release dist test vet fmt check lint web-test repo-check images image-gateway image-worker e2e clean
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-X github.com/sheyestherrr/cc-cluster/internal/cli.Version=$(VERSION)" -o bin/cc-cluster ./cmd/cc-cluster
@@ -64,6 +65,16 @@ fmt:
 # 提交前的静态检查与单元测试；不需要 Docker。
 check: vet test
 	@test -z "$$(gofmt -l cmd internal test)" || { echo "以下文件未经 gofmt："; gofmt -l cmd internal test; exit 1; }
+
+# 比 go vet 更严的静态检查，需要另外安装 staticcheck（CI 里固定了版本）；配置在 staticcheck.conf。
+lint:
+	$(STATICCHECK) $(PKGS) ./test/...
+	$(STATICCHECK) -tags e2e ./test/...
+
+# 前端的单元测试：用 Node.js 自带的测试运行器直接跑 TypeScript，不需要另外的依赖。
+web-test:
+	$(PNPM) --dir web install --frozen-lockfile
+	$(PNPM) --dir web test
 
 # 仓库卫生检查：不该进版本库的路径、订阅地址与带密码的代理地址一类的内容。加 HISTORY=1 连历史一起查。
 repo-check:

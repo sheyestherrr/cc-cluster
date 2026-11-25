@@ -34,6 +34,8 @@ jobs:
       matrix:
         # go.mod 声明的最低版本，和当前的稳定版（发布包用它构建）。
         go: ["1.23", "stable"]
+    env:
+      STATICCHECK_VERSION: "2026.2.2"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,6 +47,12 @@ jobs:
         run: go mod verify
       - name: vet、gofmt 与单元测试
         run: make check
+      # staticcheck 要求较新的 Go，只在稳定版这一路运行。
+      - name: staticcheck
+        if: matrix.go == 'stable'
+        run: |
+          go install "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}"
+          make lint STATICCHECK="$(go env GOPATH)/bin/staticcheck"
 
   build:
     name: 网页与二进制
@@ -67,6 +75,8 @@ jobs:
         run: make release VERSION="ci-${GITHUB_SHA::7}"
       - name: 运行一下
         run: ./bin/cc-cluster version
+      - name: 前端的单元测试
+        run: make web-test
       - name: 前端依赖的已知漏洞（只提示）
         continue-on-error: true
         run: pnpm --dir web audit --prod

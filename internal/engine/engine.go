@@ -320,10 +320,3 @@ func truncate(s string, n int) string {
 	}
 	return string(r[:n]) + "…"
 }
-
-func shortID(id string) string {
-	if len(id) > 12 {
-		return id[:12]
-	}
-	return id
-}
