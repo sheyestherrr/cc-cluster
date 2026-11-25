@@ -11,8 +11,12 @@ title = "cc-cluster"
 useDefault = true
 
 [allowlist]
-description = "依赖锁文件里的完整性校验值"
+description = "依赖锁文件里的完整性校验值；测试里用过的一个编出来的令牌"
 paths = [
   '''(^|/)pnpm-lock\.yaml$''',
   '''(^|/)go\.sum$''',
+]
+# 前端测试里曾用 0 到 f 顺着排两遍当假令牌，被当成了密钥；测试已改用短的，历史提交里还留着这一行。
+regexes = [
+  '''^0123456789abcdef0123456789abcdef$''',
 ]

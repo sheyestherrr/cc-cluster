@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 // api.ts 在加载时就从地址里读令牌，所以先摆好浏览器那几个全局对象，再加载它。
-const TOKEN = "0123456789abcdef0123456789abcdef";
+const TOKEN = "c0ffee";
 const stored = new Map<string, string>();
 let addressBar = `/#token=${TOKEN}`;
 let sent: { url: string; headers: Record<string, string> } = { url: "", headers: {} };
