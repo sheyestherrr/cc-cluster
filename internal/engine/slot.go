@@ -367,13 +367,10 @@ func (e *Engine) AddSlot(ctx context.Context, sl model.Slot, opt SlotOptions) (o
 		return sl, nil, err
 	}
 	var used []netip.Prefix
-	var takenUsers, sharing []string
+	var sharing []string
 	for _, o := range all {
 		if o.ID == sl.ID {
 			return sl, nil, fmt.Errorf("槽位 %s 已存在", sl.ID)
-		}
-		if oi, ok, _ := e.st.Identity(o.ID); ok {
-			takenUsers = append(takenUsers, oi.UserName())
 		}
 		if o.Landing == sl.Landing {
 			sharing = append(sharing, o.ID)
@@ -410,13 +407,16 @@ func (e *Engine) AddSlot(ctx context.Context, sl model.Slot, opt SlotOptions) (o
 		return sl, nil, fmt.Errorf("槽位 %s 已有持久化的身份，不能再指定 hostname 或用户名", sl.ID)
 	}
 	if !has {
-		if ident, err = identity.New(identity.Options{Hostname: opt.Hostname, User: opt.User, TakenUsers: takenUsers}); err != nil {
+		if ident, err = identity.New(identity.Options{Hostname: opt.Hostname, User: opt.User}); err != nil {
 			return sl, nil, err
 		}
 	}
 	for _, m := range sl.Mounts {
 		if _, err := os.Stat(m.Source); err != nil {
 			return sl, nil, fmt.Errorf("挂载源 %s 不可用：%w", m.Source, err)
+		}
+		if err := model.CheckMountSource(m.Source, e.ProtectedPaths()...); err != nil {
+			return sl, nil, err
 		}
 		if err := model.CheckMountTarget(m.Target, ident.Home()); err != nil {
 			return sl, nil, err
@@ -657,6 +657,19 @@ export PATH
 `
 )
 
+// profilePromptFile 是另一个 profile 片段：交互的 bash 用两行的提示符，
+// 第一行是用户名、当前目录和时间，第二行是输入处。不显示 hostname（它是按机型生成的一长串）。
+// /etc/profile 先读 /etc/bash.bashrc 再读 profile.d，所以这里的设置盖过发行版的默认值；
+// 使用者在自己的 ~/.bashrc 或 ~/.profile 里另设 PS1 的话以他的为准。
+// 没有计入 seedVersion：已有的容器不必为它重建，下次重建时自然带上。
+const (
+	profilePromptFile   = "etc/profile.d/prompt.sh"
+	profilePromptScript = `if [ -n "${BASH_VERSION-}" ] && [ -n "${PS1-}" ]; then
+	PS1='\n\[\e[1;32m\]\u\[\e[0m\] \[\e[1;34m\]\w\[\e[0m\] \[\e[2m\]\A\[\e[0m\]\n❯ '
+fi
+`
+)
+
 // workerDigest 是 worker 容器的规格摘要：容器规格加上创建后写进容器的身份内容。
 // extra 是另外写进容器文件层的文件（开启桥接时的配置）；为空时不计入，摘要与没有这一项时相同。
 func workerDigest(spec dockerapi.ContainerSpec, ident model.Identity, extra map[string][]byte) string {
@@ -694,6 +707,7 @@ func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.
 		Image: image, Slot: slot, Ident: ident, TZ: tz, Lang: lang,
 		HomeDir: e.st.HomeDir(slot.ID), Labels: e.labels(roleWorker, slot.ID),
 	}
+	linkMounts(p.HomeDir, ident.Home(), slot.Mounts)
 	etc := e.st.EtcDir(slot.ID)
 	if slot.FakeDMI {
 		if len(ident.DMI) == 0 {
@@ -795,6 +809,7 @@ func (e *Engine) seedWorker(ctx context.Context, name string, slot model.Slot, i
 		"etc/machine-id":          {Data: mid, Mode: 0o444},
 		"var/lib/dbus/machine-id": {Data: mid, Mode: 0o444},
 		profilePathFile:           {Data: []byte(profilePathScript), Mode: 0o644},
+		profilePromptFile:         {Data: []byte(profilePromptScript), Mode: 0o644},
 	}
 	for p, data := range extra {
 		files[p] = dockerapi.File{Data: data, Mode: 0o644}
@@ -1328,6 +1343,9 @@ func (e *Engine) SlotAddWorkspace(id, dir string) (err error) {
 	if err := model.CheckMountTarget(dir, ident.Home()); err != nil {
 		return err
 	}
+	if err := model.CheckMountSource(dir, e.ProtectedPaths()...); err != nil {
+		return err
+	}
 	sl.Mounts = model.AddWorkspace(sl.Mounts, dir)
 	if err := sl.Validate(); err != nil {
 		return err
@@ -1358,6 +1376,9 @@ func (e *Engine) SlotRemoveMount(id, target string) (err error) {
 		return fmt.Errorf("槽位 %s 没有挂载到 %s 的目录", id, target)
 	}
 	sl.Mounts = kept
+	if ident, ok, _ := e.st.Identity(id); ok {
+		unlinkMount(e.st.HomeDir(id), ident.Home(), target)
+	}
 	return e.st.SaveSlot(sl, false)
 }
 

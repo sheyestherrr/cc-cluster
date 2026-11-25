@@ -59,23 +59,12 @@ func TestGenerateDeterministicWithFixedSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.MAC != "3c:2c:30:00:00:00" || a.User != "adam" || a.Hostname != "adam-OptiPlex-7090" {
+	if a.MAC != "3c:2c:30:00:00:00" || a.User != "user" || a.Hostname != "user-OptiPlex-7090" {
 		t.Fatalf("固定随机源的结果不对: %+v", a)
 	}
 	b, _ := generate(bytes.NewReader(src), Options{}, now)
 	if a.MachineID != b.MachineID || a.MAC != b.MAC || a.Hostname != b.Hostname {
 		t.Fatal("相同随机源应得到相同结果")
-	}
-}
-
-func TestUserAvoidsTaken(t *testing.T) {
-	src := bytes.Repeat([]byte{0x00}, 64)
-	a, err := generate(bytes.NewReader(src), Options{TakenUsers: []string{"adam", "alex"}}, time.Now())
-	if err != nil || a.User != "andy" {
-		t.Fatalf("应跳过已占用的用户名: %+v %v", a, err)
-	}
-	if got := pickUser(0, userNames); got != "adam2" {
-		t.Fatalf("名字表用尽时应加数字: %s", got)
 	}
 }
 

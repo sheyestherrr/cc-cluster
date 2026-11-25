@@ -30,14 +30,8 @@ var macOUIs = [][3]byte{
 	{0x00, 0x1b, 0x21}, // Intel
 }
 
-// 生成用户名用的名字表：常见的英文短名。
-var userNames = []string{
-	"adam", "alex", "andy", "ben", "brian", "casey", "chris", "dan", "david", "drew",
-	"eric", "greg", "ian", "james", "jamie", "jason", "jeff", "joe", "john", "jordan",
-	"josh", "ken", "kevin", "kyle", "lee", "leo", "luke", "mark", "matt", "max",
-	"mike", "morgan", "nick", "paul", "peter", "ray", "riley", "ryan", "sam", "scott",
-	"sean", "steve", "taylor", "tom", "tony", "vic", "will", "zack",
-}
+// DefaultUser 是没有指定用户名时 worker 内的用户名。
+const DefaultUser = "user"
 
 // 不能用作槽位用户名的系统账号。
 var reservedUsers = map[string]bool{
@@ -95,12 +89,10 @@ var (
 	slugDrop   = regexp.MustCompile(`[^A-Za-z0-9-]+`)
 )
 
-// Options 是生成身份时可以指定的部分；留空的由随机源决定。
+// Options 是生成身份时可以指定的部分；用户名留空用 DefaultUser，hostname 留空按“用户名-机型”生成。
 type Options struct {
 	Hostname string
 	User     string
-	// TakenUsers 是其他槽位已经用掉的用户名，随机挑选时尽量避开。
-	TakenUsers []string
 }
 
 // New 用系统随机源生成一份身份。
@@ -110,7 +102,7 @@ func New(opt Options) (model.Identity, error) {
 
 func generate(r io.Reader, opt Options, now time.Time) (model.Identity, error) {
 	var none model.Identity
-	// 一次取够：machine-id 16 字节、MAC 4 字节（前缀下标 + 后三段）、用户名与机型各 1 字节。
+	// 一次取够：machine-id 16 字节、MAC 4 字节（前缀下标 + 后三段）、机型 1 字节（第 21 个字节不用）。
 	var b [22]byte
 	if _, err := io.ReadFull(r, b[:]); err != nil {
 		return none, err
@@ -120,8 +112,9 @@ func generate(r io.Reader, opt Options, now time.Time) (model.Identity, error) {
 
 	user := opt.User
 	if user == "" {
-		user = pickUser(int(b[20]), opt.TakenUsers)
-	} else if err := ValidateUser(user); err != nil {
+		user = DefaultUser
+	}
+	if err := ValidateUser(user); err != nil {
 		return none, err
 	}
 
@@ -145,25 +138,6 @@ func generate(r io.Reader, opt Options, now time.Time) (model.Identity, error) {
 		DMI:       m.dmi(),
 		CreatedAt: now,
 	}, nil
-}
-
-// pickUser 从名字表里按起点 start 往后找第一个没被占用的；全被占用时在名字后加数字。
-func pickUser(start int, taken []string) string {
-	used := map[string]bool{}
-	for _, t := range taken {
-		used[t] = true
-	}
-	for i := 0; i < len(userNames); i++ {
-		if n := userNames[(start+i)%len(userNames)]; !used[n] {
-			return n
-		}
-	}
-	base := userNames[start%len(userNames)]
-	for i := 2; ; i++ {
-		if n := fmt.Sprintf("%s%d", base, i); !used[n] {
-			return n
-		}
-	}
 }
 
 // ValidateHostname 检查 hostname 是否为合法的单段主机名。

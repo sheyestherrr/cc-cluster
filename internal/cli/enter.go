@@ -23,6 +23,8 @@ type enterRequest struct {
 	Slot string
 	// Dir 是宿主上的目录，已经是绝对路径。
 	Dir string
+	// DirGiven 表示目录是使用者明确给出的；没给时 Dir 是当前目录，挂不进去就改进默认目录。
+	DirGiven bool
 	// MountRoot 非空时，目录不在挂载范围内就挂这一级；为空则询问（或在 Yes 时挂 Dir 本身）。
 	MountRoot string
 	Yes       bool
@@ -79,6 +81,7 @@ func (a *app) cmdEnter(ctx context.Context, name string, args []string) error {
 	}
 	req.Slot, req.Command = slot, fs.Args()
 
+	req.DirGiven = dir != ""
 	if dir == "" {
 		dir = "."
 	}
@@ -148,9 +151,14 @@ func (a *app) enter(ctx context.Context, req enterRequest) error {
 	}
 
 	inside, mounted := model.ContainerPath(sl.Mounts, req.Dir)
+	protected := eng.ProtectedPaths()
+	if !mounted && !req.DirGiven && len(model.WorkspaceCandidates(req.Dir, ident.Home(), protected...)) == 0 {
+		// 没有指定目录，当前目录又挂不进去（比如就在主目录里）：进到第一个挂载目录，没有挂载就是 HOME。
+		inside, mounted = model.DefaultDir(sl.Mounts, ident.Home()), true
+	}
 	remounted := false
 	if !mounted {
-		root, err := a.pickMountRoot(req, ident.Home())
+		root, err := a.pickMountRoot(req, ident.Home(), protected)
 		if err != nil {
 			return err
 		}
@@ -244,10 +252,10 @@ func (a *app) enter(ctx context.Context, req enterRequest) error {
 }
 
 // pickMountRoot 决定把哪一级目录挂进槽位。
-func (a *app) pickMountRoot(req enterRequest, home string) (string, error) {
-	candidates := model.WorkspaceCandidates(req.Dir, home)
+func (a *app) pickMountRoot(req enterRequest, home string, protected []string) (string, error) {
+	candidates := model.WorkspaceCandidates(req.Dir, home, protected...)
 	if len(candidates) == 0 {
-		return "", fmt.Errorf("目录 %s 不能挂进槽位：它在系统目录里，或会盖住槽内的 HOME（%s）", req.Dir, home)
+		return "", fmt.Errorf("目录 %s 不能挂进槽位：它在系统目录里、是你的主目录或数据目录的上级，或会盖住槽内的 HOME（%s）", req.Dir, home)
 	}
 	if req.MountRoot != "" {
 		for _, c := range candidates {

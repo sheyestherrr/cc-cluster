@@ -596,7 +596,7 @@ function Op({ title, hint, children }: { title: string; hint: string; children: 
   );
 }
 
-const emptySlot = (): SlotInput => ({ id: "", note: "", gateway: "", landing: "", mounts: [], memory: "", cpus: 0, user: "", hostname: "", tz: "", fake_dmi: false, fake_proc: false, tmux_bridge: false });
+const emptySlot = (): SlotInput => ({ id: "", note: "", gateway: "", landing: "", mounts: [], memory: "", cpus: 0, user: "user", hostname: "", tz: "", fake_dmi: false, fake_proc: false, tmux_bridge: false });
 
 function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; state: State; onClose: () => void; onCreated: (id: string, warnings: string[]) => void }) {
   const landings = state.nodes.filter((n) => n.role === "landing");
@@ -729,7 +729,7 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
           </FormGrid>
         </FormSection>
 
-        <FormSection title="项目目录" hint="每行一个这台机器上的绝对路径；槽内使用相同的路径。之后在项目目录里运行 enter 也会按需挂载。">
+        <FormSection title="项目目录" hint="每行一个这台机器上的绝对路径，槽内路径相同，~ 下有同名的快捷方式。不能挂整个主目录。">
           <Textarea aria-label="挂载的目录" rows={3} spellCheck={false} placeholder="/data/projects" value={mounts} onChange={(e) => setMounts(e.target.value)} />
         </FormSection>
 
@@ -742,7 +742,7 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
               <Input aria-label="内存上限" placeholder="例如 8g，不填不限" value={slot.memory} onChange={(e) => setSlot({ ...slot, memory: e.target.value })} />
             </Field>
             <Field label="用户名">
-              <Input aria-label="用户名" placeholder="不填则随机挑一个常见的名字" value={slot.user} onChange={(e) => setSlot({ ...slot, user: e.target.value })} />
+              <Input aria-label="用户名" placeholder="user" value={slot.user} onChange={(e) => setSlot({ ...slot, user: e.target.value })} />
             </Field>
             <Field label="主机名">
               <Input aria-label="主机名" placeholder="不填则按“用户名-机型”生成" value={slot.hostname} onChange={(e) => setSlot({ ...slot, hostname: e.target.value })} />

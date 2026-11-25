@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -148,6 +149,15 @@ func (e *Engine) SetNote(kind, id, note string) (err error) {
 		return e.st.SaveSlot(sl, false)
 	}
 	return fmt.Errorf("不认识的对象种类 %q", kind)
+}
+
+// ProtectedPaths 返回宿主上不允许整个挂进槽位的目录：使用者的主目录和数据目录。
+func (e *Engine) ProtectedPaths() []string {
+	out := []string{e.st.Dir()}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		out = append(out, home)
+	}
+	return out
 }
 
 // GatewayContainer 返回网关的容器名。

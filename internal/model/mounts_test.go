@@ -69,4 +69,42 @@ func TestWorkspaceCandidates(t *testing.T) {
 	if got := WorkspaceCandidates("/usr/local/src", ""); len(got) != 0 {
 		t.Fatalf("系统目录不应成为候选: %v", got)
 	}
+	// 宿主的主目录和数据目录本身及其上级不能作为挂载根。
+	got = WorkspaceCandidates("/home/pi/project/app", "/home/user", "/home/pi", "/home/pi/.cc-cluster")
+	if !reflect.DeepEqual(got, []string{"/home/pi/project/app", "/home/pi/project"}) {
+		t.Fatalf("主目录不应成为候选: %v", got)
+	}
+}
+
+func TestCheckMountSource(t *testing.T) {
+	protected := []string{"/home/pi", "/home/pi/.cc-cluster", ""}
+	for _, bad := range []string{"/home/pi", "/home/pi/", "/home", "/home/pi/.cc-cluster"} {
+		if CheckMountSource(bad, protected...) == nil {
+			t.Errorf("%s 应被拒绝", bad)
+		}
+	}
+	for _, ok := range []string{"/home/pi/project", "/data/repo", "/home/pineapple"} {
+		if err := CheckMountSource(ok, protected...); err != nil {
+			t.Errorf("%s 应被接受: %v", ok, err)
+		}
+	}
+}
+
+func TestLinkNameAndDefaultDir(t *testing.T) {
+	home := "/home/user"
+	if n, ok := LinkName("/home/pi/project", home); !ok || n != "project" {
+		t.Fatalf("链接名不对: %q %v", n, ok)
+	}
+	for _, target := range []string{"/home/user/work", "/data/.cache"} {
+		if _, ok := LinkName(target, home); ok {
+			t.Errorf("%s 不应建链接", target)
+		}
+	}
+	mounts := []Mount{{Source: "/x", Target: "/home/user/x"}, {Source: "/data/a", Target: "/data/a"}}
+	if got := DefaultDir(mounts, home); got != "/data/a" {
+		t.Fatalf("默认目录应是第一个 HOME 之外的挂载: %s", got)
+	}
+	if got := DefaultDir(nil, home); got != home {
+		t.Fatalf("没有挂载时默认目录应是 HOME: %s", got)
+	}
 }

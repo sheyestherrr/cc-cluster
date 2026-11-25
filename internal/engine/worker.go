@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -152,6 +154,35 @@ func workerSpec(p workerParams) dockerapi.ContainerSpec {
 		WorkingDir: home,
 		Labels:     p.Labels,
 		HostConfig: hc,
+	}
+}
+
+// linkMounts 在槽位的 HOME 里给每个挂载放一个同名的符号链接（~/project → /home/pi/project），
+// 这样在槽内从 ~ 就能走到挂进来的目录。挂载仍在原路径上，链接只是多一个入口。
+// HOME 里已有同名的东西时不动它；建不出来也不妨碍启动。
+func linkMounts(homeDir, home string, mounts []model.Mount) {
+	for _, m := range mounts {
+		name, ok := model.LinkName(m.Target, home)
+		if !ok {
+			continue
+		}
+		link := filepath.Join(homeDir, name)
+		if _, err := os.Lstat(link); err == nil {
+			continue
+		}
+		_ = os.Symlink(m.Target, link)
+	}
+}
+
+// unlinkMount 去掉 linkMounts 为 target 建的链接；只删仍然指向 target 的符号链接。
+func unlinkMount(homeDir, home, target string) {
+	name, ok := model.LinkName(target, home)
+	if !ok {
+		return
+	}
+	link := filepath.Join(homeDir, name)
+	if dst, err := os.Readlink(link); err == nil && dst == target {
+		_ = os.Remove(link)
 	}
 }
 
