@@ -75,7 +75,8 @@ cc-cluster slot hold work --reason "出口异常"     # 立即断网并保持
 cc-cluster slot release work && cc-cluster slot up work
 
 cc-cluster slot rm work            # 删除槽位；加 --purge 连 HOME 与身份一起删
-cc-cluster                         # 不带参数：终端里的交互面板，按编号选择
+cc-cluster                         # 不带参数：列出槽位，选一个进去启动 Claude Code 或打开终端；记得每个目录上次的选择
+cc-cluster panel                   # 文字菜单的交互面板
 ```
 
 槽内的路径与宿主相同：在 `/data/projects/foo` 下进入，槽内的当前目录也是它。
@@ -85,7 +86,7 @@ cc-cluster                         # 不带参数：终端里的交互面板，�
 **流量与连接**：`cc-cluster traffic` 列出各槽位此刻的速率和最近 24 小时的流量；`cc-cluster traffic work` 列出它当前的连接和这段时间里连过的目标。
 
 - 能看到的是连接这一层：目标的域名与端口、上下行流量、时长。HTTPS 的网址路径和内容是加密的，这里看不到，也不做解密。
-- 历史（五分钟一档的流量、持续检测的结果、已结束的连接）在 `cc-cluster web` 或 `cc-cluster watch` 运行期间记录，存在数据目录的 `history/` 下，保留 30 天。两个都没开的时段没有曲线；想要完整的历史就让 `cc-cluster watch` 常驻。
+- 历史（五分钟一档的流量、持续检测的结果、已结束的连接）在 `cc-cluster web` 或 `cc-cluster watch` 运行期间记录，存在数据目录的 `history/` 下，保留 30 天。两个都没开的时段没有曲线。网页界面默认常驻后台，不用网页界面的机器让 `cc-cluster watch` 常驻。
 - 连接靠十秒一次的快照记录，比这更短的连接可能不在其中；流量来自网卡的计数，不受这个影响。
 - `history/` 里有各槽位访问过的域名，文件只有当前用户可读；不想留就删掉这个目录。
 
@@ -133,7 +134,7 @@ cc-cluster slot add research --direct "air:节点名" && cc-cluster slot up rese
 
 `init` 的参数：`--gateway-image`、`--worker-image` 指定两个镜像（发布版默认是与自己同版本的发布镜像，从源码构建的默认是本机构建的 `cc-cluster-gateway:dev` 和 `cc-cluster-worker:dev`），`--name` 是容器名前缀，默认是 `cc-<你的用户名>`，所以容器叫 `cc-<用户名>-w-<槽位>`、`cc-<用户名>-gw-<网关>`，同一台机器上的多个用户互不重名；一个用户用多个数据目录时各给一个不同的前缀。
 
-`web` 的参数：`--port` 指定端口（默认 7878，不指定时被占用会自动往后找空闲的；指定了就只用这一个）。同一个数据目录只会有一个网页界面在运行，重复执行会打印现有的地址。
+`web`：默认把网页界面放到后台并打印地址，输出写在数据目录的 `web.log`；同一个数据目录只会有一个在运行，重复执行只打印现有的地址，二进制升级后再执行会把在跑的旧版本换掉。`web stop` 停止它；`--foreground` 在前台运行（交给 systemd 之类管理时用）。`--port` 指定端口（默认 7878，不指定时被占用会自动往后找空闲的；指定了就只用这一个）。访问令牌存在数据目录的 `web.token` 里，固定不变；想换掉就删除这个文件再重启。在终端里用 `enter`、`claude` 或不带参数的 `cc-cluster` 进入槽位时，如果它没在运行会顺手启动。
 
 `slot add` 常用的参数：`--memory 8g`、`--cpus 4`、`--mount 宿主目录[:容器路径[:ro]]`、`--tz Asia/Tokyo`、`--user`（槽内的用户名，默认 `user`）、`--hostname`、`--env 名=值`、`--fake-dmi`、`--fake-proc`。
 
