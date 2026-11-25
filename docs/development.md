@@ -31,4 +31,6 @@ make image-worker        # 得到 cc-cluster-worker:dev，里面的 tmux 按这�
 
 各部分怎么配合见[架构说明](../ARCHITECTURE.md)。
 
-开发在 `dev` 分支，`master` 只接收它的快进；PR 请提到 `dev`。推到 `master` 会更新 `nightly`，推 `v*` 标签出正式版。
+开发在 `dev` 分支，`master` 只接收它的快进；PR 请提到 `dev`。
+
+版本号是 `v主.次.修订`，预发布写成 `v0.1.0-alpha.1`、`v1.0.0-rc.1`。发版前先在 `CHANGELOG.md` 里写好这个版本的一段（中英文），再在 `master` 上打 `v*` 标签并推送；Release 的说明取自这一段，没有就不会发布。

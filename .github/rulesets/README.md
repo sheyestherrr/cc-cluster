@@ -14,5 +14,5 @@ Settings → Rules → Rulesets → New ruleset → Import a ruleset，逐个选
 
 - 没有要求必须经 PR、必须通过检查：只有一个维护者时这两条只会拦住自己。master 只接收 dev 的快进，检查在 dev 上已经跑过。
 - “线性历史”不允许合并提交。在网页上合并 PR 时用 squash 或 rebase；dev 上要是有了合并提交，就推不进 master。
-- `nightly` 标签不在保护范围内：发布工作流每次都要把它挪到新的提交。
+- `nightly` 标签不在保护范围内：它是早先滚动构建用的，已经停用。
 - 没有设置任何例外（bypass）。确实需要改写历史或删除标签时，在网页上临时停用对应的规则集，做完再启用。

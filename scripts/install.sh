@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/sheyestherrr/cc-cluster/master/scripts/install.sh | sh
 #
 # 可以用环境变量调整：
-#   CC_CLUSTER_VERSION   要装的版本，默认 nightly（master 上最新一次构建）；正式版写版本号，如 v0.1.0
+#   CC_CLUSTER_VERSION   要装的版本，默认是最新的正式版；也可以写具体的版本号，如 v0.0.1
 #   CC_CLUSTER_BIN_DIR   二进制放在哪里，默认 ~/.local/bin
 #   CC_CLUSTER_DATA      数据目录，默认 ~/.cc-cluster
 #   CC_CLUSTER_NO_INIT   设为 1 时只装二进制和镜像，不初始化数据目录
@@ -14,11 +14,9 @@
 set -eu
 
 REPO=sheyestherrr/cc-cluster
-VERSION=${CC_CLUSTER_VERSION:-nightly}
+VERSION=${CC_CLUSTER_VERSION:-latest}
 BIN_DIR=${CC_CLUSTER_BIN_DIR:-$HOME/.local/bin}
 DATA=${CC_CLUSTER_DATA:-$HOME/.cc-cluster}
-GATEWAY_IMAGE=ghcr.io/$REPO-gateway:$VERSION
-WORKER_IMAGE=ghcr.io/$REPO-worker:$VERSION
 
 say() { printf '%s\n' "$*"; }
 die() {
@@ -42,6 +40,18 @@ x86_64 | amd64) arch=amd64 ;;
 aarch64 | arm64) arch=arm64 ;;
 *) die "不支持的架构：$(uname -m)（只有 amd64 和 arm64 的发布包）" ;;
 esac
+
+if [ "$VERSION" = latest ]; then
+	# releases/latest 会跳转到最新正式版的页面，地址的最后一段就是版本号。
+	url=$(curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest") || die "查不到最新的版本"
+	VERSION=${url##*/}
+fi
+case $VERSION in
+v[0-9]*) ;;
+*) die "版本号 $VERSION 不对：应当是 v0.0.1 这样的写法" ;;
+esac
+GATEWAY_IMAGE=ghcr.io/$REPO-gateway:$VERSION
+WORKER_IMAGE=ghcr.io/$REPO-worker:$VERSION
 
 name=cc-cluster_${VERSION}_${os}_${arch}
 base=https://github.com/$REPO/releases/download/$VERSION

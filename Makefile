@@ -12,8 +12,7 @@ E2E_DIR     ?= $(CURDIR)/tmp/e2e
 WEB_DIST    := internal/web/dist
 
 LDFLAGS     := -X github.com/sheyestherrr/cc-cluster/internal/cli.Version=$(VERSION)
-# 发布包：每个平台一个压缩包。DIST_TAG 是文件名里的版本段，默认与 VERSION 相同；
-# 滚动的预发布用固定的名字（nightly），下载地址不随提交变化。
+# 发布包：每个平台一个压缩包。DIST_TAG 是文件名里的版本段，默认与 VERSION 相同。
 DIST_PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 DIST_TAG       ?= $(VERSION)
 DIST_DIR       := dist

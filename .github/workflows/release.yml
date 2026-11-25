@@ -1,4 +1,5 @@
-# 发布：推 v* 标签出正式版；推到 master 更新名为 nightly 的滚动预发布（覆盖上一次）。
+# 发布：推 v* 标签出一个版本；带 - 的（v0.1.0-alpha.1、v1.0.0-rc.1）标成预发布。
+# Release 的说明取自 CHANGELOG.md 里这个版本的那一段，没有这一段就不发布。
 #
 # 三个任务权限分开：
 #   build   只有读权限：跑检查、装前端依赖并构建（这一步会执行第三方包的代码），产出发布包。
@@ -10,7 +11,6 @@ name: 发布
 
 on:
   push:
-    branches: [master]
     tags: ["v*"]
 
 permissions:
@@ -31,7 +31,6 @@ jobs:
     timeout-minutes: 20
     outputs:
       version: ${{ steps.meta.outputs.version }}
-      kind: ${{ steps.meta.outputs.kind }}
       prerelease: ${{ steps.meta.outputs.prerelease }}
       image_tags: ${{ steps.meta.outputs.image_tags }}
     steps:
@@ -41,32 +40,26 @@ jobs:
       - name: 确定版本
         id: meta
         run: |
-          if [ "${GITHUB_REF_TYPE}" = tag ]; then
-            version="${GITHUB_REF_NAME}"
-            if ! printf '%s' "${version}" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?'; then
-              echo "标签 ${version} 不是 v主.次.修订[-预发布] 的写法，不发布" >&2
-              exit 1
-            fi
-            kind=release
-            dist_tag="${version}"
-            case "${version}" in
-              *-*) prerelease=true; image_tags="${version}" ;;
-              *) prerelease=false; image_tags="${version} latest" ;;
-            esac
-          else
-            version="nightly-${GITHUB_SHA::7}"
-            kind=nightly
-            dist_tag=nightly
-            prerelease=true
-            image_tags=nightly
+          version="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_TYPE}" != tag ] || ! printf '%s' "${version}" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?'; then
+            echo "${version} 不是 v主.次.修订[-预发布] 写法的标签，不发布" >&2
+            exit 1
           fi
+          case "${version}" in
+            *-*) prerelease=true; image_tags="${version}" ;;
+            *) prerelease=false; image_tags="${version} latest" ;;
+          esac
           {
             echo "version=${version}"
-            echo "kind=${kind}"
-            echo "dist_tag=${dist_tag}"
             echo "prerelease=${prerelease}"
             echo "image_tags=${image_tags}"
           } >> "${GITHUB_OUTPUT}"
+      - name: 取出这个版本的更新记录
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          sh scripts/ci/release-notes.sh "${VERSION}" > "${RUNNER_TEMP}/notes.md"
+          cat "${RUNNER_TEMP}/notes.md"
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: stable
@@ -85,9 +78,9 @@ jobs:
       - name: 各平台的发布包与校验和
         env:
           VERSION: ${{ steps.meta.outputs.version }}
-          DIST_TAG: ${{ steps.meta.outputs.dist_tag }}
         run: |
-          make dist VERSION="${VERSION}" DIST_TAG="${DIST_TAG}"
+          make dist VERSION="${VERSION}"
+          cp "${RUNNER_TEMP}/notes.md" dist/RELEASE_NOTES.md
           ls -l dist
           cat dist/SHA256SUMS
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -168,47 +161,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ needs.build.outputs.version }}
-          KIND: ${{ needs.build.outputs.kind }}
           PRERELEASE: ${{ needs.build.outputs.prerelease }}
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cc-cluster-gateway"
           worker="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cc-cluster-worker"
           notes="${RUNNER_TEMP}/notes.md"
-          if [ "${KIND}" = nightly ]; then
-            {
-              echo "master 上最新一次提交的自动构建（${VERSION}，提交 ${GITHUB_SHA}），每次推送都会被覆盖。不是正式版本。"
-              echo
-              echo "网关镜像：\`${image}:nightly\`"
-              echo
-              echo "worker 镜像：\`${worker}:nightly\`"
-              echo
-              echo "下载后用 \`sha256sum --check SHA256SUMS\` 核对。"
-            } > "${notes}"
-            if gh release view nightly > /dev/null 2>&1; then
-              # 已有：把 nightly 标签挪到这次提交，再覆盖说明和文件。文件名是固定的，下载地址不变。
-              gh api --method PATCH "repos/${GH_REPO}/git/refs/tags/nightly" -f sha="${GITHUB_SHA}" -F force=true > /dev/null
-              gh release edit nightly --title "nightly（${VERSION}）" --notes-file "${notes}" --prerelease
-              gh release upload nightly dist/*.tar.gz dist/SHA256SUMS --clobber
-            else
-              gh release create nightly dist/*.tar.gz dist/SHA256SUMS \
-                --target "${GITHUB_SHA}" --title "nightly（${VERSION}）" --notes-file "${notes}" --prerelease --latest=false
-            fi
-            exit 0
-          fi
-
           {
-            echo "网关镜像：\`${image}:${VERSION}\`"
+            cat dist/RELEASE_NOTES.md
             echo
-            echo "worker 镜像：\`${worker}:${VERSION}\`"
+            echo "---"
             echo
-            echo "下载后用 \`sha256sum --check SHA256SUMS\` 核对。"
+            echo "网关镜像 / Gateway image：\`${image}:${VERSION}\`"
+            echo
+            echo "worker 镜像 / Worker image：\`${worker}:${VERSION}\`"
+            echo
+            echo "下载后用 \`sha256sum --check SHA256SUMS\` 核对。 / Verify downloads with \`sha256sum --check SHA256SUMS\`."
           } > "${notes}"
           if gh release view "${VERSION}" > /dev/null 2>&1; then
             # 同一个标签重跑：只补传文件，不动已经写好的说明。
             gh release upload "${VERSION}" dist/*.tar.gz dist/SHA256SUMS --clobber
             exit 0
           fi
-          flags=(--verify-tag --title "${VERSION}" --generate-notes --notes "$(cat "${notes}")")
+          flags=(--verify-tag --title "${VERSION}" --notes-file "${notes}")
           if [ "${PRERELEASE}" = true ]; then
             flags+=(--prerelease)
           fi

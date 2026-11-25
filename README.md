@@ -48,7 +48,7 @@ cc-cluster doctor
 
 | 变量 | 作用 | 默认 |
 | --- | --- | --- |
-| `CC_CLUSTER_VERSION` | 要装的版本；正式版写版本号，如 `v0.1.0` | `nightly`（master 上最新一次构建） |
+| `CC_CLUSTER_VERSION` | 要装的版本，如 `v0.0.1` | 最新的正式版 |
 | `CC_CLUSTER_BIN_DIR` | 二进制放在哪里 | `~/.local/bin` |
 | `CC_CLUSTER_DATA` | 数据目录 | `~/.cc-cluster` |
 | `CC_CLUSTER_NO_INIT` | 设为 `1` 时不初始化数据目录 | |
@@ -56,20 +56,23 @@ cc-cluster doctor
 手动安装是同样的几步：
 
 ```sh
-# 以 Linux amd64 的 nightly 为例；Releases 里还有 arm64 和 macOS 的包
-curl -LO https://github.com/sheyestherrr/cc-cluster/releases/download/nightly/cc-cluster_nightly_linux_amd64.tar.gz
-curl -LO https://github.com/sheyestherrr/cc-cluster/releases/download/nightly/SHA256SUMS
+# 以 Linux amd64 为例；Releases 里还有 arm64 和 macOS 的包。V 换成要装的版本
+V=v0.0.1
+curl -LO https://github.com/sheyestherrr/cc-cluster/releases/download/$V/cc-cluster_${V}_linux_amd64.tar.gz
+curl -LO https://github.com/sheyestherrr/cc-cluster/releases/download/$V/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-tar -xzf cc-cluster_nightly_linux_amd64.tar.gz
-install -m 0755 cc-cluster_nightly_linux_amd64/cc-cluster ~/.local/bin/
+tar -xzf cc-cluster_${V}_linux_amd64.tar.gz
+install -m 0755 cc-cluster_${V}_linux_amd64/cc-cluster ~/.local/bin/
 
-docker pull ghcr.io/sheyestherrr/cc-cluster-gateway:nightly
-docker pull ghcr.io/sheyestherrr/cc-cluster-worker:nightly
+docker pull ghcr.io/sheyestherrr/cc-cluster-gateway:$V
+docker pull ghcr.io/sheyestherrr/cc-cluster-worker:$V
 
 cc-cluster init \
-  --gateway-image ghcr.io/sheyestherrr/cc-cluster-gateway:nightly \
-  --worker-image ghcr.io/sheyestherrr/cc-cluster-worker:nightly
+  --gateway-image ghcr.io/sheyestherrr/cc-cluster-gateway:$V \
+  --worker-image ghcr.io/sheyestherrr/cc-cluster-worker:$V
 ```
+
+各版本改了什么见 [CHANGELOG.md](CHANGELOG.md)。
 
 </details>
 
