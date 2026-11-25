@@ -65,7 +65,7 @@ cc-cluster sub set air --url-file ./new.url     # 换地址；已登记的节点
 ## 日常使用
 
 ```sh
-cc-cluster enter work [目录]       # 进入槽位的 shell；目录默认是当前目录，不在挂载范围内时询问并挂载
+cc-cluster enter work [目录]       # 进入槽位的 shell；目录默认是当前目录，不在挂载范围内时询问并挂载；当前目录挂不了（比如就在主目录）时进第一个挂载目录
 cc-cluster claude work [目录]      # 同上，直接启动 Claude Code
 cc-cluster status                  # 网关与各槽位的现状
 cc-cluster slot stop work          # 停掉 worker，HOME 与身份保留
@@ -130,9 +130,13 @@ cc-cluster slot add research --direct "air:节点名" && cc-cluster slot up rese
 | `render <网关>` | 预览网关的核心配置（默认隐藏凭据） |
 | `exit-report [on\|off]` | 启动槽位时是否顺带查询出口 IP 的第三方评估 |
 
-`init` 的参数：`--gateway-image`、`--worker-image` 指定两个镜像（默认是本机构建的 `cc-cluster-gateway:dev` 和 `cc-cluster-worker:dev`），`--name` 是容器名前缀，同一台机器上用多个数据目录时靠它区分。
+`init` 的参数：`--gateway-image`、`--worker-image` 指定两个镜像（默认是本机构建的 `cc-cluster-gateway:dev` 和 `cc-cluster-worker:dev`），`--name` 是容器名前缀，默认是 `cc-<你的用户名>`，所以容器叫 `cc-<用户名>-w-<槽位>`、`cc-<用户名>-gw-<网关>`，同一台机器上的多个用户互不重名；一个用户用多个数据目录时各给一个不同的前缀。
 
-`slot add` 常用的参数：`--memory 8g`、`--cpus 4`、`--mount 宿主目录[:容器路径[:ro]]`、`--tz Asia/Tokyo`、`--user`、`--hostname`、`--env 名=值`、`--fake-dmi`、`--fake-proc`。
+`web` 的参数：`--port` 指定端口（默认 7878，不指定时被占用会自动往后找空闲的；指定了就只用这一个）。同一个数据目录只会有一个网页界面在运行，重复执行会打印现有的地址。
+
+`slot add` 常用的参数：`--memory 8g`、`--cpus 4`、`--mount 宿主目录[:容器路径[:ro]]`、`--tz Asia/Tokyo`、`--user`（槽内的用户名，默认 `user`）、`--hostname`、`--env 名=值`、`--fake-dmi`、`--fake-proc`。
+
+挂载的限制：不能挂你的主目录、数据目录，或包住它们的上级目录。每个挂载在槽内的 `~` 下有一个同名的快捷方式；`~` 里已有同名的文件时不建。
 
 ## 名称与备注
 
