@@ -4,7 +4,9 @@
 
 One section per release, newest first. Versions follow `vMAJOR.MINOR.PATCH`; pre-releases look like `v0.1.0-alpha.1` or `v1.0.0-rc.1`.
 
-## 未发布 / Unreleased
+## v0.0.2
+
+日常用法收成两条命令：`cc-cluster web` 配置，在项目目录里执行 `cc-cluster` 进槽位干活。
 
 - **`cc-cluster web` 默认在后台运行**：打印地址后立即返回，关掉终端不会停；重复执行只打印同一个地址，升级后再执行会换掉在跑的旧版本。`cc-cluster web stop` 停止，`--foreground` 保留原来的前台方式。
 - **访问令牌固定**：存在数据目录里，重启不再变化；浏览器长期记住，用带令牌的地址打开一次之后直接输地址就能进。没有令牌时页面会说明怎么取得链接。
@@ -14,6 +16,12 @@ One section per release, newest first. Versions follow `vMAJOR.MINOR.PATCH`; pre
 - 升级后可以更换镜像：新增 `cc-cluster images` 和系统页的“更换镜像”；重新运行安装脚本会自动把数据目录里的发布镜像换成新版本的。运行中的容器重建后才用上新镜像。
 - 发布版的 `cc-cluster init` 默认使用与自己同版本的发布镜像，不再是只有从源码构建才有的 `:dev`。
 
+升级：重新运行安装命令。已有的网关停止再启动、槽位“重建 worker”之后才用上新镜像。
+
+---
+
+Everyday use is now two commands: `cc-cluster web` to configure, and `cc-cluster` in a project directory to enter a slot and work.
+
 - **`cc-cluster web` now runs in the background by default**: it prints the address and returns, and survives closing the terminal. Running it again prints the same address; after an upgrade it replaces the old running version. Stop it with `cc-cluster web stop`; `--foreground` keeps the previous behaviour.
 - **The access token is now fixed**: it is stored in the data directory and no longer changes on restart. The browser remembers it, so after opening the tokenised address once you can use the bare address. Without a token the page explains how to get the link.
 - **Bare `cc-cluster` is now a slot picker**: it lists the slots, enters the chosen one to start Claude Code or a shell, and remembers the last choice per directory. The old text menu moved to `cc-cluster panel`.
@@ -21,6 +29,8 @@ One section per release, newest first. Versions follow `vMAJOR.MINOR.PATCH`; pre
 - Web UI: page titles are bold again; the sidebar header shows only a larger `cc-cluster`, without the tagline or the "local only" footer; the slot detail shows username and hostname separately.
 - Images can be changed after an upgrade: a new `cc-cluster images` command and a "change images" action on the System page. Re-running the install script switches a data directory that uses the published images to the new version. Running containers pick up the new image once recreated.
 - In release builds, `cc-cluster init` defaults to the published images of the same version instead of the source-build-only `:dev` tags.
+
+To upgrade, run the install command again. Existing gateways use the new image after a stop and start, and slots after "重建 worker" (recreate worker).
 
 ## v0.0.1
 

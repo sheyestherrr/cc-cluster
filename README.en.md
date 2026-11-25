@@ -61,7 +61,7 @@ Installing by hand is the same steps:
 
 ```sh
 # Linux amd64 shown; Releases also has arm64 and macOS builds. Set V to the version you want.
-V=v0.0.1
+V=v0.0.2
 curl -LO https://github.com/sheyestherrr/cc-cluster/releases/download/$V/cc-cluster_${V}_linux_amd64.tar.gz
 curl -LO https://github.com/sheyestherrr/cc-cluster/releases/download/$V/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS

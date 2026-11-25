@@ -59,7 +59,7 @@ cc-cluster doctor
 
 ```sh
 # 以 Linux amd64 为例；Releases 里还有 arm64 和 macOS 的包。V 换成要装的版本
-V=v0.0.1
+V=v0.0.2
 curl -LO https://github.com/sheyestherrr/cc-cluster/releases/download/$V/cc-cluster_${V}_linux_amd64.tar.gz
 curl -LO https://github.com/sheyestherrr/cc-cluster/releases/download/$V/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
