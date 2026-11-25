@@ -1,8 +1,10 @@
-// 本项目自己写的组件（不取自 Claude-Hydra）：落地出口 IP 的评估卡片。
+// 落地出口 IP 的评估卡片。
 // 数据是第三方接口对这个 IP 的看法，各家经常不一致，所以标记写成“命中的家数 / 给出判断的家数”。
 import { Loader2, RefreshCw } from "lucide-react";
+import { Flag } from "@/components/Flag";
 import { Tag } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import type { ExitReport } from "@/lib/api";
 import { cn, relativeTime } from "@/lib/utils";
 
@@ -42,13 +44,11 @@ function kindOf(r: ExitReport): { text: string; tone?: Tone } {
 
 function Score({ label, value, hint, pct, tone }: { label: string; value: string; hint: string; pct?: number; tone?: Tone }) {
   return (
-    <div className="min-w-0 px-4 py-3" title={hint}>
-      <div className="text-[11px] text-muted">{label}</div>
-      <div className={cn("mt-0.5 truncate font-mono text-[15px] font-semibold tabular-nums", tone ? toneText[tone] : "text-fg-2")}>{value}</div>
-      <div className="mt-1.5 h-[3px] overflow-hidden rounded-full bg-pill" aria-hidden>
-        {pct !== undefined && tone && (
-          <div className={cn("h-full origin-left rounded-full transition-transform duration-300 ease-soft motion-reduce:transition-none", toneFill[tone])} style={{ transform: `scaleX(${Math.max(0.04, Math.min(1, pct / 100))})` }} />
-        )}
+    <div className="kv" title={hint}>
+      <span>{label}</span>
+      <strong className={cn("num !text-[20px] !font-bold", tone && toneText[tone])}>{value}</strong>
+      <div className="mt-2 h-1 overflow-hidden rounded-full bg-pill" aria-hidden>
+        {pct !== undefined && tone && <div className={cn("h-full origin-left rounded-full", toneFill[tone])} style={{ transform: `scaleX(${Math.max(0.04, Math.min(1, pct / 100))})` }} />}
       </div>
     </div>
   );
@@ -62,39 +62,33 @@ interface Props {
   onRefresh?: () => void;
   /** 不能重新检测时的原因，显示在按钮的提示里。 */
   disabledWhy?: string;
+  className?: string;
 }
 
-export function ExitCard({ report: r, currentIP, busy, onRefresh, disabledWhy }: Props) {
+export function ExitCard({ report: r, currentIP, busy, onRefresh, disabledWhy, className }: Props) {
   const head = (
-    <div className="flex items-end justify-between">
-      <div className="group-label">出口评估</div>
+    <div className="panel-head">
+      <div>
+        <h3>出口评估</h3>
+        <p>第三方接口对这个出口地址的看法{r ? `，${relativeTime(r.checked_at)}检测` : ""}</p>
+      </div>
       {onRefresh && (
-        <div className="pb-1">
-          {busy ? (
-            <span className="flex h-7 items-center gap-1.5 px-2 text-[12px] text-muted"><Loader2 className="h-3.5 w-3.5 animate-spin" />检测中</span>
-          ) : (
-            <Button variant="ghost" size="sm" onClick={onRefresh} disabled={!!disabledWhy} title={disabledWhy ?? "经这个落地的链路重新查询；对方看到的来源就是这个出口"}>
-              <RefreshCw />
-              重新检测
-            </Button>
-          )}
-        </div>
+        <Button variant="outline" size="sm" onClick={onRefresh} disabled={busy || !!disabledWhy} title={disabledWhy ?? "经这个落地的链路重新查询；对方看到的来源就是这个出口"}>
+          {busy ? <Loader2 className="spin" /> : <RefreshCw />}
+          {busy ? "检测中" : "重新检测"}
+        </Button>
       )}
     </div>
   );
 
   if (!r) {
     return (
-      <section>
+      <Card className={cn("panel", className)}>
         {head}
-        <div className="list-card">
-          <div className="px-4 py-6 text-center text-[12.5px] leading-5 text-muted">
-            还没有这个出口的评估。
-            <br />
-            启动使用它的槽位时会自动查询一次，之后一天内不重复查。
-          </div>
+        <div className="empty-box plain flex-1">
+          <p className="text-center">还没有这个出口的评估。<br />启动使用它的槽位时会自动查询一次，之后一天内不重复查。</p>
         </div>
-      </section>
+      </Card>
     );
   }
 
@@ -109,61 +103,56 @@ export function ExitCard({ report: r, currentIP, busy, onRefresh, disabledWhy }:
   const stale = currentIP && currentIP !== r.ip;
 
   return (
-    <section>
+    <Card className={cn("panel", className)}>
       {head}
-      <div className="list-card">
-        <div className="px-4 py-3.5">
-          <div className="flex items-center justify-between gap-3">
-            <span className="selectable min-w-0 truncate font-mono text-[17px] font-semibold tracking-[-0.01em] tabular-nums">{r.ip}</span>
-            <Tag tone={kind.tone}>{kind.text}</Tag>
-          </div>
-          <div className="mt-1 flex items-center gap-1.5 text-[12.5px] text-fg-2">
-            {r.country_code && <span className="rounded bg-pill px-1 font-mono text-[10.5px] font-medium leading-4 text-fg-2">{r.country_code}</span>}
-            <span className="selectable min-w-0 truncate">{where || "所在地未知"}</span>
-          </div>
-          {network && <div className="selectable mt-0.5 truncate text-[11.5px] text-muted" title={network}>{network}</div>}
-          {stale && <div className="mt-2 rounded-lg bg-warn-soft px-2.5 py-1.5 text-[11.5px] leading-[18px] text-warn">这份评估是针对 {r.ip} 的；槽位最近一次复测的出口是 {currentIP}，重新检测后更新。</div>}
+      <div>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="mono num min-w-0 truncate font-display !text-[24px] font-bold tracking-[-0.01em]">{r.ip}</span>
+          <Tag tone={kind.tone}>{kind.text}</Tag>
         </div>
-
-        <div className="grid grid-cols-3 divide-x-[0.5px] divide-line">
-          <Score label="信任分" value={r.trust_score === undefined ? "—" : String(r.trust_score)} pct={r.trust_score} tone={trustTone}
-            hint="ip.net.coffee 给出的 0 到 100 的综合分，越高越好" />
-          <Score label="欺诈分" value={r.fraud_score === undefined ? "—" : String(r.fraud_score)} pct={r.fraud_score} tone={fraudTone}
-            hint="IP2Location 给出的 0 到 100 的欺诈分，越低越好" />
-          <Score label="滥用程度" value={abuse ? abuse[1] : r.abuser_score ? r.abuser_score : "—"} tone={abuse?.[2]}
-            pct={abuse ? { ok: 12, warn: 55, danger: 92 }[abuse[2]] : undefined}
-            hint={r.abuser_score ? `这个地址所在网络的滥用比例：${r.abuser_score}` : "接口没有给出"} />
+        <div className="mt-1.5 flex items-center gap-2 text-[14px] text-fg-2">
+          <Flag code={r.country_code} className="h-[14px]" />
+          <span className="min-w-0 truncate">{where || "所在地未知"}</span>
         </div>
-
-        <div className="px-4 py-3">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {r.flags.length === 0 && <Tag tone="ok">没有不利标记</Tag>}
-            {FLAG_NAMES.filter((n) => hit.has(n)).map((n) => {
-              const f = hit.get(n)!;
-              return (
-                <Tag key={n} tone={f.by.length === f.of ? "danger" : "warn"} title={`${f.by.join("、")} 把它标成了${n}；对这一项给出判断的共 ${f.of} 家`}>
-                  {n} {f.by.length}/{f.of}
-                </Tag>
-              );
-            })}
-          </div>
-          {r.flags.length > 0 && (
-            <p className="mt-2 text-[11.5px] leading-[18px] text-muted">
-              数字是命中的家数 / 给出判断的家数，各家数据经常不一致。{clean.length > 0 && `没有命中：${clean.join("、")}。`}
-            </p>
-          )}
-          {(r.user_count !== undefined || r.static_ip_score !== undefined) && (
-            <p className="mt-1 text-[11.5px] leading-[18px] text-muted" title="MaxMind 的估计：这个地址背后大约有多少用户，以及它有多固定（分数越高越固定）">
-              MaxMind 估计{r.user_count !== undefined && `约 ${r.user_count} 个用户在用这个地址`}{r.user_count !== undefined && r.static_ip_score !== undefined && "，"}{r.static_ip_score !== undefined && `固定程度 ${r.static_ip_score}`}。
-            </p>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-[11.5px] text-muted">
-          <span className="min-w-0 truncate">来源 {r.sources.join("、")}{r.timezone ? ` · ${r.timezone}` : ""}</span>
-          <span className="shrink-0" title={r.checked_at}>{relativeTime(r.checked_at)}检测</span>
-        </div>
+        {network && <div className="mt-0.5 truncate text-[12.5px] text-muted" title={network}>{network}</div>}
       </div>
-    </section>
+      {stale && <div className="callout callout-warning">这份评估是针对 {r.ip} 的；槽位最近一次复测的出口是 {currentIP}，重新检测后更新。</div>}
+
+      <div className="grid grid-cols-3 gap-2.5">
+        <Score label="信任分" value={r.trust_score === undefined ? "—" : String(r.trust_score)} pct={r.trust_score} tone={trustTone} hint="ip.net.coffee 给出的 0 到 100 的综合分，越高越好" />
+        <Score label="欺诈分" value={r.fraud_score === undefined ? "—" : String(r.fraud_score)} pct={r.fraud_score} tone={fraudTone} hint="IP2Location 给出的 0 到 100 的欺诈分，越低越好" />
+        <Score
+          label="滥用程度"
+          value={abuse ? abuse[1] : r.abuser_score ? r.abuser_score : "—"}
+          tone={abuse?.[2]}
+          pct={abuse ? { ok: 12, warn: 55, danger: 92 }[abuse[2]] : undefined}
+          hint={r.abuser_score ? `这个地址所在网络的滥用比例：${r.abuser_score}` : "接口没有给出"}
+        />
+      </div>
+
+      <div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {r.flags.length === 0 && <Tag tone="ok">没有不利标记</Tag>}
+          {FLAG_NAMES.filter((n) => hit.has(n)).map((n) => {
+            const f = hit.get(n)!;
+            return (
+              <Tag key={n} tone={f.by.length === f.of ? "danger" : "warn"} title={`${f.by.join("、")} 把它标成了${n}；对这一项给出判断的共 ${f.of} 家`}>
+                {n} {f.by.length}/{f.of}
+              </Tag>
+            );
+          })}
+        </div>
+        {r.flags.length > 0 && (
+          <p className="field-hint mt-2">数字是命中的家数 / 给出判断的家数，各家数据经常不一致。{clean.length > 0 && `没有命中：${clean.join("、")}。`}</p>
+        )}
+        {(r.user_count !== undefined || r.static_ip_score !== undefined) && (
+          <p className="field-hint" title="MaxMind 的估计：这个地址背后大约有多少用户，以及它有多固定（分数越高越固定）">
+            MaxMind 估计{r.user_count !== undefined && `约 ${r.user_count} 个用户在用这个地址`}{r.user_count !== undefined && r.static_ip_score !== undefined && "，"}{r.static_ip_score !== undefined && `固定程度 ${r.static_ip_score}`}。
+          </p>
+        )}
+      </div>
+
+      <p className="field-hint mt-auto truncate" title={r.checked_at}>来源 {r.sources.join("、")}{r.timezone ? ` · ${r.timezone}` : ""}</p>
+    </Card>
   );
 }

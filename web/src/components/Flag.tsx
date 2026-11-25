@@ -53,11 +53,11 @@ type Icon = React.ComponentType<{ className?: string }>;
 export function RegionIcon({ code, from, icon: Fallback, size = "row" }: { code?: string; from?: string; icon: Icon; size?: "row" | "detail" }) {
   const detail = size === "detail";
   return (
-    <span className={cn("flex shrink-0 items-center justify-center bg-pill text-fg-2", detail ? "h-9 w-9 rounded-[10px]" : "h-8 w-8 rounded-[9px]")}>
+    <span className={cn("tile-icon", detail && "h-11 w-11 basis-11")}>
       {hasFlag(code) ? (
-        <Flag code={code} title={regionTitle(code, from)} className={detail ? "h-[15px]" : "h-[13px]"} />
+        <Flag code={code} title={regionTitle(code, from)} className={detail ? "h-[20px]" : "h-[17px]"} />
       ) : (
-        <Fallback className={detail ? "h-[18px] w-[18px]" : "h-4 w-4"} />
+        <Fallback className={detail ? "h-5 w-5" : "h-[18px] w-[18px]"} />
       )}
     </span>
   );

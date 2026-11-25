@@ -1,6 +1,4 @@
-// 取自 Claude-Hydra（MIT）app/src/components/ui/switch.tsx，v1.1.6，原样。
-import { cn } from "@/lib/utils";
-
+// 开关：外观取自 Resin（MIT）webui 的 components/ui/Switch.tsx 与 Switch.css，属性沿用本项目原有的。
 interface SwitchProps {
   checked: boolean;
   onCheckedChange: (value: boolean) => void;
@@ -9,27 +7,11 @@ interface SwitchProps {
   label?: string;
 }
 
-/** Graphite toggle: dark track when on, quiet grey when off. */
 export function Switch({ checked, onCheckedChange, disabled, id, label }: SwitchProps) {
   return (
-    <button
-      id={id}
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onCheckedChange(!checked)}
-      className={cn(
-        "relative inline-flex h-[22px] w-[38px] shrink-0 cursor-pointer items-center rounded-full p-[2px] disabled:cursor-not-allowed disabled:opacity-40",
-        checked ? "bg-fg" : "bg-line dark:bg-pill-hover",
-      )}
-    >
-      <span
-        className={cn(
-          "pointer-events-none block h-[18px] w-[18px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,.25)] transition-transform duration-200 ease-soft",
-          checked ? "translate-x-4" : "translate-x-0",
-        )}
-      />
-    </button>
+    <label className="switch shrink-0" style={disabled ? { opacity: 0.5 } : undefined}>
+      <input id={id} type="checkbox" role="switch" className="switch-input" aria-label={label} checked={checked} disabled={disabled} onChange={(e) => onCheckedChange(e.target.checked)} />
+      <span className="switch-slider" />
+    </label>
   );
 }

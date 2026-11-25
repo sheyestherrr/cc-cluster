@@ -315,8 +315,9 @@ make repo-check     # 检查有没有把订阅地址、代理密码、数据目�
 
 本项目以 [MIT 许可](LICENSE)发布。
 
-- 网页界面的风格、基础组件和页面骨架取自 [Claude-Hydra](https://github.com/jin-yu-liu/Claude-Hydra)（MIT），订阅导入的做法也参考了它；取用的文件、改动和许可全文见 [web/NOTICE.md](web/NOTICE.md)。
-- 分享链接的解析改写自 [Resin](https://github.com/Resinat/Resin)（MIT）的订阅解析器，订阅页与总览页的信息安排也参考了它；取用的范围、改动和许可全文见 [internal/subscription/NOTICE.md](internal/subscription/NOTICE.md)。国旗图形来自 [country-flag-icons](https://gitlab.com/catamphetamine/country-flag-icons)（MIT），图表用 [recharts](https://github.com/recharts/recharts)（MIT）。
+- 特别感谢 [Resin](https://github.com/Resinat/Resin)（MIT）：网页界面的版面、配色、字体和样式取自它的前端，总览、卡片加详情页、订阅与节点表都是照它的做法安排的；分享链接的解析也改写自它的订阅解析器。取用的文件、改动和许可全文见 [web/NOTICE.md](web/NOTICE.md) 与 [internal/subscription/NOTICE.md](internal/subscription/NOTICE.md)。
+- 前端的构建配置和几个基础组件的行为沿用自 [Claude-Hydra](https://github.com/jin-yu-liu/Claude-Hydra)（MIT），界面最初的骨架和订阅导入的做法也参考了它，见 [web/NOTICE.md](web/NOTICE.md)。
+- 国旗图形来自 [country-flag-icons](https://gitlab.com/catamphetamine/country-flag-icons)（MIT），图表用 [recharts](https://github.com/recharts/recharts)（MIT），字体是 Sora 与 Manrope（SIL OFL 1.1）。
 - 网关核心是 [Mihomo](https://github.com/MetaCubeX/mihomo)。
 - 宿主桥接使用 [tmux-mcp](https://github.com/bnomei/tmux-mcp)（MIT），由 worker 镜像经 npm 安装；镜像里的 [tmux](https://github.com/tmux/tmux)（ISC）来自发行版的软件包，本机构建时改为从官方源码包编译。本仓库不含它们的代码。
 - 默认 worker 镜像的软件包选择参考了 Claude Code 官方的开发容器，Dockerfile 为重新编写。

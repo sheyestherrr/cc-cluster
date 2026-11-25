@@ -1,16 +1,21 @@
-// 图表：都用 recharts 画，这里统一坐标轴、网格、提示框和配色，页面只管给数据。
-// 配色：两个系列色是 index.css 里的 --chart-1 / --chart-2（下行、上行），状态用界面已有的 ok / warn / danger。
+// 图表：都用 recharts 画。趋势图、柱状图的样子（带框的画布、虚线网格、平滑曲线、提示框）取自 Resin（MIT）
+// webui 的 features/dashboard/DashboardPage.tsx；持续检测的时间线是本项目自己的。
+// 配色与 Resin 的看板一致：下行蓝、上行绿，变量在 styles/app.css。
+import { AlertTriangle } from "lucide-react";
 import type React from "react";
-import { useMemo } from "react";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, Rectangle, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useId, useMemo } from "react";
+import { Area, Bar, BarChart, CartesianGrid, ComposedChart, Line, Rectangle, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { HistoryPoint, SubPoint, WatchSpan, WatchStatus } from "@/lib/api";
-import { bytesText, spanText } from "@/lib/utils";
+import { bytesText, cn, spanText } from "@/lib/utils";
 
 const C1 = "var(--chart-1)";
 const C2 = "var(--chart-2)";
-const GRID = "rgb(var(--line-2))";
-const TICK = { fill: "rgb(var(--muted))", fontSize: 10.5 } as const;
+const C3 = "var(--chart-3)";
+const GRID = "var(--chart-grid)";
+const TICK = { fill: "var(--chart-tick)", fontSize: 11, fontWeight: 600 } as const;
 const AXIS = { tickLine: false, axisLine: false, tick: TICK } as const;
+const CURSOR = { stroke: "rgba(15, 94, 216, 0.34)", strokeWidth: 1 } as const;
+const MARGIN = { top: 10, right: 12, bottom: 4, left: 8 } as const;
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const hm = (ms: number) => {
@@ -60,23 +65,62 @@ function byteTicks(max: number): number[] {
   return [0, top / 4, top / 2, (top * 3) / 4, top];
 }
 
-// ---- 提示框 ----
+// ---- 画布、图例、提示框 ----
 
-function TipBox({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
+/** 带框的画布，下面一行是时间范围的两端。 */
+function Plot({ height, footer, children, className }: { height?: number; footer?: [string, string]; children: React.ReactNode; className?: string }) {
   return (
-    <div className="rounded-lg px-3 py-2 text-[11.5px] leading-[18px] backdrop-blur" style={{ background: "var(--pop)", boxShadow: "var(--shadow)" }}>
-      <div className="mb-0.5 text-muted">{title}</div>
-      {children}
+    <div className="trend-chart">
+      <div className={cn("trend-svg", className)} style={height ? { height } : undefined}>{children}</div>
+      {footer && (
+        <div className="trend-footer">
+          <span>{footer[0]}</span>
+          <span>{footer[1]}</span>
+        </div>
+      )}
     </div>
   );
 }
 
-function TipRow({ color, label, value }: { color?: string; label: string; value: React.ReactNode }) {
+/** 没有数据时占住图的位置的一句话。 */
+export function ChartEmpty({ height = 180, children }: { height?: number; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2">
-      {color && <span className="h-[2px] w-2.5 shrink-0 rounded-full" style={{ background: color }} />}
-      <span className="font-semibold text-fg" style={{ fontVariantNumeric: "tabular-nums" }}>{value}</span>
-      <span className="text-muted">{label}</span>
+    <div className="empty-box dashboard-empty" style={{ minHeight: height }}>
+      <AlertTriangle size={14} className="shrink-0" />
+      <p className="max-w-[520px] text-[13px]">{children}</p>
+    </div>
+  );
+}
+
+export function Legend({ items }: { items: { color: string; label: string }[] }) {
+  return (
+    <div className="dashboard-legend">
+      {items.map((it) => (
+        <span key={it.label}>
+          <i style={{ background: it.color }} />
+          {it.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function Tip({ title, rows, note }: { title: React.ReactNode; rows: { color?: string; label: string; value: React.ReactNode }[]; note?: React.ReactNode }) {
+  return (
+    <div className="trend-tooltip">
+      <p className="trend-tooltip-time">{title}</p>
+      <div className="trend-tooltip-list">
+        {rows.map((r) => (
+          <p key={r.label} className="trend-tooltip-row">
+            <span>
+              {r.color && <i style={{ background: r.color }} aria-hidden="true" />}
+              {r.label}
+            </span>
+            <b>{r.value}</b>
+          </p>
+        ))}
+      </div>
+      {note && <p className="mt-1.5 max-w-[220px] whitespace-normal">{note}</p>}
     </div>
   );
 }
@@ -84,20 +128,6 @@ function TipRow({ color, label, value }: { color?: string; label: string; value:
 interface TipProps<Row> {
   active?: boolean;
   payload?: readonly { dataKey?: unknown; payload?: Row }[];
-}
-
-/** 图例：线形的色键加名字，放在图的上方。 */
-export function Legend({ items }: { items: { color: string; label: string; shape?: "line" | "box" }[] }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[11.5px] text-fg-2">
-      {items.map((it) => (
-        <span key={it.label} className="flex items-center gap-1.5">
-          <span className={it.shape === "box" ? "h-2 w-2 rounded-[2px]" : "h-[2px] w-3 rounded-full"} style={{ background: it.color }} />
-          {it.label}
-        </span>
-      ))}
-    </div>
-  );
 }
 
 export const trafficLegend = [
@@ -114,8 +144,8 @@ interface TrafficRow {
   conns: number;
 }
 
-/** 流量的面积图：每一档里的上下行字节。slot 给了就只画那个槽位的。 */
-export function TrafficChart({ points, step, slot, height = 200 }: { points: HistoryPoint[]; step: number; slot?: string; height?: number }) {
+/** 流量的趋势：每一档里的上下行字节，下行带渐变的面积。slot 给了就只画那个槽位的。 */
+export function TrafficChart({ points, step, slot, height = 260 }: { points: HistoryPoint[]; step: number; slot?: string; height?: number }) {
   const rows = useMemo<TrafficRow[]>(
     () =>
       points.map((p) => {
@@ -124,51 +154,98 @@ export function TrafficChart({ points, step, slot, height = 200 }: { points: His
       }),
     [points, slot],
   );
+  const id = useId().replace(/:/g, "");
   if (!rows.length) return null;
   const from = rows[0].t;
   const to = rows[rows.length - 1].t + step * 1000;
   const { ticks, format } = timeTicks(from, to);
   const long = to - from > 2 * 24 * 3600_000;
-  const id = slot ? `tr-${slot}` : "tr-all";
+  const stamp = long ? mdhm : hm;
   const yTicks = byteTicks(rows.reduce((m, r) => Math.max(m, r.down, r.up), 0));
-  // 图矮的时候只标三个刻度。
-  const shownTicks = height < 160 ? [yTicks[0], yTicks[2], yTicks[4]] : yTicks;
 
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={rows} margin={{ top: 6, right: 4, bottom: 0, left: 0 }}>
-        <defs>
-          <linearGradient id={`${id}-1`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={C1} stopOpacity={0.3} />
-            <stop offset="100%" stopColor={C1} stopOpacity={0.02} />
-          </linearGradient>
-          <linearGradient id={`${id}-2`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={C2} stopOpacity={0.22} />
-            <stop offset="100%" stopColor={C2} stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid vertical={false} stroke={GRID} />
-        <XAxis dataKey="t" type="number" scale="time" domain={[from, to]} ticks={ticks} tickFormatter={format} {...AXIS} tickMargin={6} />
-        <YAxis width={54} domain={[0, yTicks[4]]} ticks={shownTicks} tickFormatter={(v: number) => (v ? bytesText(v) : "0")} {...AXIS} />
-        <Tooltip
-          isAnimationActive={false}
-          cursor={{ stroke: "rgb(var(--faint))", strokeWidth: 1 }}
-          content={({ active, payload }: TipProps<TrafficRow>) => {
-            const r = payload?.[0]?.payload;
-            if (!active || !r) return null;
-            return (
-              <TipBox title={`${long ? mdhm(r.t) : hm(r.t)} – ${hm(r.t + step * 1000)}`}>
-                <TipRow color={C1} value={bytesText(r.down)} label="下行" />
-                <TipRow color={C2} value={bytesText(r.up)} label="上行" />
-                {r.conns > 0 && <TipRow value={r.conns} label="条连接（峰值）" />}
-              </TipBox>
-            );
-          }}
-        />
-        <Area type="monotone" dataKey="down" stroke={C1} strokeWidth={2} fill={`url(#${id}-1)`} dot={false} activeDot={{ r: 4, stroke: "rgb(var(--card))", strokeWidth: 2 }} isAnimationActive={false} />
-        <Area type="monotone" dataKey="up" stroke={C2} strokeWidth={2} fill={`url(#${id}-2)`} dot={false} activeDot={{ r: 4, stroke: "rgb(var(--card))", strokeWidth: 2 }} isAnimationActive={false} />
-      </AreaChart>
-    </ResponsiveContainer>
+    <Plot height={height} footer={[mdhm(from), mdhm(to)]}>
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={rows} margin={MARGIN}>
+          <defs>
+            <linearGradient id={`${id}-down`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={C1} stopOpacity={0.26} />
+              <stop offset="100%" stopColor={C1} stopOpacity={0.02} />
+            </linearGradient>
+            <linearGradient id={`${id}-up`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={C2} stopOpacity={0.18} />
+              <stop offset="100%" stopColor={C2} stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke={GRID} strokeDasharray="2 4" vertical={false} />
+          <XAxis dataKey="t" type="number" scale="time" domain={[from, to]} ticks={ticks} tickFormatter={format} {...AXIS} tickMargin={6} height={24} />
+          <YAxis width={64} tickMargin={4} domain={[0, yTicks[4]]} ticks={yTicks} tickFormatter={(v: number) => (v ? bytesText(v) : "0")} {...AXIS} />
+          <Tooltip
+            isAnimationActive={false}
+            cursor={CURSOR}
+            wrapperStyle={{ outline: "none" }}
+            content={({ active, payload }: TipProps<TrafficRow>) => {
+              const r = payload?.[0]?.payload;
+              if (!active || !r) return null;
+              return (
+                <Tip
+                  title={`${stamp(r.t)} – ${hm(r.t + step * 1000)}`}
+                  rows={[
+                    { color: C1, label: "下行", value: bytesText(r.down) },
+                    { color: C2, label: "上行", value: bytesText(r.up) },
+                    ...(r.conns > 0 ? [{ label: "连接峰值", value: `${r.conns} 条` }] : []),
+                  ]}
+                />
+              );
+            }}
+          />
+          <Area type="monotone" dataKey="down" stroke="none" fill={`url(#${id}-down)`} dot={false} activeDot={false} isAnimationActive={false} />
+          <Area type="monotone" dataKey="up" stroke="none" fill={`url(#${id}-up)`} dot={false} activeDot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="down" stroke={C1} strokeWidth={2} dot={false} activeDot={{ r: 3.5, stroke: "#ffffff", strokeWidth: 1.5, fill: C1 }} isAnimationActive={false} />
+          <Line type="monotone" dataKey="up" stroke={C2} strokeWidth={2} dot={false} activeDot={{ r: 3.5, stroke: "#ffffff", strokeWidth: 1.5, fill: C2 }} isAnimationActive={false} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </Plot>
+  );
+}
+
+/** 连接数的趋势：每一档里同时连接数的峰值。 */
+export function ConnsChart({ points, step, slot, height = 260 }: { points: HistoryPoint[]; step: number; slot?: string; height?: number }) {
+  const rows = useMemo(() => points.map((p) => ({ t: Date.parse(p.t), conns: (slot ? p.slots?.[slot]?.conns : p.conns) ?? 0 })), [points, slot]);
+  const id = useId().replace(/:/g, "");
+  if (!rows.length) return null;
+  const from = rows[0].t;
+  const to = rows[rows.length - 1].t + step * 1000;
+  const { ticks, format } = timeTicks(from, to);
+  const long = to - from > 2 * 24 * 3600_000;
+  return (
+    <Plot height={height} footer={[mdhm(from), mdhm(to)]}>
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={rows} margin={MARGIN}>
+          <defs>
+            <linearGradient id={`${id}-c`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={C3} stopOpacity={0.24} />
+              <stop offset="100%" stopColor={C3} stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke={GRID} strokeDasharray="2 4" vertical={false} />
+          <XAxis dataKey="t" type="number" scale="time" domain={[from, to]} ticks={ticks.filter((_, i) => i % 2 === 0)} tickFormatter={format} {...AXIS} tickMargin={6} height={24} />
+          <YAxis width={36} tickMargin={4} allowDecimals={false} domain={[0, (max: number) => Math.max(4, Math.ceil(max * 1.15))]} {...AXIS} />
+          <Tooltip
+            isAnimationActive={false}
+            cursor={CURSOR}
+            wrapperStyle={{ outline: "none" }}
+            content={({ active, payload }: TipProps<{ t: number; conns: number }>) => {
+              const r = payload?.[0]?.payload;
+              if (!active || !r) return null;
+              return <Tip title={`${long ? mdhm(r.t) : hm(r.t)} – ${hm(r.t + step * 1000)}`} rows={[{ color: C3, label: "连接峰值", value: `${r.conns} 条` }]} />;
+            }}
+          />
+          <Area type="monotone" dataKey="conns" stroke="none" fill={`url(#${id}-c)`} dot={false} activeDot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="conns" stroke={C3} strokeWidth={2} dot={false} activeDot={{ r: 3.5, stroke: "#ffffff", strokeWidth: 1.5, fill: C3 }} isAnimationActive={false} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </Plot>
   );
 }
 
@@ -180,29 +257,43 @@ export interface Bucket {
 }
 
 /** 柱状图：各档延迟里有多少个节点。 */
-export function DelayBars({ buckets, total, height = 180 }: { buckets: Bucket[]; total: number; height?: number }) {
+export function DelayBars({ buckets, total, height = 226 }: { buckets: Bucket[]; total: number; height?: number }) {
+  const id = useId().replace(/:/g, "");
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={buckets} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
-        <CartesianGrid vertical={false} stroke={GRID} />
-        <XAxis dataKey="label" {...AXIS} tickMargin={6} interval={0} />
-        <YAxis width={30} allowDecimals={false} tickCount={4} {...AXIS} />
-        <Tooltip
-          isAnimationActive={false}
-          cursor={{ fill: "rgb(var(--pill))", opacity: 0.7 }}
-          content={({ active, payload }: TipProps<Bucket>) => {
-            const r = payload?.[0]?.payload;
-            if (!active || !r) return null;
-            return (
-              <TipBox title={`${r.label} 毫秒`}>
-                <TipRow color={C1} value={`${r.count} 个`} label={total ? `占测通的 ${Math.round((r.count / total) * 100)}%` : ""} />
-              </TipBox>
-            );
-          }}
-        />
-        <Bar dataKey="count" fill={C1} radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />
-      </BarChart>
-    </ResponsiveContainer>
+    <div className="histogram-chart" style={{ height }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={buckets} margin={{ top: 14, right: 12, bottom: 4, left: 4 }}>
+          <defs>
+            <linearGradient id={`${id}-bar`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#2388ff" stopOpacity={0.94} />
+              <stop offset="100%" stopColor="#0f5ed8" stopOpacity={0.88} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke={GRID} strokeDasharray="2 4" vertical={false} />
+          <XAxis dataKey="label" {...AXIS} tickMargin={6} interval={0} height={24} />
+          <YAxis width={34} allowDecimals={false} tickCount={5} {...AXIS} />
+          <Tooltip
+            isAnimationActive={false}
+            cursor={{ fill: "rgba(20, 112, 255, 0.08)" }}
+            wrapperStyle={{ outline: "none" }}
+            content={({ active, payload }: TipProps<Bucket>) => {
+              const r = payload?.[0]?.payload;
+              if (!active || !r) return null;
+              return (
+                <div className="histogram-tooltip">
+                  <p className="histogram-tooltip-title">{r.label} 毫秒</p>
+                  <p className="histogram-tooltip-value">
+                    节点数 {r.count}
+                    {total ? `，占测通的 ${Math.round((r.count / total) * 100)}%` : ""}
+                  </p>
+                </div>
+              );
+            }}
+          />
+          <Bar dataKey="count" fill={`url(#${id}-bar)`} radius={[6, 6, 0, 0]} maxBarSize={44} isAnimationActive={false} activeBar={{ fill: "#0d63dd", stroke: "#f2f7ff", strokeWidth: 1.2 }} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -214,51 +305,66 @@ interface SubRow {
   total: number;
 }
 
+const TOTAL_COLOR = "#9aa9c0";
+
 export const subLegend = [
   { color: C1, label: "测通" },
-  { color: "rgb(var(--faint))", label: "节点总数" },
+  { color: TOTAL_COLOR, label: "节点总数" },
 ];
 
-/** 折线图：一个订阅每次测延迟之后测通了几个。 */
-export function SubUsableChart({ points, from, to, height = 150 }: { points: SubPoint[]; from: string; to: string; height?: number }) {
+/** 一个订阅每次测延迟之后测通了几个。 */
+export function SubUsableChart({ points, from, to, height = 180 }: { points: SubPoint[]; from: string; to: string; height?: number }) {
   const rows = useMemo<SubRow[]>(() => points.map((p) => ({ t: Date.parse(p.t), usable: p.usable, total: p.total })), [points]);
+  const id = useId().replace(/:/g, "");
   const a = Date.parse(from);
   const b = Date.parse(to);
   const { ticks, format } = timeTicks(a, b);
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <LineChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-        <CartesianGrid vertical={false} stroke={GRID} />
-        <XAxis dataKey="t" type="number" scale="time" domain={[a, b]} ticks={ticks} tickFormatter={format} {...AXIS} tickMargin={6} />
-        <YAxis width={30} allowDecimals={false} tickCount={4} domain={[0, "auto"]} {...AXIS} />
-        <Tooltip
-          isAnimationActive={false}
-          cursor={{ stroke: "rgb(var(--faint))", strokeWidth: 1 }}
-          content={({ active, payload }: TipProps<SubRow>) => {
-            const r = payload?.[0]?.payload;
-            if (!active || !r) return null;
-            return (
-              <TipBox title={mdhm(r.t)}>
-                <TipRow color={C1} value={`${r.usable} 个`} label="测通" />
-                <TipRow color="rgb(var(--faint))" value={`${r.total} 个`} label="节点总数" />
-              </TipBox>
-            );
-          }}
-        />
-        <Line type="linear" dataKey="total" stroke="rgb(var(--faint))" strokeWidth={1.5} dot={false} activeDot={false} isAnimationActive={false} />
-        <Line type="linear" dataKey="usable" stroke={C1} strokeWidth={2} dot={{ r: 3.5, fill: C1, stroke: "rgb(var(--card))", strokeWidth: 2 }} activeDot={{ r: 5, stroke: "rgb(var(--card))", strokeWidth: 2 }} isAnimationActive={false} />
-      </LineChart>
-    </ResponsiveContainer>
+    <Plot height={height} footer={[mdhm(a), mdhm(b)]}>
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={rows} margin={MARGIN}>
+          <defs>
+            <linearGradient id={`${id}-u`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={C1} stopOpacity={0.2} />
+              <stop offset="100%" stopColor={C1} stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke={GRID} strokeDasharray="2 4" vertical={false} />
+          <XAxis dataKey="t" type="number" scale="time" domain={[a, b]} ticks={ticks.filter((_, i) => i % 2 === 0)} tickFormatter={format} {...AXIS} tickMargin={6} height={24} />
+          <YAxis width={36} tickMargin={4} allowDecimals={false} tickCount={4} domain={[0, "auto"]} {...AXIS} />
+          <Tooltip
+            isAnimationActive={false}
+            cursor={CURSOR}
+            wrapperStyle={{ outline: "none" }}
+            content={({ active, payload }: TipProps<SubRow>) => {
+              const r = payload?.[0]?.payload;
+              if (!active || !r) return null;
+              return (
+                <Tip
+                  title={mdhm(r.t)}
+                  rows={[
+                    { color: C1, label: "测通", value: `${r.usable} 个` },
+                    { color: TOTAL_COLOR, label: "节点总数", value: `${r.total} 个` },
+                  ]}
+                />
+              );
+            }}
+          />
+          <Area type="monotone" dataKey="usable" stroke="none" fill={`url(#${id}-u)`} dot={false} activeDot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="total" stroke={TOTAL_COLOR} strokeWidth={1.6} strokeDasharray="4 3" dot={false} activeDot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="usable" stroke={C1} strokeWidth={2} dot={{ r: 3, fill: C1, stroke: "#ffffff", strokeWidth: 1.5 }} activeDot={{ r: 4.5, stroke: "#ffffff", strokeWidth: 1.5, fill: C1 }} isAnimationActive={false} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </Plot>
   );
 }
 
 // ---- 持续检测的时间线 ----
 
-// “连不上”在浅色下不用界面的 warn（偏棕，和红色的“出口变了”挨在一起分不清），另取一档更黄的。
-const watchColor: Record<WatchStatus, string> = { ok: "rgb(var(--ok))", unreachable: "var(--watch-warn)", changed: "rgb(var(--danger))" };
+const watchColor: Record<WatchStatus, string> = { ok: "var(--watch-ok)", unreachable: "var(--watch-warn)", changed: "var(--watch-bad)" };
 const watchText: Record<WatchStatus, string> = { ok: "正常", unreachable: "连不上", changed: "出口变了" };
 
-export const watchLegend = (["ok", "unreachable", "changed"] as const).map((s) => ({ color: watchColor[s], label: watchText[s], shape: "box" as const }));
+export const watchLegend = (["ok", "unreachable", "changed"] as const).map((s) => ({ color: watchColor[s], label: watchText[s] }));
 
 interface Segment {
   /** 没有检测的空档是 null。 */
@@ -324,42 +430,50 @@ export function WatchTimeline({ slots, watch, from, to }: { slots: string[]; wat
   const stamp = (iso: string) => (long ? mdhm(Date.parse(iso)) : hm(Date.parse(iso)));
 
   return (
-    <ResponsiveContainer width="100%" height={rows.length * 28 + 30}>
-      <BarChart data={rows} layout="vertical" margin={{ top: 2, right: 6, bottom: 0, left: 0 }} barCategoryGap={0}>
-        <XAxis type="number" domain={[0, total]} ticks={ticks.map((t) => t - a)} tickFormatter={(v: number) => format(a + v)} {...AXIS} tickMargin={4} />
-        <YAxis type="category" dataKey="slot" width={84} {...AXIS} tick={{ fill: "rgb(var(--fg-2))", fontSize: 11.5 }} />
-        <Tooltip
-          shared={false}
-          isAnimationActive={false}
-          cursor={false}
-          content={({ active, payload }: TipProps<WatchRow>) => {
-            const hit = payload?.[0];
-            const span = hit?.payload?.segs[Number(String(hit.dataKey).slice(1))]?.span;
-            if (!active || !hit?.payload || !span) return null;
-            return (
-              <TipBox title={`${hit.payload.slot} · ${stamp(span.from)} – ${stamp(span.to)}`}>
-                <TipRow color={watchColor[span.status]} value={watchText[span.status]} label={`持续 ${spanText(Date.parse(span.to) - Date.parse(span.from))}，检测 ${span.checks} 次`} />
-                {span.exit_ip && <TipRow value={span.exit_ip} label="出口" />}
-              </TipBox>
-            );
-          }}
-        />
-        {Array.from({ length: width }, (_, i) => (
-          <Bar
-            key={i}
-            dataKey={`s${i}`}
-            stackId="w"
-            barSize={10}
+    <Plot height={rows.length * 38 + 44} footer={[mdhm(a), mdhm(b)]}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={rows} layout="vertical" margin={{ top: 10, right: 14, bottom: 4, left: 8 }} barCategoryGap={0}>
+          <CartesianGrid stroke={GRID} strokeDasharray="2 4" horizontal={false} />
+          <XAxis type="number" domain={[0, total]} ticks={ticks.map((t) => t - a)} tickFormatter={(v: number) => format(a + v)} {...AXIS} tickMargin={6} height={24} />
+          <YAxis type="category" dataKey="slot" width={92} {...AXIS} tick={{ fill: "#3f4b63", fontSize: 12, fontWeight: 600 }} />
+          <Tooltip
+            shared={false}
             isAnimationActive={false}
-            shape={(p: { x?: number; y?: number; width?: number; height?: number; payload?: WatchRow }) => {
-              const span = p.payload?.segs[i]?.span;
-              if (!span || !p.width) return <g />;
-              // 相邻两段之间留 1 像素的空，不描边。
-              return <Rectangle x={(p.x ?? 0) + 0.5} y={p.y} width={Math.max(p.width - 1, 1)} height={p.height} radius={2} fill={watchColor[span.status]} />;
+            cursor={false}
+            wrapperStyle={{ outline: "none" }}
+            content={({ active, payload }: TipProps<WatchRow>) => {
+              const hit = payload?.[0];
+              const span = hit?.payload?.segs[Number(String(hit.dataKey).slice(1))]?.span;
+              if (!active || !hit?.payload || !span) return null;
+              return (
+                <Tip
+                  title={`${hit.payload.slot} · ${stamp(span.from)} – ${stamp(span.to)}`}
+                  rows={[
+                    { color: watchColor[span.status], label: watchText[span.status], value: `持续 ${spanText(Date.parse(span.to) - Date.parse(span.from))}` },
+                    { label: "检测", value: `${span.checks} 次` },
+                    ...(span.exit_ip ? [{ label: "出口", value: span.exit_ip }] : []),
+                  ]}
+                />
+              );
             }}
           />
-        ))}
-      </BarChart>
-    </ResponsiveContainer>
+          {Array.from({ length: width }, (_, i) => (
+            <Bar
+              key={i}
+              dataKey={`s${i}`}
+              stackId="w"
+              barSize={16}
+              isAnimationActive={false}
+              shape={(p: { x?: number; y?: number; width?: number; height?: number; payload?: WatchRow }) => {
+                const span = p.payload?.segs[i]?.span;
+                if (!span || !p.width) return <g />;
+                // 相邻两段之间留 1 像素的空，不描边。
+                return <Rectangle x={(p.x ?? 0) + 0.5} y={p.y} width={Math.max(p.width - 1, 1.5)} height={p.height} radius={4} fill={watchColor[span.status]} />;
+              }}
+            />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    </Plot>
   );
 }

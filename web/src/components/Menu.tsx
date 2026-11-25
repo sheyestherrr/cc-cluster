@@ -1,4 +1,4 @@
-// 取自 Claude-Hydra（MIT）app/src/components/Menu.tsx，v1.1.6；只给菜单项加了不换行。
+// 跟在触发按钮下面的小菜单：点外面、按 Esc 或选中一项后关闭。
 import type React from "react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -11,7 +11,6 @@ export interface MenuEntry {
   disabled?: boolean;
 }
 
-/** A small dropdown anchored to its trigger. Closes on outside click, Escape or a choice. */
 export function Menu({ trigger, items }: { trigger: (toggle: () => void) => ReactNode; items: (MenuEntry | "sep")[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -29,30 +28,26 @@ export function Menu({ trigger, items }: { trigger: (toggle: () => void) => Reac
   }, [open]);
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative" onClick={(e) => e.stopPropagation()}>
       {trigger(() => setOpen((v) => !v))}
       {open && (
-        <div
-          style={{ background: "var(--pop)" }}
-          className="absolute right-0 top-full z-40 mt-1.5 min-w-[176px] origin-top-right animate-pop-in rounded-[10px] p-1 shadow-pop backdrop-blur-md"
-        >
+        <div className="menu-pop" role="menu">
           {items.map((item, i) =>
             item === "sep" ? (
-              <div key={i} className="mx-2 my-1 h-px bg-line-2" />
+              <div key={i} className="menu-sep" />
             ) : (
               <button
                 key={item.label}
+                type="button"
+                role="menuitem"
                 disabled={item.disabled}
                 onClick={() => {
                   setOpen(false);
                   item.onSelect();
                 }}
-                className={cn(
-                  "flex h-7 w-full items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-[13px] disabled:opacity-35",
-                  item.danger ? "text-danger hover:bg-danger-soft" : "text-fg hover:bg-pill",
-                )}
+                className={cn("menu-item", item.danger && "danger")}
               >
-                {item.icon && <item.icon className="h-[15px] w-[15px] shrink-0 opacity-60" />}
+                {item.icon && <item.icon className="h-4 w-4 shrink-0 opacity-70" />}
                 {item.label}
               </button>
             ),

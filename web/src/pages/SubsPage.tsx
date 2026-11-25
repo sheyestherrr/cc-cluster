@@ -1,18 +1,20 @@
-// 订阅页：左边是订阅，右边是所选订阅的状态和它的节点列表（筛选、测延迟、登记为节点）。
-// 页面的骨架（列表 + 详情栏、分组表单）沿用 NetworkPage.tsx 的写法；“订阅表 + 节点表 + 筛选栏”的
-// 信息安排参考了 Resin（MIT）的订阅页与节点池页，代码是按本项目的组件重新写的。
-import { FileText, Gauge, Loader2, Pencil, Plus, RefreshCw, Rss, Trash2 } from "lucide-react";
+// 订阅：一格一张卡片，点开是这个订阅的详情页——状态，和它的节点表（筛选、测延迟、登记为节点）。
+// 版面与样式取自 Resin（MIT）webui 的订阅页与节点池页（卡片、筛选栏、数据表），内容是本项目的。
+import { FileText, Gauge, Loader2, MoreHorizontal, Pencil, Plus, RefreshCw, Rss, Trash2 } from "lucide-react";
+import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Flag, RegionIcon, regionName } from "@/components/Flag";
+import { Field, FormGrid } from "@/components/Form";
+import { Menu, type MenuEntry } from "@/components/Menu";
 import { NOTE_PLACEHOLDER, NoteDialog, type NoteTarget } from "@/components/NoteDialog";
-import { DetailEmpty, DetailHeader, ErrorBox, KeyValue, Line, Page, PageHeader, Tag } from "@/components/PageHeader";
-import { RowShell, type Selectable } from "@/components/RowShell";
+import { ErrorBox, Page, PageHeader, Tabs, Tag } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Badge, Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { ApiError, ID_HINT, NOTE_MAX, api, errorText, type Delay, type RefreshResult, type Role, type State, type Sub } from "@/lib/api";
-import { cn, relativeTime } from "@/lib/utils";
+import { relativeTime } from "@/lib/utils";
 
 interface Props {
   state: State | null;
@@ -48,6 +50,48 @@ function refreshText(id: string, d: RefreshResult): string {
   return parts.join("；");
 }
 
+interface SubActions {
+  reload: () => void;
+  edit: () => void;
+  note: () => void;
+  remove: () => void;
+  every: (minutes: number) => void;
+}
+
+function subMenu(s: Sub, a: SubActions): (MenuEntry | "sep")[] {
+  return [
+    { label: s.local ? "重新解析" : "立即刷新", icon: RefreshCw, onSelect: a.reload },
+    { label: "修改来源…", icon: FileText, onSelect: a.edit },
+    { label: "备注…", icon: Pencil, onSelect: a.note },
+    "sep",
+    { label: "删除…", icon: Trash2, danger: true, onSelect: a.remove },
+  ];
+}
+
+function MoreMenu({ items, disabled }: { items: (MenuEntry | "sep")[]; disabled?: boolean }) {
+  return (
+    <Menu
+      trigger={(toggle) => (
+        <Button variant="ghost" size="icon" aria-label="更多" onClick={toggle} disabled={disabled}>
+          <MoreHorizontal />
+        </Button>
+      )}
+      items={items}
+    />
+  );
+}
+
+function SubBadges({ s }: { s: Sub }) {
+  return (
+    <>
+      <Badge variant={s.local ? "neutral" : "info"}>{s.local ? "本地" : "远程"}</Badge>
+      {!!s.every_min && <Badge variant="neutral" title="在 cc-cluster web 或 cc-cluster watch 运行期间自动刷新">{everyText(s.every_min)}</Badge>}
+      {s.last_error && <Badge variant="danger" title={s.last_error}>刷新失败</Badge>}
+      {!!s.skipped && <Badge variant="warning" title="协议不支持、写法不对，或者用了核心不支持的传输方式">{s.skipped} 行没认出</Badge>}
+    </>
+  );
+}
+
 export function SubsPage({ state, loadError, refresh }: Props) {
   const toast = useToast();
   const [busy, setBusy] = useState<Record<string, string>>({});
@@ -55,7 +99,8 @@ export function SubsPage({ state, loadError, refresh }: Props) {
   const [editing, setEditing] = useState<Editing>(null);
   const [removing, setRemoving] = useState<Sub | null>(null);
   const [noting, setNoting] = useState<NoteTarget | null>(null);
-  const [sel, setSel] = useState<string | null>(null);
+  /** 打开着详情页的订阅；null 时显示卡片网格。 */
+  const [open, setOpen] = useState<string | null>(null);
 
   const run = async (id: string, label: string, action: () => Promise<unknown>, done?: string | ((r: unknown) => string)) => {
     setBusy((b) => ({ ...b, [id]: label }));
@@ -74,84 +119,45 @@ export function SubsPage({ state, loadError, refresh }: Props) {
     }
   };
 
-  const reload = (s: Sub) =>
-    run(s.id, s.local ? "解析中" : "刷新中", () => api.refreshSub(s.id), (r) => refreshText(s.id, (r as Awaited<ReturnType<typeof api.refreshSub>>).data));
+  const actions = (s: Sub): SubActions => ({
+    reload: () => run(s.id, s.local ? "解析中" : "刷新中", () => api.refreshSub(s.id), (r) => refreshText(s.id, (r as Awaited<ReturnType<typeof api.refreshSub>>).data)),
+    edit: () => setEditing({ mode: "edit", sub: s }),
+    note: () => setNoting({ kind: "subs", what: "订阅", id: s.id, note: s.note }),
+    remove: () => setRemoving(s),
+    every: (minutes) => run(s.id, "保存中", () => api.setSubEvery(s.id, minutes), minutes ? `订阅 ${s.id} ${everyText(minutes)}自动刷新一次` : `订阅 ${s.id} 不再自动刷新`),
+  });
 
   const subs = state?.subs ?? [];
-  const current = subs.find((s) => s.id === sel) ?? subs[0];
+  const current = open ? subs.find((s) => s.id === open) : undefined;
 
-  const side = current && state ? (
-    <SubPanel
-      key={current.id}
-      s={current}
-      state={state}
-      busy={busy[current.id]}
-      refresh={refresh}
-      onReload={() => reload(current)}
-      onEdit={() => setEditing({ mode: "edit", sub: current })}
-      onEvery={(minutes) => run(current.id, "保存中", () => api.setSubEvery(current.id, minutes), minutes ? `订阅 ${current.id} ${everyText(minutes)}自动刷新一次` : `订阅 ${current.id} 不再自动刷新`)}
-    />
-  ) : (
-    <DetailEmpty>{state ? "添加订阅后，这里列出它的节点：可以按地区和协议筛选、测延迟，再把选中的登记为中转或落地。" : "读取中…"}</DetailEmpty>
+  const alerts = (
+    <>
+      {loadError && <ErrorBox text={loadError} />}
+      {failure && <ErrorBox text={failure.text} log={failure.log} onClose={() => setFailure(null)} />}
+    </>
   );
 
-  return (
-    <Page side={side}>
-      <PageHeader
-        title="订阅"
-        subtitle="订阅是一批现成的节点：可以是机场给的订阅地址，也可以是直接贴进来的分享链接。从里面挑出来登记的才是槽位用的节点。"
-        actions={<Button size="sm" onClick={() => setEditing({ mode: "add" })}><Plus />添加订阅</Button>}
-      />
-
-      <div className="space-y-5 px-5">
-        {loadError && <ErrorBox text={loadError} />}
-        {failure && <ErrorBox text={failure.text} log={failure.log} onClose={() => setFailure(null)} />}
-
-        {state && !subs.length && (
-          <button onClick={() => setEditing({ mode: "add" })} className="flex w-full flex-col items-center gap-1.5 rounded-xl border border-dashed border-line px-4 py-10 text-muted hover:border-faint hover:text-fg active:!scale-100">
-            <Rss className="h-5 w-5" />
-            <span className="text-[13px] font-medium">还没有订阅</span>
-            <span className="text-[12px]">填一个订阅地址，或者把 ss://、vmess://、vless://、trojan:// 这类分享链接直接贴进来</span>
-          </button>
-        )}
-
-        {!!subs.length && (
-          <section>
-            <div className="group-label">订阅</div>
-            <div className="list-card">
-              {subs.map((s) => (
-                <SubRow
-                  key={s.id}
-                  s={s}
-                  selected={current?.id === s.id}
-                  onSelect={() => setSel(s.id)}
-                  busy={busy[s.id]}
-                  onReload={() => reload(s)}
-                  onEdit={() => setEditing({ mode: "edit", sub: s })}
-                  onNote={() => setNoting({ kind: "subs", what: "订阅", id: s.id, note: s.note })}
-                  onDelete={() => setRemoving(s)}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-      </div>
-
+  const dialogs = (
+    <>
       <SourceDialog
         editing={editing}
         onClose={() => setEditing(null)}
         onDone={async (id, text) => {
           setEditing(null);
-          setSel(id);
+          setOpen(id);
           toast(text);
           await refresh();
         }}
       />
-      <NoteDialog target={noting} onClose={() => setNoting(null)} onSaved={(text) => {
-        setNoting(null);
-        toast(text);
-        void refresh();
-      }} />
+      <NoteDialog
+        target={noting}
+        onClose={() => setNoting(null)}
+        onSaved={(text) => {
+          setNoting(null);
+          toast(text);
+          void refresh();
+        }}
+      />
       <Dialog
         open={!!removing}
         onClose={() => setRemoving(null)}
@@ -165,6 +171,7 @@ export function SubsPage({ state, loadError, refresh }: Props) {
               onClick={() => {
                 const s = removing!;
                 setRemoving(null);
+                if (open === s.id) setOpen(null);
                 run(s.id, "删除中", () => api.removeSub(s.id), `已删除订阅 ${s.id}`);
               }}
             >
@@ -173,43 +180,91 @@ export function SubsPage({ state, loadError, refresh }: Props) {
           </>
         }
       />
+    </>
+  );
+
+  if (state && current) {
+    return (
+      <>
+        <SubDetail key={current.id} s={current} state={state} busy={busy[current.id]} a={actions(current)} alerts={alerts} refresh={refresh} onBack={() => setOpen(null)} />
+        {dialogs}
+      </>
+    );
+  }
+
+  return (
+    <Page className="platform-page">
+      <PageHeader
+        title="订阅"
+        subtitle="订阅是一批现成的节点：可以是机场给的订阅地址，也可以是直接贴进来的分享链接。从里面挑出来登记的才是槽位用的节点。"
+        actions={<Button onClick={() => setEditing({ mode: "add" })}><Plus />添加订阅</Button>}
+      />
+      {alerts}
+
+      <Card className="platform-cards-container">
+        {!state && !loadError && <p className="muted">正在读取订阅…</p>}
+
+        {state && !subs.length && (
+          <div className="empty-box plain flex-col !gap-3 !py-12">
+            <Rss size={20} />
+            <p className="text-[15px] font-semibold text-fg">还没有订阅</p>
+            <p className="max-w-[480px] text-center text-[13px]">填一个订阅地址，或者把 ss://、vmess://、vless://、trojan:// 这类分享链接直接贴进来。</p>
+            <Button onClick={() => setEditing({ mode: "add" })}>添加订阅</Button>
+          </div>
+        )}
+
+        {!!subs.length && (
+          <div className="tile-grid">
+            {subs.map((s) => <SubTile key={s.id} s={s} busy={busy[s.id]} a={actions(s)} onOpen={() => setOpen(s.id)} />)}
+          </div>
+        )}
+      </Card>
+      {dialogs}
     </Page>
   );
 }
 
-function SubRow({ s, busy, onReload, onEdit, onNote, onDelete, ...sel }: Selectable & { s: Sub; busy?: string; onReload: () => void; onEdit: () => void; onNote: () => void; onDelete: () => void }) {
-  const tested = s.tested_at ? `${s.usable} 个测通（${relativeTime(s.tested_at)}测）` : "还没测过延迟";
+function SubTile({ s, busy, a, onOpen }: { s: Sub; busy?: string; a: SubActions; onOpen: () => void }) {
   return (
-    <RowShell
-      {...sel}
-      icon={s.local ? FileText : Rss}
-      title={s.id}
-      note={s.note}
-      tags={
-        <>
-          <Tag>{s.local ? "本地" : "远程"}</Tag>
-          {!!s.every_min && <Tag title="在 cc-cluster web 或 cc-cluster watch 运行期间自动刷新">{everyText(s.every_min)}</Tag>}
-          {s.last_error && <Tag tone="danger" title={s.last_error}>刷新失败</Tag>}
-          {!!s.skipped && <Tag tone="warn" title="协议不支持、写法不对，或者用了核心不支持的传输方式">{s.skipped} 行没认出</Tag>}
-        </>
-      }
-      detail={`${s.count} 个节点 · ${tested} · ${relativeTime(s.fetched_at)}更新`}
-      busy={busy}
-      menu={[
-        { label: s.local ? "重新解析" : "立即刷新", icon: RefreshCw, onSelect: onReload },
-        { label: "修改来源…", icon: FileText, onSelect: onEdit },
-        { label: "备注…", icon: Pencil, onSelect: onNote },
-        "sep",
-        { label: "删除…", icon: Trash2, danger: true, onSelect: onDelete },
-      ]}
-    />
+    <div
+      className="tile"
+      role="button"
+      tabIndex={0}
+      aria-label={`订阅 ${s.id}，打开详情`}
+      onClick={(e) => !(e.target as HTMLElement).closest("button, [role=menu]") && onOpen()}
+      onKeyDown={(e) => e.target === e.currentTarget && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
+    >
+      <div className="tile-head">
+        <RegionIcon icon={s.local ? FileText : Rss} />
+        <div className="tile-title">
+          <p title={s.note}>{s.id}{s.note && <span className="ml-2 font-sans text-[12px] font-normal text-muted">{s.note}</span>}</p>
+          <p>{relativeTime(s.fetched_at)}更新</p>
+        </div>
+        <MoreMenu items={subMenu(s, a)} disabled={!!busy} />
+      </div>
+
+      <div className="tile-figures">
+        <div className="tile-figure"><span>节点</span><strong className="num">{s.count}</strong></div>
+        <div className="tile-figure"><span>测通</span><strong className="num">{s.tested_at ? s.usable : "—"}</strong></div>
+        <div className="tile-figure"><span>上次测速</span><strong>{s.tested_at ? relativeTime(s.tested_at) : "没测过"}</strong></div>
+      </div>
+
+      <div className="platform-tile-foot">
+        <div className="platform-tile-facts min-w-0 flex-1"><SubBadges s={s} /></div>
+        {busy ? (
+          <Button variant="outline" size="sm" disabled><Loader2 className="spin" />{busy}</Button>
+        ) : (
+          <Button variant="outline" size="sm" onClick={a.reload}><RefreshCw />{s.local ? "重新解析" : "刷新"}</Button>
+        )}
+      </div>
+    </div>
   );
 }
 
 type Sort = "delay" | "name";
 
-/** 详情栏：一个订阅的状态，和它的节点列表。 */
-function SubPanel({ s, state, busy, refresh, onReload, onEdit, onEvery }: { s: Sub; state: State; busy?: string; refresh: () => Promise<void>; onReload: () => void; onEdit: () => void; onEvery: (minutes: number) => void }) {
+/** 详情页：一个订阅的状态，和它的节点表。 */
+function SubDetail({ s, state, busy, a, alerts, refresh, onBack }: { s: Sub; state: State; busy?: string; a: SubActions; alerts: React.ReactNode; refresh: () => Promise<void>; onBack: () => void }) {
   const landings = state.nodes.filter((n) => n.role === "landing");
   const used = state.nodes.filter((n) => n.source?.sub === s.id);
   const [nodes, setNodes] = useState<Delay[] | null>(null);
@@ -271,7 +326,7 @@ function SubPanel({ s, state, busy, refresh, onReload, onEdit, onEvery }: { s: S
         (!type || d.type === type) &&
         (!q || d.name.toLowerCase().includes(q) || d.server.toLowerCase().includes(q) || (d.nodes ?? []).some((n) => n.includes(q))),
     );
-    if (sort === "name") list.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+    if (sort === "name") list.sort((x, y) => x.name.localeCompare(y.name, "zh-CN"));
     return list;
   }, [nodes, query, region, type, sort, hideDead, hideInfo]);
 
@@ -281,135 +336,176 @@ function SubPanel({ s, state, busy, refresh, onReload, onEdit, onEvery }: { s: S
   const LIMIT = 150;
   const visible = showAll ? shown : shown.slice(0, LIMIT);
   const everyOptions = EVERY.some(([m]) => m === (s.every_min ?? 0)) ? EVERY : [...EVERY, [s.every_min!, everyText(s.every_min)] as [number, string]];
+  const format = s.format === "links" ? "分享链接" : s.format === "clash" ? "Clash 格式" : "";
 
   return (
-    <>
-      <DetailHeader
-        badge={<RegionIcon icon={s.local ? FileText : Rss} size="detail" />}
+    <Page className="platform-page platform-detail-page">
+      <PageHeader
+        back={{ label: "全部订阅", onClick: onBack }}
         title={s.id}
-        note={s.note}
-        status={<span className="truncate">{s.local ? "本地订阅" : "远程订阅"} · {s.count} 个节点{s.format === "links" ? " · 分享链接" : s.format === "clash" ? " · Clash 格式" : ""}</span>}
+        subtitle={s.note || "这个订阅的状态和它的节点：筛选、测延迟，再把选中的登记为中转或落地。"}
         actions={
-          busy ? (
-            <span className="flex h-7 items-center gap-1.5 px-2 text-[12.5px] text-muted"><Loader2 className="h-3.5 w-3.5 animate-spin" />{busy}</span>
-          ) : (
-            <>
-              {!s.local && <Button variant="outline" size="sm" onClick={onReload}><RefreshCw />刷新</Button>}
-              <Button variant="outline" size="sm" onClick={onEdit}>{s.local ? "添加或替换节点…" : "换地址…"}</Button>
-            </>
-          )
+          <>
+            {busy ? (
+              <Button variant="outline" disabled><Loader2 className="spin" />{busy}</Button>
+            ) : (
+              <>
+                {!s.local && <Button variant="outline" onClick={a.reload}><RefreshCw />刷新</Button>}
+                <Button variant="outline" onClick={a.edit}><FileText />{s.local ? "添加或替换节点" : "换地址"}</Button>
+              </>
+            )}
+            <MoreMenu items={subMenu(s, a)} disabled={!!busy} />
+          </>
         }
       />
+      {alerts}
+      {s.last_error && <ErrorBox text={`${relativeTime(s.checked_at)}刷新失败：${s.last_error}。下面是${relativeTime(s.fetched_at)}成功取到的节点。`} />}
 
-      <div className="space-y-5">
-        {s.last_error && (
-          <ErrorBox text={`${relativeTime(s.checked_at)}刷新失败：${s.last_error}。下面是${relativeTime(s.fetched_at)}成功取到的节点。`} />
-        )}
-
-        <section>
-          <div className="group-label">状态</div>
-          <div className="list-card">
-            <KeyValue k="更新" v={`${relativeTime(s.fetched_at)}${s.skipped ? `；有 ${s.skipped} 行没能认出来（协议不支持、写法不对，或传输方式核心不支持）` : ""}`} plain />
-            <KeyValue k="延迟" v={s.tested_at ? `${s.usable} 个测通（${relativeTime(s.tested_at)}测）` : "还没测过"} plain />
-            <KeyValue k="已选用" v={used.length ? used.map((n) => `${n.id}（${n.source!.name}）`).join("、") : "还没有从它里面选用节点"} plain />
+      <Card className="platform-directory-card platform-detail-header-card">
+        <div className="platform-detail-header-main">
+          <div className="flex min-w-0 items-center gap-3">
+            <RegionIcon icon={s.local ? FileText : Rss} size="detail" />
+            <div className="min-w-0">
+              <h3 className="truncate">{s.count} 个节点</h3>
+              <p>{s.local ? "本地订阅" : "远程订阅"}{format && ` · ${format}`} · {relativeTime(s.fetched_at)}更新{s.skipped ? ` · 有 ${s.skipped} 行没能认出来` : ""}</p>
+            </div>
+          </div>
+          <div className="platform-detail-header-meta">
+            <div className="flex flex-wrap justify-end gap-1.5"><SubBadges s={s} /></div>
+            <span>{s.tested_at ? `${s.usable} 个测通，${relativeTime(s.tested_at)}测` : "还没测过延迟"}</span>
+          </div>
+        </div>
+        <div className="platform-detail-header-footer">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <div className="min-w-0 flex-1 text-[13px] text-muted">
+              已选用：<span className="font-semibold text-fg">{used.length ? used.map((n) => `${n.id}（${n.source!.name}）`).join("、") : "还没有从它里面选用节点"}</span>
+            </div>
             {!s.local && (
-              <Line label="自动刷新">
-                <Select aria-label="自动刷新" value={s.every_min ?? 0} disabled={!!busy} onChange={(e) => onEvery(Number(e.target.value))}>
+              <label className="flex shrink-0 items-center gap-2 text-[13px] text-muted" title="在 cc-cluster web（或 cc-cluster watch）运行期间进行，跟着持续检测的节奏。已登记的节点会跟着订阅更新，重新启动网关或槽位后生效。">
+                自动刷新
+                <Select aria-label="自动刷新" className="field-sm !w-auto" value={s.every_min ?? 0} disabled={!!busy} onChange={(e) => a.every(Number(e.target.value))}>
                   {everyOptions.map(([m, label]) => <option key={m} value={m}>{label}</option>)}
                 </Select>
-              </Line>
+              </label>
             )}
           </div>
-          {!s.local && <p className="mt-1.5 px-1 text-[11.5px] leading-5 text-muted">自动刷新在这个页面所在的 cc-cluster web（或 cc-cluster watch）运行期间进行，跟着持续检测的节奏。已登记的节点会跟着订阅更新，重新启动网关或槽位后生效。</p>}
-        </section>
+        </div>
+      </Card>
 
-        <section>
-          <div className="group-label">节点</div>
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Select aria-label="测速方式" value={via} disabled={testing} onChange={(e) => setVia(e.target.value)}>
-                <option value="">只测节点本身</option>
-                {landings.map((n) => <option key={n.id} value={n.id}>接上落地 {n.id} 测整条链路</option>)}
-              </Select>
-              <Button variant="outline" onClick={test} disabled={testing || !nodes} className="shrink-0">
-                {testing ? <Loader2 className="animate-spin" /> : <Gauge />}
-                {testing ? "测速中…" : "全部测延迟"}
-              </Button>
-            </div>
-            <p className="text-[11.5px] leading-5 text-muted">
+      <Card className="platform-cards-container flex flex-col gap-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="platform-drawer-section-head min-w-[260px] flex-1">
+            <h4>节点</h4>
+            <p>
               {testedVia === null
                 ? "节点自己能用，不代表它肯转发到你的落地。挑中转时选一个落地再测，测的就是“节点 → 落地”的整条链路。"
                 : testedVia
                   ? `下面是经节点再到落地 ${testedVia} 的延迟，只在这里显示，不保存。`
                   : "下面是节点自身的延迟，已保存在订阅上。"}
             </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Select aria-label="测速方式" className="!w-auto" value={via} disabled={testing} onChange={(e) => setVia(e.target.value)}>
+              <option value="">只测节点本身</option>
+              {landings.map((n) => <option key={n.id} value={n.id}>接上落地 {n.id} 测整条链路</option>)}
+            </Select>
+            <Button onClick={test} disabled={testing || !nodes}>
+              {testing ? <Loader2 className="spin" /> : <Gauge />}
+              {testing ? "测速中…" : "全部测延迟"}
+            </Button>
+          </div>
+        </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Input aria-label="搜索节点" placeholder="搜索名称、服务器或已登记的节点" value={query} onChange={(e) => setQuery(e.target.value)} className="min-w-[160px] flex-1" />
-              <Select aria-label="地区" value={region} onChange={(e) => setRegion(e.target.value)} className="w-auto">
-                <option value="">全部地区</option>
-                {regions.filter(([code]) => code).map(([code, n]) => <option key={code} value={code}>{regionName(code)}（{n}）</option>)}
-                {regions.some(([code]) => !code) && <option value="?">认不出地区（{regions.find(([code]) => !code)![1]}）</option>}
-              </Select>
-              {types.length > 1 && (
-                <Select aria-label="协议" value={type} onChange={(e) => setType(e.target.value)} className="w-auto">
-                  <option value="">全部协议</option>
-                  {types.map(([t, n]) => <option key={t} value={t}>{t}（{n}）</option>)}
-                </Select>
-              )}
-              <Select aria-label="排序" value={sort} onChange={(e) => setSort(e.target.value as Sort)} className="w-auto">
-                <option value="delay">按延迟</option>
-                <option value="name">按名称</option>
-              </Select>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-fg-2">
-              <label className="flex cursor-pointer items-center gap-1.5">
-                <input type="checkbox" checked={hideDead} onChange={(e) => setHideDead(e.target.checked)} />
-                隐藏不通的{dead ? `（${dead}）` : ""}
-              </label>
-              <label className="flex cursor-pointer items-center gap-1.5" title="订阅服务常把剩余流量、到期时间做成节点塞在列表里">
-                <input type="checkbox" checked={hideInfo} onChange={(e) => setHideInfo(e.target.checked)} />
-                隐藏提示项{infos ? `（${infos}）` : ""}
-              </label>
-              {nodes && <span className="ml-auto text-muted">显示 {shown.length} / {nodes.length} 个</span>}
-            </div>
+        <div className="toolbar">
+          <Input aria-label="搜索节点" placeholder="搜索名称、服务器或已登记的节点" value={query} onChange={(e) => setQuery(e.target.value)} className="!w-auto min-w-[200px] max-w-[320px] flex-1" />
+          <Select aria-label="地区" value={region} onChange={(e) => setRegion(e.target.value)} className="!w-auto">
+            <option value="">全部地区</option>
+            {regions.filter(([code]) => code).map(([code, n]) => <option key={code} value={code}>{regionName(code)}（{n}）</option>)}
+            {regions.some(([code]) => !code) && <option value="?">认不出地区（{regions.find(([code]) => !code)![1]}）</option>}
+          </Select>
+          {types.length > 1 && (
+            <Select aria-label="协议" value={type} onChange={(e) => setType(e.target.value)} className="!w-auto">
+              <option value="">全部协议</option>
+              {types.map(([t, n]) => <option key={t} value={t}>{t}（{n}）</option>)}
+            </Select>
+          )}
+          <Select aria-label="排序" value={sort} onChange={(e) => setSort(e.target.value as Sort)} className="!w-auto">
+            <option value="delay">按延迟</option>
+            <option value="name">按名称</option>
+          </Select>
+          <label className="flex cursor-pointer items-center gap-1.5 text-[13px] text-fg-2">
+            <input type="checkbox" checked={hideDead} onChange={(e) => setHideDead(e.target.checked)} />
+            隐藏不通的{dead ? `（${dead}）` : ""}
+          </label>
+          <label className="flex cursor-pointer items-center gap-1.5 text-[13px] text-fg-2" title="订阅服务常把剩余流量、到期时间做成节点塞在列表里">
+            <input type="checkbox" checked={hideInfo} onChange={(e) => setHideInfo(e.target.checked)} />
+            隐藏提示项{infos ? `（${infos}）` : ""}
+          </label>
+          <span className="grow" />
+          {nodes && <span className="text-[12px] text-muted">显示 {shown.length} / {nodes.length} 个</span>}
+        </div>
 
-            {error && <ErrorBox text={error} />}
-            {nodes === null && !error && <div className="py-6 text-center text-[12.5px] text-muted">读取中…</div>}
-            {nodes && !shown.length && <div className="py-6 text-center text-[12.5px] text-muted">没有符合条件的节点</div>}
-            {!!visible.length && (
-              <div className="list-card">
+        {error && <ErrorBox text={error} />}
+        {nodes === null && !error && <div className="empty-box plain"><p>读取中…</p></div>}
+        {nodes && !shown.length && <div className="empty-box plain"><p>没有符合条件的节点</p></div>}
+        {!!visible.length && (
+          <div className="data-table-wrap !mt-0 !max-h-none">
+            <table className="data-table compact">
+              <thead>
+                <tr>
+                  <th>节点</th>
+                  <th>地区</th>
+                  <th>协议</th>
+                  <th>服务器</th>
+                  <th>已登记为</th>
+                  <th className="right">延迟</th>
+                  <th className="right">操作</th>
+                </tr>
+              </thead>
+              <tbody>
                 {visible.map((d, i) => (
-                  <div key={`${d.name}-${i}`} className={cn("flex items-center gap-3 px-4 py-2 hover:bg-card-2", d.info && "opacity-60")}>
-                    <span className="flex w-[20px] shrink-0 justify-center">
-                      <Flag code={d.region} title={d.region ? `${regionName(d.region)}（从名称里认出来的）` : undefined} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="selectable truncate text-[13px]">{d.name}</span>
+                  <tr key={`${d.name}-${i}`} className={d.info ? "!cursor-default opacity-60" : "!cursor-default"}>
+                    <td>
+                      <span className="flex items-center gap-1.5">
+                        <span className="cell-main">{d.name}</span>
                         {d === fastest && <Tag tone="ok">最快</Tag>}
                         {d.info && <Tag title="订阅里的提示项，不是给人用的线路">提示项</Tag>}
-                        {d.nodes?.map((n) => <Tag key={n} tone="env" title={`已经登记为节点 ${n}`}>{n}</Tag>)}
-                      </div>
-                      <div className="selectable truncate font-mono text-[11px] text-muted">{d.type} · {d.server}</div>
-                    </div>
-                    <span className="w-14 shrink-0 text-right font-mono text-[11.5px]">{delayLabel(d)}</span>
-                    <Button variant={d === fastest && !d.nodes?.length ? "default" : "outline"} size="sm" disabled={d.info} onClick={() => setPicked(d)}>登记</Button>
-                  </div>
+                      </span>
+                    </td>
+                    <td>
+                      {d.region ? (
+                        <span className="flex items-center gap-1.5 whitespace-nowrap" title="从名称里认出来的，不代表实际出口">
+                          <Flag code={d.region} />
+                          {regionName(d.region)}
+                        </span>
+                      ) : <span className="text-faint">—</span>}
+                    </td>
+                    <td className="mono whitespace-nowrap">{d.type}</td>
+                    <td className="mono cell-sub break-all">{d.server}</td>
+                    <td>
+                      {d.nodes?.length
+                        ? <span className="flex flex-wrap gap-1">{d.nodes.map((n) => <Tag key={n} tone="env" title={`已经登记为节点 ${n}`}>{n}</Tag>)}</span>
+                        : <span className="text-faint">—</span>}
+                    </td>
+                    <td className="right mono whitespace-nowrap">{delayLabel(d)}</td>
+                    <td className="right">
+                      <Button variant={d === fastest && !d.nodes?.length ? "default" : "outline"} size="sm" disabled={d.info} onClick={() => setPicked(d)}>登记</Button>
+                    </td>
+                  </tr>
                 ))}
-                {shown.length > visible.length && (
-                  <button type="button" className="w-full px-4 py-2 text-left text-[11.5px] text-muted hover:bg-card-2" onClick={() => setShowAll(true)}>
-                    还有 {shown.length - visible.length} 个没有列出；点这里全部显示，或者用上面的筛选缩小范围
-                  </button>
-                )}
-              </div>
-            )}
+              </tbody>
+            </table>
           </div>
-        </section>
-      </div>
+        )}
+        {shown.length > visible.length && (
+          <Button variant="ghost" className="self-start" onClick={() => setShowAll(true)}>
+            还有 {shown.length - visible.length} 个没有列出：全部显示
+          </Button>
+        )}
+      </Card>
 
       <RegisterDialog sub={s.id} node={picked} onClose={() => setPicked(null)} onDone={refresh} />
-    </>
+    </Page>
   );
 }
 
@@ -421,7 +517,7 @@ function tally(values: string[]): [string, number][] {
 }
 
 function delayLabel(d: Delay) {
-  if (d.delay_ms > 0) return <span className="text-ok">{d.delay_ms} ms</span>;
+  if (d.delay_ms > 0) return <span className="font-semibold text-ok">{d.delay_ms} ms</span>;
   if (d.delay_ms < 0) return <span className="text-danger">不通</span>;
   return <span className="text-faint">未测</span>;
 }
@@ -460,8 +556,8 @@ function RegisterDialog({ sub, node, onClose, onDone }: { sub: string; node: Del
       open={!!node}
       onClose={onClose}
       title="登记为节点"
-      description={<>把 <span className="font-medium text-fg">{node?.name}</span> 登记成槽位能用的节点。它以后跟着订阅 {sub} 一起更新。</>}
-      className="max-w-[520px] bg-bg"
+      description={<>把 <span className="font-semibold text-fg">{node?.name}</span> 登记成槽位能用的节点。它以后跟着订阅 {sub} 一起更新。</>}
+      className="mid"
       footer={
         <>
           <Button variant="outline" onClick={onClose}>取消</Button>
@@ -469,27 +565,27 @@ function RegisterDialog({ sub, node, onClose, onDone }: { sub: string; node: Del
         </>
       }
     >
-      <div className="space-y-4">
-        {!!node?.nodes?.length && <p className="text-[12px] leading-5 text-warn">它已经登记过了（{node.nodes.join("、")}）。再登记一次会得到另一个配置相同的节点。</p>}
-        <div className="list-card">
-          <Line label="名称">
+      <div className="flex flex-col gap-4">
+        {!!node?.nodes?.length && <div className="callout callout-warning"><span>它已经登记过了（{node.nodes.join("、")}）。再登记一次会得到另一个配置相同的节点。</span></div>}
+        <FormGrid>
+          <Field label="名称">
             <Input aria-label="节点名称" value={form.id} maxLength={32} autoFocus placeholder={ID_HINT} onChange={(e) => setForm({ ...form, id: e.target.value })} />
-          </Line>
-          <Line label="备注">
+          </Field>
+          <Field label="备注">
             <Input aria-label="节点备注" value={form.note} maxLength={NOTE_MAX} placeholder={NOTE_PLACEHOLDER} onChange={(e) => setForm({ ...form, note: e.target.value })} />
-          </Line>
-          <Line label="角色">
+          </Field>
+          <Field label="角色" wide>
             <Select aria-label="角色" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
               <option value="transit">中转：多个槽位共用的第一跳</option>
               <option value="landing">落地：某个槽位的出口</option>
             </Select>
-          </Line>
+          </Field>
           {form.role === "landing" && (
-            <Line label="时区">
-              <Input aria-label="时区" placeholder="不填则首次启动槽位时按出口所在地设置" value={form.tz} onChange={(e) => setForm({ ...form, tz: e.target.value })} />
-            </Line>
+            <Field label="时区" wide hint="不填则首次启动槽位时按出口所在地设置。">
+              <Input aria-label="时区" placeholder="例如 America/Los_Angeles" value={form.tz} onChange={(e) => setForm({ ...form, tz: e.target.value })} />
+            </Field>
           )}
-        </div>
+        </FormGrid>
         {error && <ErrorBox text={error} />}
       </div>
     </Dialog>
@@ -555,7 +651,7 @@ function SourceDialog({ editing, onClose, onDone }: { editing: Editing; onClose:
       onClose={onClose}
       title={sub ? `修改订阅 ${sub.id} 的来源` : "添加订阅"}
       description="订阅地址里通常带有令牌，分享链接里有节点的口令：它们只保存在这台机器的数据目录里，保存之后不再显示。"
-      className="max-w-[600px] bg-bg"
+      className="mid"
       footer={
         <>
           <Button variant="outline" onClick={onClose}>取消</Button>
@@ -563,44 +659,38 @@ function SourceDialog({ editing, onClose, onDone }: { editing: Editing; onClose:
         </>
       }
     >
-      <div className="space-y-4">
+      <div className="flex flex-col gap-4">
         {!sub && (
-          <div className="list-card">
-            <Line label="名称">
+          <FormGrid>
+            <Field label="名称">
               <Input aria-label="订阅名称" value={id} maxLength={32} autoFocus placeholder={ID_HINT} onChange={(e) => setId(e.target.value)} />
-            </Line>
-            <Line label="备注">
+            </Field>
+            <Field label="备注">
               <Input aria-label="订阅备注" value={note} maxLength={NOTE_MAX} placeholder={NOTE_PLACEHOLDER} onChange={(e) => setNote(e.target.value)} />
-            </Line>
-          </div>
+            </Field>
+          </FormGrid>
         )}
 
-        <div>
-          <div className="mb-2 flex gap-1.5" role="tablist" aria-label="来源">
-            <Button role="tab" aria-selected={kind === "url"} variant={kind === "url" ? "default" : "outline"} size="sm" onClick={() => setKind("url")}><Rss />订阅地址</Button>
-            <Button role="tab" aria-selected={kind === "content"} variant={kind === "content" ? "default" : "outline"} size="sm" onClick={() => setKind("content")}><FileText />贴内容</Button>
-          </div>
-          {kind === "url" ? (
-            <div className="list-card">
-              <Line label={sub ? "新的地址" : "订阅地址"}>
-                <Input aria-label="订阅地址" type="password" autoComplete="off" placeholder="https://…" value={url} onChange={(e) => setUrl(e.target.value)} />
-              </Line>
-            </div>
-          ) : (
+        <Tabs label="来源" value={kind} onChange={setKind} items={[["url", "订阅地址"], ["content", "贴内容"]]} />
+
+        {kind === "url" ? (
+          <Field label={sub ? "新的地址" : "订阅地址"} hint={<>Clash（Mihomo）格式和通用的 base64 订阅都可以。由这台机器直接访问订阅服务器，不经过任何槽位的出口。{sub?.local && " 保存后这个订阅变成远程订阅，原来贴的内容不再保留。"}</>}>
+            <Input aria-label="订阅地址" type="password" autoComplete="off" placeholder="https://…" value={url} onChange={(e) => setUrl(e.target.value)} />
+          </Field>
+        ) : (
+          <Field
+            label="订阅内容"
+            hint={sub && !canAppend ? (sub.local ? "现有内容是 Clash 格式，不能往后追加：这里填的内容会替换全部。" : "保存后这个订阅变成本地订阅，不再从原来的地址拉取。") : undefined}
+          >
             <Textarea aria-label="订阅内容" rows={8} spellCheck={false} placeholder={CONTENT_PLACEHOLDER} value={content} onChange={(e) => setContent(e.target.value)} />
-          )}
-          {kind === "url" && <p className="mt-1.5 px-1 text-[11.5px] leading-5 text-muted">Clash（Mihomo）格式和通用的 base64 订阅都可以。由这台机器直接访问订阅服务器，不经过任何槽位的出口。{sub?.local && " 保存后这个订阅变成远程订阅，原来贴的内容不再保留。"}</p>}
-          {kind === "content" && sub && (
-            canAppend ? (
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-fg-2">
+            {sub && canAppend && (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-fg-2">
                 <label className="flex cursor-pointer items-center gap-1.5"><input type="radio" name="append" checked={append} onChange={() => setAppend(true)} />接在现有内容后面</label>
                 <label className="flex cursor-pointer items-center gap-1.5"><input type="radio" name="append" checked={!append} onChange={() => setAppend(false)} />替换全部内容</label>
               </div>
-            ) : (
-              <p className="mt-1.5 px-1 text-[11.5px] leading-5 text-muted">{sub.local ? "现有内容是 Clash 格式，不能往后追加：这里填的内容会替换全部。" : "保存后这个订阅变成本地订阅，不再从原来的地址拉取。"}</p>
-            )
-          )}
-        </div>
+            )}
+          </Field>
+        )}
         {error && <ErrorBox text={error} />}
       </div>
     </Dialog>

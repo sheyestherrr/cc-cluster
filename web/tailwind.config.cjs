@@ -1,5 +1,5 @@
-// 取自 Claude-Hydra（MIT）app/tailwind.config.cjs，v1.1.6；去掉了没有用到的 updateIn 动画。
 /** @type {import('tailwindcss').Config} */
+// 颜色都指向 styles/app.css 里的变量（RGB 三元组，Tailwind 才能加透明度），取值对齐 Resin 的配色。
 const token = (name) => `rgb(var(--${name}) / <alpha-value>)`;
 
 module.exports = {
@@ -8,7 +8,7 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        bg: token("bg"),
+        bg: token("c-bg"),
         card: { DEFAULT: token("card"), 2: token("card-2") },
         pill: { DEFAULT: token("pill"), hover: token("pill-hover") },
         line: { DEFAULT: token("line"), 2: token("line-2") },
@@ -23,14 +23,12 @@ module.exports = {
       boxShadow: {
         edge: "var(--edge)",
         card: "var(--card-edge)",
-        pop: "var(--shadow)",
+        pop: "var(--pop-shadow)",
       },
-      borderRadius: { sm: "5px", md: "6px", lg: "8px", xl: "12px", "2xl": "14px" },
+      borderRadius: { sm: "6px", md: "8px", lg: "10px", xl: "12px", "2xl": "18px" },
       fontFamily: {
-        sans: [
-          "-apple-system", "BlinkMacSystemFont", '"SF Pro Text"', '"Segoe UI Variable Text"', '"Segoe UI"',
-          '"PingFang SC"', '"Microsoft YaHei UI"', "system-ui", "sans-serif",
-        ],
+        sans: ['"Manrope"', '"PingFang SC"', '"Microsoft YaHei"', "sans-serif"],
+        display: ['"Sora"', '"PingFang SC"', '"Microsoft YaHei"', "sans-serif"],
         mono: ["ui-monospace", '"SF Mono"', "Menlo", "Consolas", "monospace"],
       },
       transitionTimingFunction: { soft: "cubic-bezier(0.2, 0.8, 0.2, 1)" },

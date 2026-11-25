@@ -1,8 +1,7 @@
-// 结构取自 Claude-Hydra（MIT）app/src/App.tsx，v1.1.6；数据来源换成了 cc-cluster 的 HTTP 接口。
+// 应用的入口：定时读取集群的现状，按当前页面渲染。
 import { useCallback, useEffect, useState } from "react";
 import { AppShell, pageTitles, type PageId } from "@/components/AppShell";
 import { api, errorText, type State } from "@/lib/api";
-import { useTheme } from "@/lib/theme";
 import { NetworkPage } from "@/pages/NetworkPage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { SlotsPage } from "@/pages/SlotsPage";
@@ -15,7 +14,8 @@ const APP_NAME = "cc-cluster";
 
 export default function App() {
   const [page, setPage] = useState<PageId>("overview");
-  const [theme, setTheme] = useTheme();
+  /** 槽位页里打开着详情的那个槽位。 */
+  const [slot, setSlot] = useState<string | null>(null);
   const [state, setState] = useState<State | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -45,16 +45,24 @@ export default function App() {
     document.title = [pageTitles[page], cluster !== APP_NAME && cluster, APP_NAME].filter(Boolean).join(" · ");
   }, [page, cluster]);
 
+  // 换页时回到页面顶部；从侧栏点当前这一页，也从详情页回到卡片网格（节点与订阅页靠重新挂载）。
+  const [visit, setVisit] = useState(0);
+  const go = useCallback((next: PageId, target?: string) => {
+    setPage(next);
+    setVisit((n) => n + 1);
+    if (next === "slots") setSlot(target ?? null);
+    window.scrollTo({ top: 0 });
+  }, []);
+
   const ready = state?.slots.filter((s) => s.state === "ready" || s.state === "pending").length ?? 0;
 
   return (
-    <AppShell activePage={page} onPageChange={setPage} theme={theme} onThemeChange={setTheme}
-      status={state ? { ready, total: state.slots.length } : null}>
-      {page === "overview" && <OverviewPage state={state} loadError={loadError} go={setPage} />}
-      {page === "slots" && <SlotsPage state={state} loadError={loadError} refresh={refresh} goNetwork={() => setPage("network")} />}
-      {page === "network" && <NetworkPage state={state} loadError={loadError} refresh={refresh} goSubs={() => setPage("subs")} />}
-      {page === "subs" && <SubsPage state={state} loadError={loadError} refresh={refresh} />}
-      {page === "system" && <SystemPage state={state} refresh={refresh} theme={theme} onThemeChange={setTheme} />}
+    <AppShell activePage={page} onPageChange={go} cluster={cluster} status={state ? { ready, total: state.slots.length } : null}>
+      {page === "overview" && <OverviewPage state={state} loadError={loadError} go={go} />}
+      {page === "slots" && <SlotsPage state={state} loadError={loadError} refresh={refresh} goNetwork={() => go("network")} open={slot} setOpen={setSlot} />}
+      {page === "network" && <NetworkPage key={visit} state={state} loadError={loadError} refresh={refresh} goSubs={() => go("subs")} />}
+      {page === "subs" && <SubsPage key={visit} state={state} loadError={loadError} refresh={refresh} />}
+      {page === "system" && <SystemPage state={state} refresh={refresh} />}
     </AppShell>
   );
 }

@@ -1,7 +1,9 @@
-// 取自 Claude-Hydra（MIT）app/src/components/ui/dialog.tsx，v1.1.6，原样。
+// 弹窗：外观用 Resin（MIT）的 modal-overlay / modal-card；按 Esc 只关最上面一层的做法沿用原先的实现。
 import { X } from "lucide-react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { Button } from "./button";
+import { Card } from "./card";
 
 interface DialogProps {
   open: boolean;
@@ -13,7 +15,7 @@ interface DialogProps {
   className?: string;
 }
 
-/** Open dialogs, topmost last; Escape only closes the topmost. */
+/** 打开着的弹窗，最上面的排在最后；Esc 只关最上面那个。 */
 const stack: string[] = [];
 
 export function Dialog({ open, onClose, title, description, children, footer, className }: DialogProps) {
@@ -39,26 +41,18 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
 
   if (!open) return null;
   return (
-    <div data-dialog-layer className="fixed inset-0 z-50 flex items-center justify-center p-6 pt-14">
-      <div className="absolute inset-0 animate-fade-in bg-black/20 backdrop-blur-[2px] dark:bg-black/45" onClick={onClose} />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className={cn("relative flex max-h-full w-full max-w-md animate-pop-in flex-col rounded-2xl bg-card shadow-pop", className)}
-      >
-        <div className="flex items-start justify-between gap-4 px-5 pb-1 pt-4">
-          <div className="min-w-0">
-            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{title}</h2>
-            {description && <div className="mt-1 text-[12.5px] leading-5 text-muted">{description}</div>}
-          </div>
-          <button onClick={onClose} aria-label="关闭" className="-mr-1.5 flex h-[26px] w-[26px] items-center justify-center rounded-[7px] text-muted hover:bg-pill hover:text-fg">
-            <X className="h-4 w-4" />
-          </button>
+    <div data-dialog-layer className="modal-overlay" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <Card className={cn("modal-card narrow", className)}>
+        <div className="modal-header">
+          <h3>{title}</h3>
+          <Button variant="ghost" size="icon" aria-label="关闭" onClick={onClose}>
+            <X />
+          </Button>
         </div>
-        {children && <div className="min-h-0 overflow-y-auto px-5 py-3">{children}</div>}
-        {footer && <div className="flex justify-end gap-2 px-5 pb-4 pt-2">{footer}</div>}
-      </div>
+        {description && <div className="modal-desc">{description}</div>}
+        {children && <div className="modal-body">{children}</div>}
+        {footer && <div className="modal-footer">{footer}</div>}
+      </Card>
     </div>
   );
 }
