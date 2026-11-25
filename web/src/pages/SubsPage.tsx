@@ -196,7 +196,7 @@ export function SubsPage({ state, loadError, refresh }: Props) {
     <Page className="platform-page">
       <PageHeader
         title="订阅"
-        subtitle="订阅是一批现成的节点：可以是机场给的订阅地址，也可以是直接贴进来的分享链接。从里面挑出来登记的才是槽位用的节点。"
+        subtitle="管理远程与本地订阅，从中挑选节点。"
         actions={<Button onClick={() => setEditing({ mode: "add" })}><Plus />添加订阅</Button>}
       />
       {alerts}
@@ -343,7 +343,7 @@ function SubDetail({ s, state, busy, a, alerts, refresh, onBack }: { s: Sub; sta
       <PageHeader
         back={{ label: "全部订阅", onClick: onBack }}
         title={s.id}
-        subtitle={s.note || "这个订阅的状态和它的节点：筛选、测延迟，再把选中的登记为中转或落地。"}
+        subtitle={s.note || "筛选节点、测延迟并登记。"}
         actions={
           <>
             {busy ? (

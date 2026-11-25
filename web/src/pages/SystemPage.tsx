@@ -7,6 +7,7 @@ import { ErrorBox, Page, PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Badge, Card } from "@/components/ui/card";
 import { api, errorText, type Check, type Op, type State } from "@/lib/api";
+import { opDetail, opName } from "@/lib/ops";
 import { clockTime } from "@/lib/utils";
 
 interface Props {
@@ -78,12 +79,12 @@ export function SystemPage({ state, refresh }: Props) {
 
   return (
     <Page>
-      <PageHeader title="系统" subtitle="数据目录、运行环境检查与操作记录。" />
+      <PageHeader title="系统" subtitle="集群信息、环境检查与操作记录。" />
       {error && <ErrorBox text={error} onClose={() => setError("")} />}
 
       <div className="grid items-stretch gap-3.5 min-[1100px]:grid-cols-2">
         <Card className="panel">
-          <PanelHead title="数据" hint="这个面板管理的集群，和它用的镜像" />
+          <PanelHead title="数据" hint="数据目录与所用镜像" />
           <div className="kv-grid">
             <KV k="版本" v={state?.version} />
             <KV k="容器名前缀" v={state?.cluster.name} />
@@ -92,15 +93,15 @@ export function SystemPage({ state, refresh }: Props) {
             <KV k="worker 镜像" v={state?.cluster.worker_image} />
           </div>
           <SwitchItem
-            label="启动槽位时顺带查询出口评估"
-            hint="经该槽的链路向第三方接口查一次出口 IP 的评估（机房 / 代理 / 滥用标记），只用于展示。关掉后不再自动查询，落地详情里的“重新检测”仍可手动查。"
+            label="启动槽位时查询出口评估"
+            hint="经槽位的链路查询第三方接口，仅用于展示。"
             checked={state?.exit_report_auto ?? true}
             onChange={setExitReport}
           />
         </Card>
 
         <Card className="panel">
-          <PanelHead title="运行环境" hint="Docker 是否可用、镜像在不在、容器里能否建立网卡、写策略路由和打开 TUN 设备；不访问任何外部地址">
+          <PanelHead title="运行环境" hint="检查 Docker、镜像与容器的网络能力">
             <Button variant="outline" size="sm" disabled={checking} onClick={doctor}>
               {checking ? <Loader2 className="spin" /> : <Stethoscope />}
               {checking ? "检查中…" : "运行检查"}
@@ -130,7 +131,7 @@ export function SystemPage({ state, refresh }: Props) {
       </div>
 
       <Card className="panel">
-        <PanelHead title="操作记录" hint="最近 40 条：命令行和网页上做过的启动、停止、接线和修改">
+        <PanelHead title="操作记录" hint="最近 40 条">
           <Button variant="outline" size="sm" onClick={loadOps}><RefreshCw />刷新</Button>
         </PanelHead>
         {ops === null && <div className="empty-box plain"><p>读取中…</p></div>}
@@ -151,10 +152,10 @@ export function SystemPage({ state, refresh }: Props) {
                 {ops.slice(0, 40).map((op, i) => (
                   <tr key={`${op.time}-${i}`} className="!cursor-default">
                     <td className="mono cell-sub whitespace-nowrap">{clockTime(op.time)}</td>
-                    <td className="mono whitespace-nowrap">{op.op}</td>
-                    <td className="cell-main whitespace-nowrap">{op.target || "—"}</td>
+                    <td className="whitespace-nowrap" title={op.op}>{opName(op.op)}</td>
+                    <td className="cell-main mono whitespace-nowrap">{op.target || "—"}</td>
                     <td><Badge variant={op.ok ? "success" : "danger"}>{op.ok ? "成功" : "失败"}</Badge></td>
-                    <td className="cell-sub break-words">{op.ok ? op.detail : op.error}</td>
+                    <td className="cell-sub break-words">{op.ok ? opDetail(op.detail) : op.error}</td>
                   </tr>
                 ))}
               </tbody>
@@ -164,7 +165,7 @@ export function SystemPage({ state, refresh }: Props) {
       </Card>
 
       <Card className="panel">
-        <PanelHead title="致谢" hint="这个界面站在这些项目的肩膀上" />
+        <PanelHead title="致谢" hint="用到的开源项目" />
         <div className="text-[13px] leading-6 text-fg-2">
           <p>网页界面的版面、配色与样式取自 Resin（MIT 许可），分享链接的解析也改写自它。</p>
           <p>构建配置和几个基础组件的行为沿用自 Claude-Hydra（MIT 许可）。</p>

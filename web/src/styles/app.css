@@ -75,9 +75,16 @@ button:not(:disabled),
 .nav-item {
   width: 100%;
   background: transparent;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   text-align: left;
+}
+
+/* 卡片各自是一个层叠上下文（毛玻璃），菜单打开时把它所在的卡片抬到后面的卡片之上，否则会被遮住。 */
+.card:has(.menu-pop),
+.tile:has(.menu-pop) {
+  position: relative;
+  z-index: 20;
 }
 
 .sidebar-status {

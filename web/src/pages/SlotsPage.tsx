@@ -233,7 +233,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
     <Page className="platform-page">
       <PageHeader
         title="槽位"
-        subtitle="每个槽位是一个没有网络的工作容器，全部流量由网关透明转发到它绑定的落地。"
+        subtitle="管理槽位，查看状态与出口。"
         actions={
           <>
             <Button variant="outline" onClick={() => refresh()}>
@@ -391,7 +391,7 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
       <PageHeader
         back={{ label: "全部槽位", onClick: onBack }}
         title={s.id}
-        subtitle={s.note || "这个槽位的出口、流量、槽内环境和维护操作。"}
+        subtitle={s.note || "出口、流量、环境与运维。"}
         actions={
           <>
             {wired && !busy && <Button variant="outline" onClick={() => a.enter(s)}><Terminal />进入</Button>}

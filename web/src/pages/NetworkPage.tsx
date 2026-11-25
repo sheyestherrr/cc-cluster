@@ -197,7 +197,7 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
     <Page className="platform-page">
       <PageHeader
         title="节点与网关"
-        subtitle="落地是槽位的出口，中转是多个槽位共用的第一跳；网关容器把槽位的流量经中转送到各自的落地。"
+        subtitle="管理网关、中转与落地节点。"
         actions={
           <>
             <Button variant="outline" onClick={goSubs} title="到“订阅”页，从订阅的节点里挑"><Rss />从订阅里选</Button>
@@ -225,7 +225,7 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
         <Card className="platform-cards-container">
           <div className="platform-drawer-section-head mb-3">
             <h4>网关</h4>
-            <p>一个网关是一个容器，可以接多个槽位，各自从自己的落地出去。</p>
+            <p>把槽位的流量送到各自的落地。</p>
           </div>
           <div className="tile-grid">
             {state.gateways.map((g) => <GatewayTile key={g.id} g={g} busy={busy[`gateway:${g.id}`]} a={gatewayActions(g)} onOpen={() => setOpen({ kind: "gateway", id: g.id })} />)}
@@ -237,7 +237,7 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
         <Card className="platform-cards-container">
           <div className="platform-drawer-section-head mb-3">
             <h4>节点</h4>
-            <p>落地显示出口的所在地与评估；中转只负责把流量送到落地，不改变出口。</p>
+            <p>落地是槽位的出口，中转是共用的第一跳。</p>
           </div>
           <div className="tile-grid">
             {state.nodes.map((n) => <NodeTile key={n.id} n={n} busy={busy[`node:${n.id}`]} a={nodeActions(n)} onOpen={() => setOpen({ kind: "node", id: n.id })} />)}
@@ -366,7 +366,7 @@ function NodeDetail({ n, state, busy, a, alerts, back }: DetailCommon & { n: Nod
       <PageHeader
         back={back}
         title={n.id}
-        subtitle={n.note || (landing ? "这个落地的出口评估、连接信息和绑定它的槽位沿用的设置。" : "这个中转的连接信息。")}
+        subtitle={n.note || (landing ? "出口评估与连接信息。" : "连接信息。")}
         actions={
           <>
             {busy && <Button variant="outline" disabled><Loader2 className="spin" />{busy}</Button>}
@@ -418,7 +418,7 @@ function NodeDetail({ n, state, busy, a, alerts, back }: DetailCommon & { n: Nod
           <div className="panel-head">
             <div>
               <h3>连接</h3>
-              <p>网关按这些信息连到这个节点</p>
+              <p>节点的连接参数</p>
             </div>
           </div>
           <div className="kv-grid">
@@ -438,7 +438,7 @@ function NodeDetail({ n, state, busy, a, alerts, back }: DetailCommon & { n: Nod
             <>
               <div className="platform-drawer-section-head mt-1">
                 <h4>绑定它的槽位沿用</h4>
-                <p>时区随出口；填了预期出口时，实测不一致就不给槽位接线。</p>
+                <p>时区与预期出口。</p>
               </div>
               <div className="kv-grid">
                 <KV k="时区">
@@ -468,7 +468,7 @@ function GatewayDetail({ g, state, busy, a, alerts, back, refresh }: DetailCommo
       <PageHeader
         back={back}
         title={g.id}
-        subtitle={g.note || "这个网关的转发方式、网络设置和它上面的槽位。"}
+        subtitle={g.note || "转发、网络与槽位。"}
         actions={
           <>
             {g.transit && <Button variant="outline" onClick={() => setChanging(true)}><Waypoints />更换中转</Button>}
@@ -509,7 +509,7 @@ function GatewayDetail({ g, state, busy, a, alerts, back, refresh }: DetailCommo
           <div className="panel-head">
             <div>
               <h3>转发</h3>
-              <p>槽位的流量经这里送到各自的落地</p>
+              <p>中转与所接的槽位</p>
             </div>
           </div>
           <div className="kv-grid">
@@ -534,7 +534,7 @@ function GatewayDetail({ g, state, busy, a, alerts, back, refresh }: DetailCommo
           <div className="panel-head">
             <div>
               <h3>网络</h3>
-              <p>网关与槽位之间、网关与外部之间的网络</p>
+              <p>出口网络与地址池</p>
             </div>
           </div>
           <div className="kv-grid">

@@ -13,6 +13,7 @@ import { Badge, Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/input";
 import { api, errorText, type Delay, type History, type Op, type Slot, type SlotLive, type State } from "@/lib/api";
 import { usePolling } from "@/lib/live";
+import { opDetail, opName } from "@/lib/ops";
 import { bytesText, rateText, relativeTime } from "@/lib/utils";
 import { stateText } from "@/pages/SlotsPage";
 
@@ -94,7 +95,7 @@ export function OverviewPage({ state, loadError, go }: Props) {
   const header = (
     <PageHeader
       title="总览看板"
-      subtitle="集群现在的样子：槽位从哪里出去，走了多少流量，节点好不好用，最近做过什么。"
+      subtitle="槽位、流量与出口一览。"
       actions={
         <div className="dashboard-header-controls">
           <label className="dashboard-control">
@@ -195,13 +196,13 @@ export function OverviewPage({ state, loadError, go }: Props) {
         </Card>
 
         <Card className="dashboard-panel">
-          <PanelHead title="连接峰值" hint="每一档里同时连接数的最大值" />
+          <PanelHead title="连接峰值" hint="同时连接数的最大值" />
           {history === null ? <ChartEmpty height={260}>读取中…</ChartEmpty> : peakConns > 0 ? <ConnsChart points={history.traffic} step={history.step} /> : <ChartEmpty height={260}>这段时间里没有连接的记录。</ChartEmpty>}
           <Legend items={[{ color: "var(--chart-3)", label: "连接数" }]} />
         </Card>
 
         <Card className="dashboard-panel span-2">
-          <PanelHead title="槽位的出口" hint="每个槽位从哪个落地出去、此刻的速率和实际的出口地址">
+          <PanelHead title="槽位的出口" hint="各槽位的落地、速率与出口地址">
             <Button variant="outline" size="sm" onClick={() => go("slots")}>全部槽位</Button>
           </PanelHead>
           {state.slots.length ? (
@@ -218,7 +219,7 @@ export function OverviewPage({ state, loadError, go }: Props) {
         </Card>
 
         <Card className="dashboard-panel">
-          <PanelHead title="需要留意" hint="出口变了、连不上、没接线、订阅刷新失败等" />
+          <PanelHead title="需要留意" hint="异常与待处理的事项" />
           {!attention.length ? (
             <div className="callout callout-success"><ShieldCheck size={15} /><span>没有需要处理的事。</span></div>
           ) : (
@@ -235,7 +236,7 @@ export function OverviewPage({ state, loadError, go }: Props) {
 
         {!!state.slots.length && (
           <Card className="dashboard-panel span-2">
-            <PanelHead title="持续检测" hint="每隔几分钟看一遍已接线槽位的连通性与出口">
+            <PanelHead title="持续检测" hint="已接线槽位的连通性与出口">
               <Legend items={watchLegend} />
             </PanelHead>
             {history === null ? (
@@ -260,8 +261,8 @@ export function OverviewPage({ state, loadError, go }: Props) {
                 <div key={`${op.time}-${i}`} className="snapshot-row">
                   <span className={`status-dot ${op.ok ? "ok" : "bad"}`} role="img" aria-label={op.ok ? "成功" : "失败"} />
                   <div className="grow">
-                    <p><span className="mono">{op.op}</span>{op.target && <span className="ml-1.5 font-normal text-fg-2">{op.target}</span>}</p>
-                    {(op.ok ? op.detail : op.error) && <p title={op.ok ? op.detail : op.error}>{op.ok ? op.detail : op.error}</p>}
+                    <p title={op.op}>{opName(op.op)}{op.target && <span className="mono ml-1.5 font-normal text-fg-2">{op.target}</span>}</p>
+                    {(op.ok ? op.detail : op.error) && <p title={op.ok ? op.detail : op.error}>{op.ok ? opDetail(op.detail) : op.error}</p>}
                   </div>
                   <span className="side">{relativeTime(op.time)}</span>
                 </div>
