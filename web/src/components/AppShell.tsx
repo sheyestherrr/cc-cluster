@@ -50,7 +50,6 @@ export function AppShell({ activePage, onPageChange, cluster, status, children }
               <p className="brand-title">cc-cluster</p>
               {cluster && cluster !== "cc-cluster" && <span className="brand-version" title={cluster}>{cluster}</span>}
             </div>
-            <p className="brand-subtitle">多出口的 Claude Code 槽位 · 管理面板</p>
           </div>
         </div>
 
@@ -73,9 +72,6 @@ export function AppShell({ activePage, onPageChange, cluster, status, children }
           <div className="sidebar-status">
             <span className={cn("status-dot", status?.ready && "ok")} />
             <span>{status ? `${status.ready} 个已接线 · 共 ${status.total} 个槽位` : "读取中…"}</span>
-          </div>
-          <div className="sidebar-tools">
-            <span className="sidebar-hint">只在本机提供服务</span>
           </div>
         </div>
       </aside>

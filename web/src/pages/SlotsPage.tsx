@@ -430,7 +430,7 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
             <Fact k="落地">{s.landing}</Fact>
             {landing?.direct ? <Fact k="出口方式">直出</Fact> : <Fact k="网关">{s.gateway}</Fact>}
             {gateway?.transit && <Fact k="中转">{gateway.transit}</Fact>}
-            <Fact k="用户">{s.user}@{s.hostname}</Fact>
+            <Fact k="用户">{s.user}</Fact>
             <Fact k="时区">{s.tz || "UTC"}</Fact>
             {limits && <Fact k="资源上限">{limits}</Fact>}
           </div>
@@ -463,7 +463,7 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
                 </div>
               </div>
               <div className="chain">
-                <Hop label="槽位" name={s.id} sub={`${s.user}@${s.hostname}`} />
+                <Hop label="槽位" name={s.id} sub={s.user} />
                 {arrow}
                 <Hop label="网关" name={s.gateway} sub={gatewayText} />
                 {gateway?.transit && <>{arrow}<Hop label="中转" name={gateway.transit} /></>}
@@ -506,7 +506,8 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
               <p>槽里的程序看到的身份与硬件信息。</p>
             </div>
             <div className="kv-grid">
-              <div className="kv"><span>用户</span><strong className="mono">{s.user}@{s.hostname}</strong></div>
+              <div className="kv"><span>用户</span><strong className="mono">{s.user}</strong></div>
+              <div className="kv"><span>主机名</span><strong className="mono">{s.hostname}</strong></div>
               <div className="kv"><span>HOME</span><strong className="mono">{s.home}</strong></div>
               <div className="kv">
                 <span>时区</span>
@@ -528,7 +529,7 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
 
             <div className="platform-drawer-section-head mt-2">
               <h4>挂载的目录</h4>
-              <p>槽内使用和宿主相同的路径。</p>
+              <p>槽内路径与宿主相同，~ 下有同名的快捷方式。</p>
             </div>
             {s.mounts.length === 0 ? (
               <div className="empty-box plain"><p>没有挂载项目目录；在项目目录里运行进入命令时会询问是否挂载。</p></div>

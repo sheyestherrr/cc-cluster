@@ -71,7 +71,22 @@ button:not(:disabled),
   font-variant-numeric: tabular-nums;
 }
 
+/* Resin 的标题靠浏览器默认的粗体；Tailwind 的基础样式把它重置成了继承，这里补回来。 */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 700;
+}
+
 /* ── 外壳 ── */
+.brand-title {
+  font-size: 19px;
+  letter-spacing: -0.01em;
+}
+
 .nav-item {
   width: 100%;
   background: transparent;
