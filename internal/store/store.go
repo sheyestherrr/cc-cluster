@@ -43,6 +43,15 @@ type Store struct {
 	dir string
 }
 
+// DefaultDir 是没有另外指定时用的数据目录：用户 HOME 下的 .cc-cluster。取不到 HOME 时返回空串。
+func DefaultDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".cc-cluster")
+}
+
 // Init 创建数据目录并写入集群设置；目录已初始化时返回 ErrExists。
 func Init(dir string, c model.Cluster) (*Store, error) {
 	abs, err := filepath.Abs(dir)

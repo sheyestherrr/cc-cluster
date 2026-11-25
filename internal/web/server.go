@@ -554,7 +554,7 @@ func (s *Server) state(c *call) (any, error) {
 			User: st.Identity.UserName(), Home: st.Identity.Home(), TZ: tz,
 			Mounts: sl.Mounts, Memory: sl.MemoryBytes, CPUs: sl.CPUs, FakeDMI: sl.FakeDMI, FakeProc: sl.FakeProc,
 			TmuxBridge: sl.TmuxBridge, TmuxAlive: st.TmuxAlive, Watch: st.Watch,
-			EnterCommand: fmt.Sprintf("cc-cluster --data-dir %s enter %s", shellQuote(dataDir), sl.ID),
+			EnterCommand: enterCommand(dataDir, sl.ID),
 		}
 		if v.Mounts == nil {
 			v.Mounts = []model.Mount{}
@@ -622,6 +622,14 @@ func orEmpty(v []string) []string {
 		return []string{}
 	}
 	return v
+}
+
+// enterCommand 是在终端里进入槽位的命令；数据目录就是默认的那个时不用带 --data-dir。
+func enterCommand(dataDir, slot string) string {
+	if filepath.Clean(dataDir) == store.DefaultDir() {
+		return "cc-cluster enter " + slot
+	}
+	return fmt.Sprintf("cc-cluster --data-dir %s enter %s", shellQuote(dataDir), slot)
 }
 
 // shellQuote 给路径加上单引号，除非它只含不需要引号的字符。

@@ -34,7 +34,7 @@ const usage = `cc-cluster：为 Claude Code 管理相互独立的工作槽位。
   cc-cluster                              在终端里不带参数运行：打开交互面板，按编号选择
   cc-cluster [--data-dir 目录] <命令> [参数]
 
-数据目录用 --data-dir 或环境变量 CC_CLUSTER_DATA 指定；交互面板里没有指定时会询问。
+数据目录默认是 ~/.cc-cluster；用 --data-dir 或环境变量 CC_CLUSTER_DATA 可以换成别的。
 
 日常使用：
   enter  [槽位] [目录]      进入槽位的 shell。目录默认是当前目录，不在挂载范围内时自动挂载
@@ -92,6 +92,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 	rest := fs.Args()
+	if a.dataDir == "" {
+		a.dataDir = store.DefaultDir()
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -221,7 +224,7 @@ func (m *multi) Set(v string) error { *m = append(*m, v); return nil }
 
 func (a *app) requireDataDir() error {
 	if a.dataDir == "" {
-		return fmt.Errorf("没有指定数据目录：用 --data-dir，或设置环境变量 %s", EnvDataDir)
+		return fmt.Errorf("找不到用户的 HOME，没法用默认的数据目录：用 --data-dir，或设置环境变量 %s", EnvDataDir)
 	}
 	return nil
 }
