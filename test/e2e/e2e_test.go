@@ -327,7 +327,8 @@ func TestEndToEnd(t *testing.T) {
 		e.expect("用户名与 HOME 是该槽自己的", `^kevin /home/kevin /home/kevin$`, e.wsh("a", "echo $(whoami) $HOME $(pwd)"))
 		e.expect("passwd 保留镜像的系统账号并加入该槽用户", `^root:x:0:0:.*\nkevin:x:\d+:\d+:Kevin:/home/kevin:/bin/sh$`, e.wsh("a", "grep -E '^(root|kevin):' /etc/passwd"))
 		e.expect("登录 shell 的 PATH 里仍有 HOME 下的程序目录", `(^|:)/home/kevin/\.local/bin(:|$)`, e.exec(e.eng.WorkerContainer("a"), "/bin/sh", "-lc", "echo $PATH"))
-		e.expect("另一个槽的用户名是随机挑的，不相同", `^ok$`, e.wsh("b", "[ \"$(whoami)\" != kevin ] && [ \"$HOME\" = \"/home/$(whoami)\" ] && echo ok"))
+		e.expect("另一个槽没有指定用户名，用默认的 user", `^user /home/user$`, e.wsh("b", "echo $(whoami) $HOME"))
+		e.expect("提示符片段写进了容器：两行，不带 hostname", `PS1='\\n[^']*\\u[^']*\\w[^']*\\A[^'h]*\\n❯ '`, e.wsh("b", "cat /etc/profile.d/prompt.sh"))
 		e.expect("没有任何能力", `^CapEff:\s+0000000000000000$`, e.wsh("a", "grep CapEff /proc/self/status"))
 		e.expect("系统目录写不动", `^denied denied$`, e.wsh("a", "for d in /etc /usr; do touch $d/.probe 2>/dev/null && echo wrote || echo denied; done | tr '\\n' ' ' | sed 's/ $//'"))
 		e.expect("HOME 可写", `^ok$`, e.wsh("a", "touch /home/kevin/.probe && echo ok"))
@@ -757,8 +758,10 @@ func TestEndToEnd(t *testing.T) {
 
 	t.Run("在项目目录里进入槽位", func(t *testing.T) {
 		e.t = t
-		proj := filepath.Join(filepath.Dir(e.st.Dir()), "proj-b")
-		other := filepath.Join(filepath.Dir(e.st.Dir()), "proj-c")
+		// 项目放在单独的 work 目录下：数据目录的上级不允许挂进槽位。
+		work := filepath.Join(filepath.Dir(e.st.Dir()), "work")
+		proj := filepath.Join(work, "proj-b")
+		other := filepath.Join(work, "proj-c")
 		must(t, os.MkdirAll(filepath.Join(proj, "log"), 0o755))
 		must(t, os.MkdirAll(other, 0o755))
 		must(t, os.WriteFile(filepath.Join(proj, "log", "note.txt"), []byte("from-host\n"), 0o644))
@@ -799,8 +802,15 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("子目录不应触发重建: code=%d", code)
 		}
 
+		// 包住数据目录的上级不能挂：里面有节点的账号密码和其他槽位的 HOME。
+		got, code = enter(other, "--mount", filepath.Dir(work), "--yes", "--", "pwd")
+		if code == 0 || !strings.Contains(got, "不允许挂载") || containerID() != after {
+			t.Fatalf("包住数据目录的目录应被拒绝，且不动 worker: %d %s", code, got)
+		}
+		e.expect("挂载在 HOME 下有同名的快捷方式", `^from-host$`, e.wsh("b", "cat ~/proj-b/log/note.txt"))
+
 		// 挂上级目录后，原先单独挂的子目录并进去；它下面的其他项目也不用再重建。
-		got, code = enter(other, "--mount", filepath.Dir(proj), "--yes", "--", "pwd")
+		got, code = enter(other, "--mount", work, "--yes", "--", "pwd")
 		e.expect("用 --mount 指定挂上级目录", "^"+regexp.QuoteMeta(other)+`\|`, got)
 		if code != 0 {
 			t.Fatalf("挂上级目录失败: %s", got)
