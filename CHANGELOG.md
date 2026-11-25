@@ -7,10 +7,8 @@ One section per release, newest first. Versions follow `vMAJOR.MINOR.PATCH`; pre
 ## 未发布 / Unreleased
 
 - 网页界面：各页的标题加粗；侧栏左上角只留放大的 `cc-cluster`，去掉副标题和底部的“只在本机提供服务”；槽位详情里用户名与主机名分开显示。
-- 新增 `scripts/preview.sh`：用编出来的数据预览界面，不需要 Docker。`scripts/web.sh` 接受 `--data-dir`。
 
 - Web UI: page titles are bold again; the sidebar header shows only a larger `cc-cluster`, without the tagline or the "local only" footer; the slot detail shows username and hostname separately.
-- New `scripts/preview.sh` previews the UI with made-up data, no Docker needed. `scripts/web.sh` accepts `--data-dir`.
 
 ## v0.0.1
 

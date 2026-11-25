@@ -26,7 +26,7 @@ make image-worker        # 得到 cc-cluster-worker:dev，里面的 tmux 按这�
 | `web/` | 网页界面的前端源码（React），构建后嵌入二进制 |
 | `images/` | 网关镜像（固定版本的 Mihomo 与监督脚本）和默认的 worker 镜像 |
 | `test/e2e` | 端到端测试与假服务 |
-| `scripts/` | `install.sh` 一键安装，`web.sh` 构建并启动网页界面（真实的数据目录），`preview.sh` 用编出来的数据预览界面（不需要 Docker），`ci/` 仓库卫生检查与取更新记录 |
+| `scripts/` | `install.sh` 一键安装，`ci/` 仓库卫生检查与取更新记录 |
 | `docs/` | 使用文档 |
 
 各部分怎么配合见[架构说明](../ARCHITECTURE.md)。
