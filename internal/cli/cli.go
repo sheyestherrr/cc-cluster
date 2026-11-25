@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"os/user"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -252,10 +253,36 @@ func (a *app) table() *tabwriter.Writer {
 	return tabwriter.NewWriter(a.out, 0, 4, 2, ' ', 0)
 }
 
+// defaultClusterName 返回默认的容器名前缀：cc-<宿主用户名>，这样同一台机器上不同用户的容器不会重名。
+// 用户名取不到或整理后为空时退回 cc。
+func defaultClusterName() string {
+	name := os.Getenv("USER")
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		name = u.Username
+	}
+	var b strings.Builder
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case b.Len() > 0 && !strings.HasSuffix(b.String(), "-"):
+			b.WriteByte('-')
+		}
+	}
+	s := strings.TrimRight(b.String(), "-")
+	if len(s) > 20 {
+		s = strings.TrimRight(s[:20], "-")
+	}
+	if s == "" {
+		return model.DefaultClusterName
+	}
+	return model.DefaultClusterName + "-" + s
+}
+
 func (a *app) cmdInit(args []string) error {
 	fs := a.newFlags("init", "init [参数]")
 	var c model.Cluster
-	fs.StringVar(&c.Name, "name", model.DefaultClusterName, "容器名前缀，用来区分同一台机器上的多个数据目录")
+	fs.StringVar(&c.Name, "name", defaultClusterName(), "容器名前缀，用来区分同一台机器上的多个用户和数据目录")
 	fs.StringVar(&c.GatewayImage, "gateway-image", model.DefaultGatewayImage, "网关镜像")
 	fs.StringVar(&c.WorkerImage, "worker-image", model.DefaultWorkerImage, "默认的 worker 镜像")
 	fs.BoolVar(&c.NoExitReport, "no-exit-report", false, "启动槽位时不顺带查询第三方对出口 IP 的评估（之后可用 exit-report on|off 更改）")
