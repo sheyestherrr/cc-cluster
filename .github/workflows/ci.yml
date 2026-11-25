@@ -140,8 +140,7 @@ jobs:
 
   e2e:
     name: 端到端测试（假节点）
-    # 日常推到 dev 时不跑；master、PR 和手动触发时跑。
-    if: github.event_name != 'push' || github.ref == 'refs/heads/master'
+    # dev 上也跑：master 只是 dev 的快进，等合并之后才发现就晚了。
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
