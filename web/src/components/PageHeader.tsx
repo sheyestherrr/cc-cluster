@@ -5,15 +5,23 @@ import type React from "react";
 import { Badge, type BadgeVariant } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+/** 跟在名称后面的备注；没有备注时什么也不显示。 */
+export function NoteText({ note, className }: { note?: string; className?: string }) {
+  if (!note) return null;
+  return <span title={note} className={cn("min-w-0 shrink truncate text-[12.5px] font-normal text-muted", className)}>{note}</span>;
+}
+
 interface PageHeaderProps {
   title: string;
+  /** 详情页里对象的备注，与标题同一行。 */
+  note?: string;
   subtitle?: React.ReactNode;
   actions?: React.ReactNode;
   /** 详情页左上角的“返回”。 */
   back?: { label: string; onClick: () => void };
 }
 
-export function PageHeader({ title, subtitle, actions, back }: PageHeaderProps) {
+export function PageHeader({ title, note, subtitle, actions, back }: PageHeaderProps) {
   return (
     <header className="module-header">
       <div className="min-w-0">
@@ -23,7 +31,10 @@ export function PageHeader({ title, subtitle, actions, back }: PageHeaderProps) 
             {back.label}
           </button>
         )}
-        <h2 className="truncate">{title}</h2>
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h2 className={cn("min-w-0 truncate", note && "max-w-[70%] shrink-0")}>{title}</h2>
+          <NoteText note={note} className="text-[14px]" />
+        </div>
         {subtitle && <p className="module-description">{subtitle}</p>}
       </div>
       {actions && <div className="module-actions">{actions}</div>}

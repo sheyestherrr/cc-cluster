@@ -391,7 +391,8 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
       <PageHeader
         back={{ label: "全部槽位", onClick: onBack }}
         title={s.id}
-        subtitle={s.note || "出口、流量、环境与运维。"}
+        note={s.note}
+        subtitle="出口、流量、环境与运维。"
         actions={
           <>
             {wired && !busy && <Button variant="outline" onClick={() => a.enter(s)}><Terminal />进入</Button>}

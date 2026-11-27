@@ -343,7 +343,8 @@ function SubDetail({ s, state, busy, a, alerts, refresh, onBack }: { s: Sub; sta
       <PageHeader
         back={{ label: "全部订阅", onClick: onBack }}
         title={s.id}
-        subtitle={s.note || "筛选节点、测试延迟，并将选中的添加为节点。"}
+        note={s.note}
+        subtitle="筛选节点、测试延迟，并将选中的添加为节点。"
         actions={
           <>
             {busy ? (

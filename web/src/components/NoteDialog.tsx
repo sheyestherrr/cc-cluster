@@ -11,12 +11,6 @@ export const NOTE_PLACEHOLDER = "选填，可使用中文、下划线与空格�
 /** 要改备注的对象：what 是种类的中文名，用在标题里。 */
 export type NoteTarget = { kind: NoteKind; what: string; id: string; note?: string };
 
-/** 跟在名称后面的备注；没有备注时什么也不显示。 */
-export function NoteText({ note }: { note?: string }) {
-  if (!note) return null;
-  return <span title={note} className="min-w-0 max-w-[45%] shrink truncate text-[12.5px] text-muted">{note}</span>;
-}
-
 export function NoteDialog({ target, onClose, onSaved }: { target: NoteTarget | null; onClose: () => void; onSaved: (text: string) => void }) {
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);

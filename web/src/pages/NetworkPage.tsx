@@ -366,7 +366,8 @@ function NodeDetail({ n, state, busy, a, alerts, back }: DetailCommon & { n: Nod
       <PageHeader
         back={back}
         title={n.id}
-        subtitle={n.note || (landing ? "出口评估与连接信息。" : "连接信息。")}
+        note={n.note}
+        subtitle={landing ? "出口评估与连接信息。" : "连接信息。"}
         actions={
           <>
             {busy && <Button variant="outline" disabled><Loader2 className="spin" />{busy}</Button>}
@@ -468,7 +469,8 @@ function GatewayDetail({ g, state, busy, a, alerts, back, refresh }: DetailCommo
       <PageHeader
         back={back}
         title={g.id}
-        subtitle={g.note || "转发、网络与槽位。"}
+        note={g.note}
+        subtitle="转发、网络与槽位。"
         actions={
           <>
             {g.transit && <Button variant="outline" onClick={() => setChanging(true)}><Waypoints />更换中转</Button>}
