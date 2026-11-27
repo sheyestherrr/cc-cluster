@@ -76,7 +76,7 @@ web-test:
 	$(PNPM) --dir web install --frozen-lockfile
 	$(PNPM) --dir web test
 
-# 仓库卫生检查：不该进版本库的路径、订阅地址与带密码的代理地址一类的内容。加 HISTORY=1 连历史一起查。
+# 敏感信息检查：不应提交的路径，以及订阅地址、带密码的代理地址等内容。HISTORY=1 时同时检查全部历史提交。
 repo-check:
 	sh scripts/ci/check-repo.sh $(if $(HISTORY),--history)
 

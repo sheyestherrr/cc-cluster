@@ -11,7 +11,7 @@ make release        # make web + make build：带网页界面的单个二进制
 make images         # 网关镜像与 worker 镜像
 make e2e            # 端到端测试：需要 Docker 与两个镜像，只用 internal 网络和假节点
 make dist           # 各平台的发布包与校验和
-make repo-check     # 检查有没有把订阅地址、代理密码、数据目录带进版本库
+make repo-check     # 敏感信息检查：订阅地址、代理密码、数据目录等是否被提交
 ```
 
 不想用发布的镜像时在本机构建（只需要 docker 和 make），`cc-cluster init` 不带镜像参数时默认就用这两个：
@@ -28,7 +28,7 @@ make image-worker        # 得到 cc-cluster-worker:dev，里面的 tmux 按这�
 | `web/` | 网页界面的前端源码（React），构建后嵌入二进制 |
 | `images/` | 网关镜像（固定版本的 Mihomo 与监督脚本）和默认的 worker 镜像 |
 | `test/e2e` | 端到端测试与假服务 |
-| `scripts/` | `install.sh` 一键安装，`ci/` 仓库卫生检查与取更新记录 |
+| `scripts/` | `install.sh` 一键安装；`ci/` 持续集成用的脚本（敏感信息检查、提取更新记录） |
 | `docs/` | 使用文档 |
 
 各部分怎么配合见[架构说明](../ARCHITECTURE.md)。

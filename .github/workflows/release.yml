@@ -42,7 +42,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME}"
           if [ "${GITHUB_REF_TYPE}" != tag ] || ! printf '%s' "${version}" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?'; then
-            echo "${version} 不是 v主.次.修订[-预发布] 写法的标签，不发布" >&2
+            echo "标签 ${version} 不符合 v主.次.修订[-预发布] 格式，已取消发布" >&2
             exit 1
           fi
           case "${version}" in
@@ -54,7 +54,7 @@ jobs:
             echo "prerelease=${prerelease}"
             echo "image_tags=${image_tags}"
           } >> "${GITHUB_OUTPUT}"
-      - name: 取出这个版本的更新记录
+      - name: 提取该版本的更新记录
         env:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
@@ -71,11 +71,11 @@ jobs:
           package-manager-cache: false
       - name: 安装 pnpm
         run: npm install --global "pnpm@${PNPM_VERSION}"
-      - name: 发布前的检查
+      - name: 发布前检查
         run: |
           go mod verify
           make check
-      - name: 各平台的发布包与校验和
+      - name: 构建各平台发布包并生成校验和
         env:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
@@ -153,10 +153,10 @@ jobs:
         with:
           name: dist
           path: dist
-      - name: 核对校验和
+      - name: 验证校验和
         working-directory: dist
         run: sha256sum --check --strict SHA256SUMS
-      - name: 写 Release
+      - name: 创建 Release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -175,7 +175,7 @@ jobs:
             echo
             echo "worker 镜像 / Worker image：\`${worker}:${VERSION}\`"
             echo
-            echo "下载后用 \`sha256sum --check SHA256SUMS\` 核对。 / Verify downloads with \`sha256sum --check SHA256SUMS\`."
+            echo "下载后可用 \`sha256sum --check SHA256SUMS\` 校验。 / Verify downloads with \`sha256sum --check SHA256SUMS\`."
           } > "${notes}"
           if gh release view "${VERSION}" > /dev/null 2>&1; then
             # 同一个标签重跑：只补传文件，不动已经写好的说明。

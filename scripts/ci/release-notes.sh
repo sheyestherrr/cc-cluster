@@ -19,7 +19,7 @@ notes=$(awk -v v="$version" '
 ' "$file")
 
 if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
-	echo "$file 里没有 $version 的更新记录：先写好再打标签" >&2
+	echo "$file 中缺少 $version 的更新记录，请补充后再打标签" >&2
 	exit 1
 fi
 printf '%s\n' "$notes"

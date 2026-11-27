@@ -35,7 +35,7 @@ func TestParseLinks(t *testing.T) {
 			`{"cipher":"aes-256-gcm","password":"p@ss","port":8388,"server":"hk.example.com","type":"ss"}`},
 		{"ss，旧写法整段 base64", "ss://" + b64("chacha20-ietf-poly1305:secret@203.0.113.5:443"), "ss-203.0.113.5:443",
 			`{"cipher":"chacha20-ietf-poly1305","password":"secret","port":443,"server":"203.0.113.5","type":"ss"}`},
-		// 协议头拆成两段写：整条连着写会被仓库卫生检查当成真的分享链接。
+		// 协议头拆成两段写：连着写会被敏感信息检查（scripts/ci/check-repo.sh）误判为真实的分享链接。
 		{"ss，2022 明文加转义", "ss:" + "//2022-blake3-aes-128-gcm:a%2Bb%3D@[2001:db8::1]:8388/?#v6", "v6",
 			`{"cipher":"2022-blake3-aes-128-gcm","password":"a+b=","port":8388,"server":"2001:db8::1","type":"ss"}`},
 		{"ss，obfs 插件（分号没转义）", "ss://" + b64("aes-128-gcm:pw") + "@a.example.com:80?plugin=obfs-local;obfs=http;obfs-host=bing.com#obfs", "obfs",
