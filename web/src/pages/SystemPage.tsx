@@ -126,7 +126,8 @@ export function SystemPage({ state, loadError, refresh }: Props) {
           <SwitchItem
             label="启动槽位时查询出口评估"
             hint="经槽位的链路查询第三方接口，仅用于展示。"
-            checked={state?.exit_report_auto ?? true}
+            checked={state?.exit_report_auto ?? false}
+            disabled={!state}
             onChange={setExitReport}
           />
         </Card>
@@ -201,12 +202,13 @@ export function SystemPage({ state, loadError, refresh }: Props) {
         title="更换镜像"
         busy={saving}
         form
+        onSubmit={() => void saveImages()}
         description="仅修改镜像设置。运行中的容器仍使用原镜像，将网关停止后重新启动、槽位重建 worker 后生效。镜像需已拉取到本机。"
         className="mid"
         footer={
           <>
             <Button variant="outline" onClick={() => setImages(null)}>取消</Button>
-            <Button onClick={saveImages} disabled={saving || !images?.gateway.trim() || !images?.worker.trim()}>{saving ? "保存中…" : "保存"}</Button>
+            <Button type="submit" disabled={saving || !images?.gateway.trim() || !images?.worker.trim()}>{saving ? "保存中…" : "保存"}</Button>
           </>
         }
       >

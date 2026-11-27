@@ -5,7 +5,7 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActionNotice, useActions, type Notice } from "@/components/Actions";
 import { Flag, RegionIcon, regionName } from "@/components/Flag";
-import { Field, FormGrid } from "@/components/Form";
+import { Field, FormGrid, NameInput } from "@/components/Form";
 import { Menu, type MenuEntry } from "@/components/Menu";
 import { NOTE_PLACEHOLDER, NoteDialog, type NoteTarget } from "@/components/NoteDialog";
 import { ErrorBox, Page, PageHeader, Tabs, Tag } from "@/components/PageHeader";
@@ -542,20 +542,21 @@ function RegisterDialog({ sub, node, onClose, onDone }: { sub: string; node: Del
       title="添加为节点"
       busy={saving}
       form
+      onSubmit={() => void add()}
       description={<>将 <span className="font-semibold text-fg">{node?.name}</span> 添加为槽位可使用的节点。该节点随订阅 {sub} 更新。</>}
       className="mid"
       footer={
         <>
           <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button onClick={add} disabled={saving || !form.id.trim()}>{saving ? "添加中…" : "添加"}</Button>
+          <Button type="submit" disabled={saving || !form.id.trim()}>{saving ? "添加中…" : "添加"}</Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
         {!!node?.nodes?.length && <div className="callout callout-warning"><span>该节点已添加（{node.nodes.join("、")}）。再次添加将得到另一个配置相同的节点。</span></div>}
         <FormGrid>
-          <Field label="名称">
-            <Input aria-label="节点名称" value={form.id} maxLength={32} autoFocus placeholder={ID_HINT} onChange={(e) => setForm({ ...form, id: e.target.value })} />
+          <Field label="名称" hint={ID_HINT} required>
+            <NameInput aria-label="节点名称" value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} />
           </Field>
           <Field label="备注">
             <Input aria-label="节点备注" value={form.note} maxLength={NOTE_MAX} placeholder={NOTE_PLACEHOLDER} onChange={(e) => setForm({ ...form, note: e.target.value })} />
@@ -593,6 +594,7 @@ function SourceDialog({ editing, onClose, onDone }: { editing: Editing; onClose:
   const [url, setUrl] = useState("");
   const [content, setContent] = useState("");
   const [append, setAppend] = useState(true);
+  const [showUrl, setShowUrl] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const canAppend = !!sub?.local && sub.format === "links";
@@ -604,6 +606,7 @@ function SourceDialog({ editing, onClose, onDone }: { editing: Editing; onClose:
     setId("");
     setNote("");
     setUrl("");
+    setShowUrl(false);
     setContent("");
     setError("");
     setKind(sub?.local ? "content" : "url");
@@ -638,20 +641,21 @@ function SourceDialog({ editing, onClose, onDone }: { editing: Editing; onClose:
       title={sub ? `修改订阅 ${sub.id} 的来源` : "添加订阅"}
       busy={saving}
       form
+      onSubmit={() => void save()}
       description="订阅地址通常包含令牌，分享链接包含节点密码。两者仅保存在本机的数据目录中，保存后不再显示。"
       className="mid"
       footer={
         <>
           <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button onClick={save} disabled={saving || !filled || (!sub && !id.trim())}>{saving ? "处理中…" : sub ? "保存并刷新" : "添加"}</Button>
+          <Button type="submit" disabled={saving || !filled || (!sub && !id.trim())}>{saving ? "处理中…" : sub ? "保存并刷新" : "添加"}</Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
         {!sub && (
           <FormGrid>
-            <Field label="名称">
-              <Input aria-label="订阅名称" value={id} maxLength={32} autoFocus placeholder={ID_HINT} onChange={(e) => setId(e.target.value)} />
+            <Field label="名称" hint={ID_HINT} required>
+              <NameInput aria-label="订阅名称" value={id} placeholder="例如 air" onChange={(e) => setId(e.target.value)} />
             </Field>
             <Field label="备注">
               <Input aria-label="订阅备注" value={note} maxLength={NOTE_MAX} placeholder={NOTE_PLACEHOLDER} onChange={(e) => setNote(e.target.value)} />
@@ -663,7 +667,11 @@ function SourceDialog({ editing, onClose, onDone }: { editing: Editing; onClose:
 
         {kind === "url" ? (
           <Field label={sub ? "新地址" : "订阅地址"} hint={<>支持 Clash（Mihomo）格式与通用的 base64 订阅。由本机直接访问订阅服务器，不经过任何槽位的出口。{sub?.local && " 保存后该订阅转为远程订阅，原有内容不再保留。"}</>}>
-            <Input aria-label="订阅地址" type="password" autoComplete="off" placeholder="https://…" value={url} onChange={(e) => setUrl(e.target.value)} />
+            {/* 地址里通常带有令牌，默认遮住；需要核对粘贴的内容时可以显示。 */}
+            <span className="flex items-stretch gap-2">
+              <Input aria-label="订阅地址" type={showUrl ? "url" : "password"} autoComplete="off" spellCheck={false} placeholder="https://…" value={url} onChange={(e) => setUrl(e.target.value)} />
+              <Button variant="outline" aria-pressed={showUrl} onClick={() => setShowUrl((v) => !v)}>{showUrl ? "隐藏" : "显示"}</Button>
+            </span>
           </Field>
         ) : (
           <Field

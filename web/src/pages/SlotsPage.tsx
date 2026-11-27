@@ -7,7 +7,7 @@ import { ActionNotice, useActions } from "@/components/Actions";
 import { CopyButton } from "@/components/CopyButton";
 import { ExitCard } from "@/components/ExitCard";
 import { RegionIcon } from "@/components/Flag";
-import { Field, FormGrid, FormSection, SwitchItem } from "@/components/Form";
+import { Field, FormGrid, FormSection, NameInput, SwitchItem } from "@/components/Form";
 import { Menu, type MenuEntry } from "@/components/Menu";
 import { NOTE_PLACEHOLDER, NoteDialog, type NoteTarget } from "@/components/NoteDialog";
 import { ErrorBox, Page, PageHeader, Tabs, Tag } from "@/components/PageHeader";
@@ -659,20 +659,21 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
       title="新建槽位"
       busy={saving}
       form
+      onSubmit={() => void save()}
       description="创建后点击“启动”：先探测链路与出口，通过后才为槽位接线。"
       className="!w-[min(840px,calc(100vw-36px))]"
       footer={
         <>
           <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button onClick={save} disabled={saving || !slot.id.trim() || !ready}>{saving ? "创建中…" : "创建"}</Button>
+          <Button type="submit" disabled={saving || !slot.id.trim() || !ready}>{saving ? "创建中…" : "创建"}</Button>
         </>
       }
     >
       <div className="flex flex-col gap-5">
         <FormSection title="基础">
           <FormGrid>
-            <Field label="名称" hint={ID_HINT}>
-              <Input aria-label="槽位名称" value={slot.id} maxLength={32} autoFocus placeholder="例如 work-a" onChange={(e) => setSlot({ ...slot, id: e.target.value })} />
+            <Field label="名称" hint={ID_HINT} required>
+              <NameInput aria-label="槽位名称" value={slot.id} placeholder="例如 work-a" onChange={(e) => setSlot({ ...slot, id: e.target.value })} />
             </Field>
             <Field label="备注">
               <Input aria-label="槽位备注" value={slot.note} maxLength={NOTE_MAX} placeholder={NOTE_PLACEHOLDER} onChange={(e) => setSlot({ ...slot, note: e.target.value })} />

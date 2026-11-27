@@ -42,11 +42,12 @@ export function NoteDialog({ target, onClose, onSaved }: { target: NoteTarget | 
       title={`${target?.what ?? ""} ${target?.id ?? ""} 的备注`}
       busy={saving}
       form
+      onSubmit={() => void save()}
       description="名称用于容器名和文件名，只能包含小写字母、数字和连字符，创建后不可修改。备注仅用于显示，可使用中文、下划线或较长的说明，可随时修改，不影响运行中的槽位。"
       footer={
         <>
           <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button onClick={save} disabled={saving}>{saving ? "保存中…" : "保存"}</Button>
+          <Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存"}</Button>
         </>
       }
     >
@@ -58,9 +59,6 @@ export function NoteDialog({ target, onClose, onSaved }: { target: NoteTarget | 
           autoFocus
           placeholder="留空则清除备注"
           onChange={(e) => setNote(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing && !saving) void save();
-          }}
         />
         {error && <ErrorBox text={error} />}
       </div>

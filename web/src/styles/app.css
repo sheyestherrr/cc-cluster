@@ -20,7 +20,8 @@
   --brand-fg: 255 255 255;
   --ok: 4 136 103;
   --ok-soft: 222 245 237;
-  --danger: 195 58 47;
+  /* 加 c- 前缀：Resin 的 --danger 是一个完整的颜色值，同名会把它盖成三元组，使 var(--danger) 失效。 */
+  --c-danger: 195 58 47;
   --danger-soft: 252 234 232;
   --warn: 175 123 0;
   --warn-soft: 255 244 215;
@@ -918,6 +919,21 @@ dialog.modal-card::backdrop {
   padding: 0 18px;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* 表单不参与布局：正文与页脚仍是弹窗这个纵向弹性容器的子项。 */
+.modal-form {
+  display: contents;
+}
+
+.field-required {
+  color: var(--danger);
+}
+
+/* 填写过且不符合规则的输入框；尚未动过的不标。 */
+.field:user-invalid {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(195, 58, 47, 0.12);
 }
 
 .modal-footer {

@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { ActionNotice, useActions } from "@/components/Actions";
 import { ExitCard } from "@/components/ExitCard";
 import { RegionIcon } from "@/components/Flag";
-import { Field, FormGrid, FormSection, SwitchItem } from "@/components/Form";
+import { Field, FormGrid, FormSection, NameInput, SwitchItem } from "@/components/Form";
 import { Menu, type MenuEntry } from "@/components/Menu";
 import { NOTE_PLACEHOLDER, NoteDialog, type NoteTarget } from "@/components/NoteDialog";
 import { ErrorBox, Page, PageHeader, Tag } from "@/components/PageHeader";
@@ -660,19 +660,20 @@ function AddGatewayDialog({ open, state, onClose, onCreated }: { open: boolean; 
       title="新建网关"
       busy={saving}
       form
+      onSubmit={() => void save()}
       description="一个网关对应一个网关容器，可接入多个槽位，各槽位经自己的落地出站。使用中转时流量先经中转再到落地；不使用时各槽位直连自己的落地。"
       className="mid"
       footer={
         <>
           <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button onClick={save} disabled={saving || !gw.id.trim()}>{saving ? "创建中…" : "创建"}</Button>
+          <Button type="submit" disabled={saving || !gw.id.trim()}>{saving ? "创建中…" : "创建"}</Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
         <FormGrid>
-          <Field label="名称">
-            <Input aria-label="网关名称" value={gw.id} maxLength={32} autoFocus placeholder={ID_HINT} onChange={(e) => setGw({ ...gw, id: e.target.value })} />
+          <Field label="名称" hint={ID_HINT} required>
+            <NameInput aria-label="网关名称" value={gw.id} placeholder="例如 main" onChange={(e) => setGw({ ...gw, id: e.target.value })} />
           </Field>
           <Field label="备注">
             <Input aria-label="网关备注" value={gw.note} maxLength={NOTE_MAX} placeholder={NOTE_PLACEHOLDER} onChange={(e) => setGw({ ...gw, note: e.target.value })} />
@@ -724,20 +725,21 @@ function AddNodeDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
       title="添加节点"
       busy={saving}
       form
+      onSubmit={() => void save()}
       description="此处手动填写 SOCKS5 或 HTTP 代理。其他协议的节点请从订阅中选择，或通过命令行 node add --file 提供 Mihomo 配置片段。"
       className="mid"
       footer={
         <>
           <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button onClick={save} disabled={saving || !node.id.trim() || !node.server?.trim() || !node.port}>{saving ? "添加中…" : "添加"}</Button>
+          <Button type="submit" disabled={saving || !node.id.trim() || !node.server?.trim() || !node.port}>{saving ? "添加中…" : "添加"}</Button>
         </>
       }
     >
       <div className="flex flex-col gap-5">
         <FormSection title="基础">
           <FormGrid>
-            <Field label="名称">
-              <Input aria-label="节点名称" value={node.id} maxLength={32} autoFocus placeholder={`${ID_HINT}，例如 home-la`} onChange={(e) => setNode({ ...node, id: e.target.value })} />
+            <Field label="名称" hint={ID_HINT} required>
+              <NameInput aria-label="节点名称" value={node.id} placeholder="例如 home-la" onChange={(e) => setNode({ ...node, id: e.target.value })} />
             </Field>
             <Field label="备注">
               <Input aria-label="节点备注" value={node.note} maxLength={NOTE_MAX} placeholder={NOTE_PLACEHOLDER} onChange={(e) => setNode({ ...node, note: e.target.value })} />

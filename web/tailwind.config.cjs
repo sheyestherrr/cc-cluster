@@ -17,7 +17,7 @@ module.exports = {
         faint: token("faint"),
         brand: { DEFAULT: token("brand"), soft: token("brand-soft"), fg: token("brand-fg") },
         ok: { DEFAULT: token("ok"), soft: token("ok-soft") },
-        danger: { DEFAULT: token("danger"), soft: token("danger-soft") },
+        danger: { DEFAULT: token("c-danger"), soft: token("danger-soft") },
         warn: { DEFAULT: token("warn"), soft: token("warn-soft") },
       },
       boxShadow: {

@@ -16,6 +16,8 @@ interface DialogProps {
   busy?: boolean;
   /** 带输入内容的表单：点击弹窗以外的区域不关闭，避免丢失已填写的内容。 */
   form?: boolean;
+  /** 给出后正文与页脚包在 <form> 里，页脚的主按钮写成 type="submit"。 */
+  onSubmit?: () => void;
 }
 
 /** 浏览器是否支持 closedby 属性；不支持时点击弹窗以外关闭由下面的指针事件处理。 */
@@ -24,7 +26,7 @@ const nativeClosedBy = typeof HTMLDialogElement !== "undefined" && "closedBy" in
 /** 打开后的初始焦点：表单是第一个输入框，确认类弹窗是页脚的第一个按钮（“取消”）。 */
 const FOCUS_FIRST = ".modal-body input:not([type=checkbox]):not([type=radio]):not(:disabled), .modal-body textarea:not(:disabled), .modal-body select:not(:disabled), .modal-footer button:not(:disabled)";
 
-export function Dialog({ open, onClose, title, description, children, footer, className, busy, form }: DialogProps) {
+export function Dialog({ open, onClose, title, description, children, footer, className, busy, form, onSubmit }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const close = useRef(onClose);
@@ -49,6 +51,14 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
     return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
   };
   const light = !form && !busy;
+
+  const body = (
+    <>
+      {/* 请求进行中整个表单不可操作：页脚的“取消”与输入框都不应再改动。 */}
+      {children && <div className="modal-body" inert={busy}>{children}</div>}
+      {footer && <div className="modal-footer" inert={busy}>{footer}</div>}
+    </>
+  );
 
   return (
     <dialog
@@ -76,9 +86,20 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
         </Button>
       </div>
       {description && <div className="modal-desc">{description}</div>}
-      {/* 请求进行中整个表单不可操作：页脚的“取消”与输入框都不应再改动。 */}
-      {children && <div className="modal-body" inert={busy}>{children}</div>}
-      {footer && <div className="modal-footer" inert={busy}>{footer}</div>}
+      {/* 有 onSubmit 时正文与页脚在同一个表单里：在输入框中按 Enter 即提交，必填与格式由浏览器先行校验。 */}
+      {onSubmit ? (
+        <form
+          className="modal-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!busy) onSubmit();
+          }}
+        >
+          {body}
+        </form>
+      ) : (
+        body
+      )}
     </dialog>
   );
 }
