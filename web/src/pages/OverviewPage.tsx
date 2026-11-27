@@ -5,7 +5,7 @@ import { Activity, Box, Gauge, Layers, ShieldCheck, Sparkles, Waves } from "luci
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { PageId } from "@/components/AppShell";
-import { ChartEmpty, ChartPending, ConnsChart, DelayBars, Legend, SubUsableChart, TrafficChart, WatchTimeline, subLegend, trafficLegend, watchLegend } from "@/components/charts";
+import { ChartEmpty, ChartPending, ConnsChart, DelayBars, Legend, SubUsableChart, TrafficChart, WatchTimeline, subLegend, watchLegend } from "@/components/charts";
 import { RegionIcon } from "@/components/Flag";
 import { ErrorBox, Page, PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -194,13 +194,11 @@ export function OverviewPage({ state, loadError, go }: Props) {
             </div>
           </PanelHead>
           {history === null ? <div style={{ minHeight: 260 }} className="grid">{historyPending}</div> : totalDown + totalUp > 0 ? <TrafficChart points={history.traffic} step={history.step} /> : <ChartEmpty height={260}>{noHistory}</ChartEmpty>}
-          <Legend items={trafficLegend} />
         </Card>
 
         <Card className="dashboard-panel">
           <PanelHead title="连接峰值" hint="同时连接数的最大值" />
           {history === null ? <div style={{ minHeight: 260 }} className="grid">{historyPending}</div> : peakConns > 0 ? <ConnsChart points={history.traffic} step={history.step} /> : <ChartEmpty height={260}>该时段内无连接记录。</ChartEmpty>}
-          <Legend items={[{ color: "var(--chart-3)", label: "连接数" }]} />
         </Card>
 
         <Card className="dashboard-panel span-2">

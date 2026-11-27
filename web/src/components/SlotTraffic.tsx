@@ -4,7 +4,7 @@
 import { ArrowDownToLine, ArrowUpFromLine, Cable, Info } from "lucide-react";
 import type React from "react";
 import { useId, useState } from "react";
-import { ChartEmpty, ConnsChart, Legend, TrafficChart, trafficLegend } from "@/components/charts";
+import { ChartEmpty, ConnsChart, TrafficChart } from "@/components/charts";
 import { Tabs, tabPanelProps } from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
 import { api, type History, type Slot, type SlotLive } from "@/lib/api";
@@ -56,7 +56,6 @@ export function SlotTraffic({ s, live, history }: { s: Slot; live?: SlotLive; hi
             <p>最近 24 小时，每 5 分钟一个数据点</p>
           </div>
           {hasHistory && history ? <TrafficChart points={history.traffic} step={history.step} slot={s.id} height={240} /> : <ChartEmpty height={240}>{none}</ChartEmpty>}
-          <Legend items={trafficLegend} />
         </div>
         <div className="flex min-w-0 flex-col gap-2.5">
           <div className="dashboard-panel-header">
@@ -64,7 +63,6 @@ export function SlotTraffic({ s, live, history }: { s: Slot; live?: SlotLive; hi
             <p>每个时段内同时连接数的最大值</p>
           </div>
           {peak > 0 && history ? <ConnsChart points={history.traffic} step={history.step} slot={s.id} height={240} /> : <ChartEmpty height={240}>暂无连接记录。</ChartEmpty>}
-          <Legend items={[{ color: "var(--chart-3)", label: "连接数" }]} />
         </div>
       </div>
 

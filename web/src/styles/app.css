@@ -637,6 +637,24 @@ select.field {
   height: auto;
 }
 
+/* 图例画在图框内的右上角，不另占图下方的一行；图表顶部的边距为它留出位置。不拦截鼠标，悬停提示照常。 */
+.trend-svg {
+  position: relative;
+}
+
+.chart-legend {
+  position: absolute;
+  top: 9px;
+  right: 12px;
+  z-index: 1;
+  display: flex;
+  pointer-events: none;
+}
+
+.chart-legend .dashboard-legend {
+  gap: 12px;
+}
+
 .dashboard-legend span {
   display: inline-flex;
   align-items: center;

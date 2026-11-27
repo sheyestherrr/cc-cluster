@@ -16,6 +16,8 @@ const TICK = { fill: "var(--chart-tick)", fontSize: 11, fontWeight: 600 } as con
 const AXIS = { tickLine: false, axisLine: false, tick: TICK } as const;
 const CURSOR = { stroke: "rgba(15, 94, 216, 0.34)", strokeWidth: 1 } as const;
 const MARGIN = { top: 10, right: 12, bottom: 4, left: 8 } as const;
+/** 图框内右上角有图例时的边距：顶部多留一行。 */
+const MARGIN_LEGEND = { ...MARGIN, top: 34 } as const;
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const hm = (ms: number) => {
@@ -80,12 +82,18 @@ export function countTicks(max: number): number[] {
 // ---- 画布、图例、提示框 ----
 
 /** 带框的画布，下面一行是时间范围的两端。 */
-/** 图的外框。summary 是图的文字概述，只给读屏软件：图形本身读不出数值。 */
-function Plot({ height, footer, summary, children, className }: { height?: number; footer?: [string, string]; summary: string; children: React.ReactNode; className?: string }) {
+/**
+ * 图的外框。summary 是图的文字概述，只给读屏软件：图形本身读不出数值。
+ * legend 是画在图框内右上角的图例；带图例的图用 MARGIN_LEGEND 留出顶部的位置，曲线不与图例重叠。
+ */
+function Plot({ height, footer, summary, legend, children, className }: { height?: number; footer?: [string, string]; summary: string; legend?: { color: string; label: string }[]; children: React.ReactNode; className?: string }) {
   return (
     <div className="trend-chart">
       <p className="sr-only">{summary}</p>
-      <div className={cn("trend-svg", className)} style={height ? { height } : undefined}>{children}</div>
+      <div className={cn("trend-svg", className)} style={height ? { height } : undefined}>
+        {legend && <div className="chart-legend"><Legend items={legend} /></div>}
+        {children}
+      </div>
       {footer && (
         <div className="trend-footer">
           <span>{footer[0]}</span>
@@ -149,10 +157,11 @@ interface TipProps<Row> {
   payload?: readonly { dataKey?: unknown; payload?: Row }[];
 }
 
-export const trafficLegend = [
+const trafficLegend = [
   { color: C1, label: "下行" },
   { color: C2, label: "上行" },
 ];
+const connsLegend = [{ color: C3, label: "连接数" }];
 
 // ---- 流量 ----
 
@@ -184,9 +193,9 @@ export function TrafficChart({ points, step, slot, height = 260 }: { points: His
   const summary = `流量趋势，${mdhm(from)} 至 ${mdhm(to)}：下行合计 ${bytesText(rows.reduce((n, r) => n + r.down, 0))}，上行合计 ${bytesText(rows.reduce((n, r) => n + r.up, 0))}。`;
 
   return (
-    <Plot height={height} footer={[mdhm(from), mdhm(to)]} summary={summary}>
+    <Plot height={height} footer={[mdhm(from), mdhm(to)]} summary={summary} legend={trafficLegend}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={rows} margin={MARGIN}>
+        <ComposedChart data={rows} margin={MARGIN_LEGEND}>
           <defs>
             <linearGradient id={`${id}-down`} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={C1} stopOpacity={0.26} />
@@ -241,9 +250,9 @@ export function ConnsChart({ points, step, slot, height = 260 }: { points: Histo
   const peak = rows.reduce((m, r) => Math.max(m, r.conns), 0);
   const yTicks = countTicks(peak);
   return (
-    <Plot height={height} footer={[mdhm(from), mdhm(to)]} summary={`连接数趋势，${mdhm(from)} 至 ${mdhm(to)}：峰值 ${peak} 条。`}>
+    <Plot height={height} footer={[mdhm(from), mdhm(to)]} summary={`连接数趋势，${mdhm(from)} 至 ${mdhm(to)}：峰值 ${peak} 条。`} legend={connsLegend}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={rows} margin={MARGIN}>
+        <ComposedChart data={rows} margin={MARGIN_LEGEND}>
           <defs>
             <linearGradient id={`${id}-c`} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={C3} stopOpacity={0.24} />
