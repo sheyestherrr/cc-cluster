@@ -648,12 +648,17 @@ func orEmpty(v []string) []string {
 	return v
 }
 
-// enterCommand 是在终端里进入槽位的命令；数据目录就是默认的那个时不用带 --data-dir。
+// enterCommand 是在终端里进入槽位的命令。
 func enterCommand(dataDir, slot string) string {
+	return SelfCommand(dataDir, "enter "+slot)
+}
+
+// SelfCommand 是让使用者在终端里照着执行的一条 cc-cluster 命令；数据目录就是默认的那个时不用带 --data-dir。
+func SelfCommand(dataDir, rest string) string {
 	if filepath.Clean(dataDir) == store.DefaultDir() {
-		return "cc-cluster enter " + slot
+		return "cc-cluster " + rest
 	}
-	return fmt.Sprintf("cc-cluster --data-dir %s enter %s", shellQuote(dataDir), slot)
+	return fmt.Sprintf("cc-cluster --data-dir %s %s", shellQuote(dataDir), rest)
 }
 
 // shellQuote 给路径加上单引号，除非它只含不需要引号的字符。

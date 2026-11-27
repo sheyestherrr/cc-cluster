@@ -15,6 +15,7 @@ import (
 	"github.com/sheyestherrr/cc-cluster/internal/dockerapi"
 	"github.com/sheyestherrr/cc-cluster/internal/model"
 	"github.com/sheyestherrr/cc-cluster/internal/store"
+	"github.com/sheyestherrr/cc-cluster/internal/update"
 )
 
 // 容器标签。
@@ -95,6 +96,42 @@ func (e *Engine) SetExitReportAuto(on bool) (err error) {
 	}
 	c.NoExitReport = !on
 	return e.st.SaveCluster(c)
+}
+
+// UseReleaseImages 把设置里本项目发布的镜像换成 v 这个版本的：先把要换成的镜像拉到本机，都拉到了才改设置。
+// 不是本项目发布的镜像（自己构建的、别处来的）不动，各槽位单独指定的镜像也不动。
+// 和 SetImages 一样只改设置：运行中的容器不停、不重建。changed 表示设置变了。
+func (e *Engine) UseReleaseImages(ctx context.Context, v string) (changed bool, err error) {
+	if !update.IsRelease(v) {
+		return false, fmt.Errorf("%q 不是发布的版本号", v)
+	}
+	c, err := e.st.Cluster()
+	if err != nil {
+		return false, err
+	}
+	gateway, worker := update.Images(v)
+	if cur, ok := update.ImageVersion(c.GatewayImage); !ok || cur == v {
+		gateway = ""
+	}
+	if cur, ok := update.ImageVersion(c.WorkerImage); !ok || cur == v {
+		worker = ""
+	}
+	if gateway == "" && worker == "" {
+		return false, nil
+	}
+	if e.dk == nil {
+		return false, errors.New("拉取镜像需要连上 Docker")
+	}
+	for _, img := range []string{gateway, worker} {
+		if img == "" {
+			continue
+		}
+		e.logf("拉取 %s", img)
+		if err := e.dk.ImagePull(ctx, img, nil); err != nil {
+			return false, err
+		}
+	}
+	return true, e.SetImages(gateway, worker)
 }
 
 // SetImages 更换网关镜像和默认的 worker 镜像；留空的那个不变。

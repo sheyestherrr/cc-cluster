@@ -200,6 +200,50 @@ func TestCopyToSendsTar(t *testing.T) {
 	}
 }
 
+func TestSplitImageRef(t *testing.T) {
+	for ref, want := range map[string][2]string{
+		"ghcr.io/o/gw:v0.0.3":     {"ghcr.io/o/gw", "v0.0.3"},
+		"gw":                      {"gw", "latest"},
+		"localhost:5000/gw":       {"localhost:5000/gw", "latest"},
+		"localhost:5000/gw:dev":   {"localhost:5000/gw", "dev"},
+		"ghcr.io/o/gw@sha256:abc": {"ghcr.io/o/gw", "sha256:abc"},
+	} {
+		if repo, tag := splitImageRef(ref); repo != want[0] || tag != want[1] {
+			t.Errorf("splitImageRef(%q) = %q %q", ref, repo, tag)
+		}
+	}
+}
+
+func TestImagePull(t *testing.T) {
+	var query string
+	body := `{"status":"Pulling from o/gw","id":"v0.0.3"}` + "\n" + `{"status":"Downloading","id":"abc123"}` + "\n" + `{"status":"Status: Downloaded newer image for ghcr.io/o/gw:v0.0.3"}` + "\n"
+	c := fakeDaemon(t, "1.44", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/images/create") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		query = r.URL.RawQuery
+		_, _ = w.Write([]byte(body))
+	}))
+	var seen []string
+	if err := c.ImagePull(context.Background(), "ghcr.io/o/gw:v0.0.3", func(s string) { seen = append(seen, s) }); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(query, "fromImage=ghcr.io%2Fo%2Fgw") || !strings.Contains(query, "tag=v0.0.3") {
+		t.Fatalf("应分开传仓库和标签: %s", query)
+	}
+	// 逐层的进度不往外报，只报整体的那几句。
+	if len(seen) != 1 || !strings.Contains(seen[0], "Downloaded newer image") {
+		t.Fatalf("进度不对: %q", seen)
+	}
+
+	// 拉取中途的失败在应答体里，状态码仍是 200。
+	body = `{"status":"Pulling from o/gw","id":"v9"}` + "\n" + `{"error":"manifest unknown"}` + "\n"
+	if err := c.ImagePull(context.Background(), "ghcr.io/o/gw:v9", nil); err == nil || !strings.Contains(err.Error(), "manifest unknown") {
+		t.Fatalf("应答体里的错误应当报出来: %v", err)
+	}
+}
+
 func TestContainerListFiltersByLabel(t *testing.T) {
 	var filters string
 	c := fakeDaemon(t, "1.44", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

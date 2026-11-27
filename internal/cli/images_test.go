@@ -19,8 +19,13 @@ func TestDefaultImagesFollowVersion(t *testing.T) {
 		t.Fatalf("从源码构建的应当用本机构建的镜像: %s %s", g, w)
 	}
 	Version = "v0.0.2"
-	if g, w := defaultImages(); g != imageRepo+"gateway:v0.0.2" || w != imageRepo+"worker:v0.0.2" {
+	if g, w := defaultImages(); g != "ghcr.io/sheyestherrr/cc-cluster-gateway:v0.0.2" || w != "ghcr.io/sheyestherrr/cc-cluster-worker:v0.0.2" {
 		t.Fatalf("发布版应当用同版本的发布镜像: %s %s", g, w)
+	}
+	// git describe 给源码构建起的名字以 v 开头，但不是发布版：没有对应的发布镜像。
+	Version = "v0.0.2-3-g768d650"
+	if g, w := defaultImages(); g != model.DefaultGatewayImage || w != model.DefaultWorkerImage {
+		t.Fatalf("标签之后的源码构建应当用本机构建的镜像: %s %s", g, w)
 	}
 }
 

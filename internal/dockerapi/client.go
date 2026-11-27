@@ -199,3 +199,47 @@ func (c *Client) ImageExists(ctx context.Context, ref string) (bool, error) {
 	}
 	return err == nil, err
 }
+
+// splitImageRef 把镜像名拆成仓库和标签（或摘要）；没有写标签时是 latest。
+func splitImageRef(ref string) (repo, tag string) {
+	if name, digest, ok := strings.Cut(ref, "@"); ok {
+		return name, digest
+	}
+	// 标签的冒号在最后一个斜杠之后；之前的冒号是仓库地址里的端口。
+	if i := strings.LastIndex(ref, ":"); i > strings.LastIndex(ref, "/") {
+		return ref[:i], ref[i+1:]
+	}
+	return ref, "latest"
+}
+
+// ImagePull 从镜像仓库拉取一个镜像。不带凭据，只适用于公开的镜像；不读取用户的 docker 配置。
+// progress 非 nil 时收到守护进程报告的整体进度（不含逐层的下载进度）。
+func (c *Client) ImagePull(ctx context.Context, ref string, progress func(string)) error {
+	repo, tag := splitImageRef(ref)
+	resp, err := c.request(ctx, http.MethodPost, "/images/create", url.Values{"fromImage": {repo}, "tag": {tag}}, "", nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	// 应答是一串 JSON：拉取中途的失败不体现在状态码上，而是其中一条带 error 的消息。
+	dec := json.NewDecoder(resp.Body)
+	for {
+		var m struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+			Error  string `json:"error"`
+		}
+		if err := dec.Decode(&m); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return fmt.Errorf("拉取 %s 时连接中断：%w", ref, err)
+		}
+		if m.Error != "" {
+			return fmt.Errorf("拉取 %s 失败：%s", ref, m.Error)
+		}
+		if progress != nil && m.ID == "" && m.Status != "" {
+			progress(m.Status)
+		}
+	}
+}

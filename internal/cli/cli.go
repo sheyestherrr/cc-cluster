@@ -20,6 +20,7 @@ import (
 	"github.com/sheyestherrr/cc-cluster/internal/engine"
 	"github.com/sheyestherrr/cc-cluster/internal/model"
 	"github.com/sheyestherrr/cc-cluster/internal/store"
+	"github.com/sheyestherrr/cc-cluster/internal/update"
 )
 
 // EnvDataDir 是指定数据目录的环境变量。
@@ -63,7 +64,8 @@ const usage = `cc-cluster：为 Claude Code 管理相互独立的工作槽位。
                             工作槽位
   render <网关>             预览网关的核心配置（默认隐藏凭据）
   exit-report [on|off]      启动槽位时是否顺带查询第三方对出口 IP 的评估
-  images                    查看或更换网关镜像与默认的 worker 镜像（升级之后用）
+  images                    查看或更换网关镜像与默认的 worker 镜像
+  update                    把 cc-cluster 换成最新发布的版本（--check 只查看；--images 顺带换镜像）；不改动数据目录里的槽位与设置
   version                   显示版本
 
 每个命令和子命令都可以加 -h 查看参数，例如 cc-cluster slot add -h。
@@ -146,6 +148,8 @@ func (a *app) dispatch(ctx context.Context, cmd string, args []string) error {
 		return a.cmdExitReport(ctx, args)
 	case "images":
 		return a.cmdImages(ctx, args)
+	case "update", "upgrade":
+		return a.cmdUpdate(ctx, args)
 	}
 	ctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
@@ -285,14 +289,11 @@ func defaultClusterName() string {
 	return model.DefaultClusterName + "-" + s
 }
 
-// imageRepo 是发布的镜像所在的仓库前缀。
-const imageRepo = "ghcr.io/sheyestherrr/cc-cluster-"
-
 // defaultImages 返回 init 默认使用的两个镜像：发布版用与自己同版本的发布镜像，
-// 从源码构建的（版本号不是 v 开头）用本机 make images 得到的那两个。
+// 从源码构建的用本机 make images 得到的那两个。
 func defaultImages() (gateway, worker string) {
-	if len(Version) > 1 && Version[0] == 'v' && Version[1] >= '0' && Version[1] <= '9' {
-		return imageRepo + "gateway:" + Version, imageRepo + "worker:" + Version
+	if update.IsRelease(Version) {
+		return update.Images(Version)
 	}
 	return model.DefaultGatewayImage, model.DefaultWorkerImage
 }
