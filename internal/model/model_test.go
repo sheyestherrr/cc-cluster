@@ -1,6 +1,7 @@
 package model
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -137,6 +138,10 @@ func TestGatewayValidate(t *testing.T) {
 		"探测地址含引号":   func(g *Gateway) { g.EchoURLs = []string{"http://x/'; rm -rf /'"} },
 		"日志级别不对":    func(g *Gateway) { g.LogLevel = "verbose" },
 		"中转 ID 不合法": func(g *Gateway) { g.Transit = "Bad ID" },
+		"出口网络是宿主":   func(g *Gateway) { g.EgressNetwork = "host" },
+		"出口网络是无网络":  func(g *Gateway) { g.EgressNetwork = "None" },
+		"出口网络借用容器":  func(g *Gateway) { g.EgressNetwork = "container:other" },
+		"出口网络名带空格":  func(g *Gateway) { g.EgressNetwork = "my net" },
 	}
 	for name, mutate := range cases {
 		c := g
@@ -172,6 +177,8 @@ func TestSlotValidate(t *testing.T) {
 		"挂 Docker 口": func(s *Slot) { s.Mounts = []Mount{{Source: "/var/run/docker.sock", Target: "/var/run/docker.sock"}} },
 		"路径含冒号":      func(s *Slot) { s.Mounts = []Mount{{Source: "/data/p:rw", Target: "/work"}} },
 		"shell 相对":   func(s *Slot) { s.Shell = "bash" },
+		"CPU 限额非数":   func(s *Slot) { s.CPUs = math.NaN() },
+		"CPU 限额无穷大":  func(s *Slot) { s.CPUs = math.Inf(1) },
 	}
 	for name, mutate := range cases {
 		c := base
@@ -223,7 +230,7 @@ func TestParseBytes(t *testing.T) {
 			t.Errorf("ParseBytes(%q) = %d, %v；期望 %d", in, got, err, want)
 		}
 	}
-	for _, bad := range []string{"abc", "-1g", "g"} {
+	for _, bad := range []string{"abc", "-1g", "g", "nan", "NaN", "inf", "+Inf", "infg", "1e30", "9e18", "1e10g"} {
 		if _, err := ParseBytes(bad); err == nil {
 			t.Errorf("ParseBytes(%q) 应报错", bad)
 		}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/netip"
 	"net/url"
 	"path"
@@ -247,6 +248,9 @@ func (g Gateway) Validate() error {
 	if g.EgressNetwork == "" {
 		return fmt.Errorf("网关 %s 缺少出口网络名", g.ID)
 	}
+	if err := CheckEgressNetwork(g.EgressNetwork); err != nil {
+		return fmt.Errorf("网关 %s：%w", g.ID, err)
+	}
 	p, err := netip.ParsePrefix(g.Pool)
 	if err != nil || !p.Addr().Is4() || p.Bits() > 30 || p != p.Masked() {
 		return fmt.Errorf("网关 %s 的地址池 %q 无效：须为不小于 /30 的 IPv4 网段", g.ID, g.Pool)
@@ -379,6 +383,22 @@ func CheckMountTarget(target, home string) error {
 	return nil
 }
 
+var networkNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
+
+// CheckEgressNetwork 检查网关的出口网络名：须为一个自定义 Docker 网络的名称。
+// 这个值直接用作网关容器的网络模式，而网关带 NET_ADMIN 并会清空所在网络命名空间的主路由表：
+// host 会让它操作宿主的网络，container:<名称> 会让它操作另一个容器的网络，none 则没有出口。
+func CheckEgressNetwork(name string) error {
+	switch strings.ToLower(name) {
+	case "host", "none", "default":
+		return fmt.Errorf("出口网络不能是 %s，请指定一个 Docker 网络的名称", name)
+	}
+	if !networkNameRe.MatchString(name) {
+		return fmt.Errorf("出口网络名 %q 无效：仅可使用字母、数字、下划线、点和连字符，以字母或数字开头", name)
+	}
+	return nil
+}
+
 // Validate 检查槽位。
 func (s Slot) Validate() error {
 	if err := ValidateID("槽位", s.ID); err != nil {
@@ -430,6 +450,10 @@ func (s Slot) Validate() error {
 	}
 	if s.MemoryBytes < 0 || s.CPUs < 0 || s.PidsLimit < 0 {
 		return fmt.Errorf("槽位 %s 的资源限额不能为负", s.ID)
+	}
+	// 命令行的 --cpus 接受 nan 与 inf；它们换算成 Docker 的限额时结果没有定义。
+	if math.IsNaN(s.CPUs) || s.CPUs > MaxCPUs {
+		return fmt.Errorf("槽位 %s 的 CPU 限额无效：须为不超过 %d 的数", s.ID, MaxCPUs)
 	}
 	if s.FakeProc && s.CPUs == 0 && s.MemoryBytes == 0 {
 		return fmt.Errorf("槽位 %s：按限额显示 /proc 信息前，须先设置 CPU 或内存上限", s.ID)
@@ -511,8 +535,15 @@ func ParseBytes(s string) (int64, error) {
 		s = s[:len(s)-1]
 	}
 	v, err := strconv.ParseFloat(s, 64)
-	if err != nil || v < 0 {
+	// ParseFloat 接受 nan、inf 和超出 int64 的数；它们转成整数的结果没有定义，一律不收。
+	if err != nil || math.IsNaN(v) || v < 0 || v*float64(mult) >= maxBytes {
 		return 0, fmt.Errorf("无法解析大小 %q", s)
 	}
 	return int64(v * float64(mult)), nil
 }
+
+// maxBytes 是 ParseBytes 接受的上限（不含）：1 EiB，远大于任何实际的内存限额，又在 int64 的范围内。
+const maxBytes = float64(1 << 60)
+
+// MaxCPUs 是槽位 CPU 限额的上限。
+const MaxCPUs = 4096
