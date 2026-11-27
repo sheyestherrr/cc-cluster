@@ -80,7 +80,11 @@ cc-cluster init \
 
 **Data directory.** Slot HOMEs, identities and node configuration live in `~/.cc-cluster` by default. To put it elsewhere, set `CC_CLUSTER_DATA=/some/dir` or pass `--data-dir` each time.
 
-**Upgrading.** Run the install command again. It updates the binary, pulls the new images and points the data directory at them. Running containers keep using the old image: in the web UI, stop and start each gateway and use "重建 worker" (recreate worker) on each slot to move them over. HOME and identity are kept. See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
+**Upgrading.** Run `cc-cluster update`. It downloads the new release, verifies the checksum and replaces only the `cc-cluster` file. The data directory (slots, nodes, subscriptions, settings) is neither read nor changed, running containers are not affected, and the background web UI is restarted on the new version. In the web UI, the version number at the top of the sidebar opens a dialog with the current version, the latest version and the release notes; a hint appears next to it when a newer version is out. `cc-cluster update --check` only looks. See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
+
+Images are left alone by default, and everything keeps working with the ones you have. To move to the new images, run `cc-cluster update --images`: it pulls them first and then changes the image setting in the data directory. Slots then show "配置待应用" (pending); in the web UI, stop and start each gateway and use "重建 worker" (recreate worker) on each slot to move them over. HOME and identity are kept. Pick a moment when nothing is running in the slots.
+
+v0.0.2 and earlier have no `update` command: run the install command once more to get there (it also switches the image setting to the new version), and use `cc-cluster update` from then on.
 
 ## Getting started
 

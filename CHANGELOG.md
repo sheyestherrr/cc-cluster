@@ -4,6 +4,28 @@
 
 One section per release, newest first. Versions follow `vMAJOR.MINOR.PATCH`; pre-releases look like `v0.1.0-alpha.1` or `v1.0.0-rc.1`.
 
+## v0.0.3
+
+升级改成一条命令：`cc-cluster update`。
+
+- **新增 `cc-cluster update`**：下载新版本、核对校验和，只替换 `cc-cluster` 这一个文件。数据目录（槽位、节点、订阅、设置）不读也不改，运行中的容器不受影响；后台的网页界面会换成新版本的。任何一步失败都不改动原来的文件。`--check` 只看不更新，`--version` 换成指定的版本。
+- **网页侧栏左上角显示版本号**：点开能看到当前版本、最新版本、发布时间和各版本的更新说明，以及要执行的更新命令。有新版本时版本号旁边有提示。网页界面每隔几个小时检查一次，设置 `CC_CLUSTER_NO_UPDATE_CHECK=1` 可以关掉自动检查。
+- **镜像默认不跟着换**：更换镜像设置会让运行中的槽位变成“配置待应用”，所以改成明确要求才换。`cc-cluster update --images` 先把新版本的镜像拉取到本机，再改设置；之后把网关停止再启动、槽位“重建 worker”就用上新镜像。
+- 从源码构建的 `cc-cluster` 默认使用本机构建的镜像，版本号带提交信息的构建不再被当成发布版。
+
+升级：这个版本之前没有 `update` 命令，重新运行一遍安装命令；以后执行 `cc-cluster update`。
+
+---
+
+Upgrading is now a single command: `cc-cluster update`.
+
+- **New `cc-cluster update`**: downloads the new release, verifies the checksum and replaces only the `cc-cluster` file. The data directory (slots, nodes, subscriptions, settings) is neither read nor changed, and running containers are not affected; the background web UI is restarted on the new version. If any step fails, the existing file is left as it was. `--check` only looks; `--version` installs a specific version.
+- **The web UI shows the version at the top of the sidebar**: click it to see the current version, the latest version, its release date, the release notes and the command to run. A hint appears next to it when a newer version is out. The web UI checks every few hours; set `CC_CLUSTER_NO_UPDATE_CHECK=1` to turn the automatic check off.
+- **Images are no longer switched automatically**: changing the image setting puts running slots into "配置待应用" (pending), so it now happens only when asked. `cc-cluster update --images` pulls the new images first and then changes the setting; after that, stop and start each gateway and use "重建 worker" (recreate worker) on each slot.
+- A `cc-cluster` built from source defaults to the locally built images; builds whose version carries commit information are no longer treated as releases.
+
+To upgrade: earlier versions have no `update` command, so run the install command once more. From then on, run `cc-cluster update`.
+
 ## v0.0.2
 
 日常用法收成两条命令：`cc-cluster web` 配置，在项目目录里执行 `cc-cluster` 进槽位干活。
