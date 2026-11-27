@@ -655,6 +655,120 @@ select.field {
   gap: 12px;
 }
 
+/*
+ * 总览的下半部分：左侧两列宽的一组（持续检测在上，订阅的两张图并排在下），右侧是“最近操作”。
+ * 槽位数不固定，左侧的高度随之变化：右侧卡片不参与行高的计算（contain: size），高度取左侧一组的，记录在卡片内滚动。
+ */
+.dashboard-stack {
+  grid-column: span 2;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.dashboard-side {
+  min-height: 280px;
+}
+
+@media (min-width: 1121px) {
+  .dashboard-side {
+    contain: size;
+  }
+}
+
+.dashboard-scroll {
+  --scrollbar-thumb: #7d8ca5;
+  --scrollbar-track: transparent;
+
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  border-radius: 11px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  container-type: scroll-state;
+}
+
+/* 上下边缘的阴影：该方向还有内容时显示。伪元素用 sticky 贴在滚动区域的边缘，负边距抵消自身的高度。 */
+.dashboard-scroll::before,
+.dashboard-scroll::after {
+  content: "";
+  display: block;
+  position: sticky;
+  block-size: 12px;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.dashboard-scroll::before {
+  inset-block-start: 0;
+  margin-block-end: -12px;
+  background: radial-gradient(farthest-side at 50% 0, rgb(15 29 53 / 0.16), transparent);
+}
+
+.dashboard-scroll::after {
+  inset-block-end: 0;
+  margin-block-start: -12px;
+  background: radial-gradient(farthest-side at 50% 100%, rgb(15 29 53 / 0.16), transparent);
+}
+
+@container scroll-state(scrollable: block-start) {
+  .dashboard-scroll::before {
+    opacity: 1;
+  }
+}
+
+@container scroll-state(scrollable: block-end) {
+  .dashboard-scroll::after {
+    opacity: 1;
+  }
+}
+
+/* 不支持 scroll-state 查询时改用滚动驱动的动画；两者都不支持时没有阴影，滚动条仍可见。 */
+@supports not (container-type: scroll-state) {
+  .dashboard-scroll::before,
+  .dashboard-scroll::after {
+    animation: show-scroll-shadow linear both;
+    animation-timeline: scroll();
+  }
+
+  .dashboard-scroll::before {
+    animation-range: 0 2rem;
+  }
+
+  .dashboard-scroll::after {
+    animation-direction: reverse;
+    animation-range: calc(100% - 2rem) 100%;
+  }
+}
+
+@keyframes show-scroll-shadow {
+  to {
+    opacity: 1;
+  }
+}
+
+/* 两列及更窄的布局：单列宽的卡片独占一行，不留半行空白；“最近操作”的高度不再跟随左侧，限制为固定的上限。 */
+@media (max-width: 1120px) {
+  .dashboard-main-grid > .dashboard-panel {
+    grid-column: 1 / -1;
+  }
+
+  .dashboard-scroll {
+    max-height: 420px;
+  }
+}
+
+@media (max-width: 760px) {
+  .dashboard-stack {
+    grid-column: auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .dashboard-legend span {
   display: inline-flex;
   align-items: center;
@@ -952,10 +1066,28 @@ dialog.modal-card::backdrop {
   color: var(--danger);
 }
 
-/* 填写过且不符合规则的输入框；尚未动过的不标。 */
+/* 填写过且不符合规则的输入框；尚未动过的不标。同时显示所在 Field 的错误说明：不只靠颜色表达。 */
 .field:user-invalid {
   border-color: var(--danger);
   box-shadow: 0 0 0 3px rgba(195, 58, 47, 0.12);
+}
+
+.field-error {
+  display: none;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 18px;
+  color: #b93226;
+}
+
+.field-error svg {
+  flex: none;
+  margin-top: 2.5px;
+}
+
+.field-group:has(:user-invalid) .field-error {
+  display: flex;
 }
 
 .modal-footer {

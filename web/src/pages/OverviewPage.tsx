@@ -5,7 +5,7 @@ import { Activity, Box, Gauge, Layers, ShieldCheck, Sparkles, Waves } from "luci
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { PageId } from "@/components/AppShell";
-import { ChartEmpty, ChartPending, ConnsChart, DelayBars, Legend, SubUsableChart, TrafficChart, WatchTimeline, subLegend, watchLegend } from "@/components/charts";
+import { ChartEmpty, ChartPending, ConnsChart, DelayBars, Legend, SubUsableChart, TrafficChart, WatchTimeline, watchLegend } from "@/components/charts";
 import { RegionIcon } from "@/components/Flag";
 import { ErrorBox, Page, PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,9 @@ function notices(state: State): Notice[] {
   }
   return out.sort((a, b) => Number(b.tone === "danger") - Number(a.tone === "danger"));
 }
+
+/** “最近操作”中最多列出的条数；卡片内可滚动。 */
+const RECENT_OPS = 30;
 
 export function OverviewPage({ state, loadError, go }: Props) {
   const [delays, setDelays] = useState<Record<string, Delay[]> | null>(null);
@@ -234,6 +237,8 @@ export function OverviewPage({ state, loadError, go }: Props) {
           )}
         </Card>
 
+        {/* 左侧两列宽的一组：持续检测在上，订阅的两张图并排在下；右侧的“最近操作”与这一组等高。 */}
+        <div className="dashboard-stack">
         {!!state.slots.length && (
           <Card className="dashboard-panel span-2">
             <PanelHead title="持续检测" hint="已接线槽位的连通性与出口">
@@ -248,16 +253,20 @@ export function OverviewPage({ state, loadError, go }: Props) {
             )}
           </Card>
         )}
+        <SubsPanels state={state} delays={delays} error={delayError} history={history} rangeText={rangeText} goSubs={() => go("subs")} />
+        </div>
 
-        <Card className={`dashboard-panel${state.slots.length ? "" : " span-2"}`}>
-          <PanelHead title="最近操作" hint="最近 8 条">
+        <Card className="dashboard-panel dashboard-side">
+          <PanelHead title="最近操作" hint={ops?.length ? `最近 ${Math.min(ops.length, RECENT_OPS)} 条` : undefined}>
             <Button variant="outline" size="sm" onClick={() => go("system")}>全部记录</Button>
           </PanelHead>
           {ops === null && (opsError ? <ChartPending error={opsError} what="操作记录" /> : <p className="muted">加载中…</p>)}
           {ops?.length === 0 && <div className="empty-box plain"><p>暂无操作记录。</p></div>}
           {!!ops?.length && (
+            // 卡片与左侧一组等高，记录在其中滚动；可聚焦，键盘也能滚动。
+            <div className="dashboard-scroll" role="region" aria-label="最近操作记录" tabIndex={0}>
             <div className="dashboard-snapshot-list">
-              {ops.slice(0, 8).map((op, i) => (
+              {ops.slice(0, RECENT_OPS).map((op, i) => (
                 <div key={`${op.time}-${i}`} className="snapshot-row">
                   <span className={`status-dot ${op.ok ? "ok" : "bad"}`} role="img" aria-label={op.ok ? "成功" : "失败"} />
                   <div className="grow">
@@ -268,10 +277,9 @@ export function OverviewPage({ state, loadError, go }: Props) {
                 </div>
               ))}
             </div>
+            </div>
           )}
         </Card>
-
-        <SubsPanels state={state} delays={delays} error={delayError} history={history} rangeText={rangeText} goSubs={() => go("subs")} />
       </div>
     </Page>
   );
@@ -407,10 +415,8 @@ function SubsPanels({ state, delays, error, history, rangeText, goSubs }: { stat
         )}
       </Card>
 
-      <Card className={`dashboard-panel${state.slots.length ? " span-2" : ""}`}>
-        <PanelHead title="可用节点数的变化" hint={`订阅 ${chosen} 每次延迟测试后的可用节点数（${rangeText}）`}>
-          {trend.length > 0 && <Legend items={subLegend} />}
-        </PanelHead>
+      <Card className="dashboard-panel">
+        <PanelHead title="可用节点数的变化" hint={`订阅 ${chosen} 每次延迟测试后的可用节点数（${rangeText}）`} />
         {trend.length && history ? (
           <SubUsableChart points={trend} from={history.from} to={history.to} height={226} />
         ) : (

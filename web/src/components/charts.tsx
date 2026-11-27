@@ -339,7 +339,7 @@ interface SubRow {
 
 const TOTAL_COLOR = "#9aa9c0";
 
-export const subLegend = [
+const subLegend = [
   { color: C1, label: "可用" },
   { color: TOTAL_COLOR, label: "节点总数" },
 ];
@@ -354,9 +354,9 @@ export function SubUsableChart({ points, from, to, height = 180 }: { points: Sub
   const last = rows[rows.length - 1];
   const summary = `可用节点数的变化，${mdhm(a)} 至 ${mdhm(b)}：共 ${rows.length} 次测试${last ? `，最近一次 ${last.total} 个节点中 ${last.usable} 个可用` : ""}。`;
   return (
-    <Plot height={height} footer={[mdhm(a), mdhm(b)]} summary={summary}>
+    <Plot height={height} footer={[mdhm(a), mdhm(b)]} summary={summary} legend={subLegend}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={rows} margin={MARGIN}>
+        <ComposedChart data={rows} margin={MARGIN_LEGEND}>
           <defs>
             <linearGradient id={`${id}-u`} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={C1} stopOpacity={0.2} />
