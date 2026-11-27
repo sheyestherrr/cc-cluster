@@ -80,11 +80,11 @@ cc-cluster init \
 
 **Data directory.** Slot HOMEs, identities and node configuration live in `~/.cc-cluster` by default. To put it elsewhere, set `CC_CLUSTER_DATA=/some/dir` or pass `--data-dir` each time.
 
-**Upgrading.** Run `cc-cluster update`. It downloads the new release, verifies the checksum and replaces only the `cc-cluster` file. The data directory (slots, nodes, subscriptions, settings) is neither read nor changed, running containers are not affected, and the background web UI is restarted on the new version. In the web UI, the version number at the top of the sidebar opens a dialog with the current version, the latest version and the release notes; a hint appears next to it when a newer version is out. `cc-cluster update --check` only looks. See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
+**Upgrading.** Run `cc-cluster update`. It downloads the new release, verifies its checksum and replaces only the `cc-cluster` binary: slots, nodes, subscriptions and settings are unchanged, running containers are not affected, and a web UI running in the background is restarted on the new version. The web UI shows the current version at the top of the sidebar, with an indicator dot when a newer version is available; click it to see the latest version and the release notes. `cc-cluster update --check` only checks for updates. See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
-Images are left alone by default, and everything keeps working with the ones you have. To move to the new images, run `cc-cluster update --images`: it pulls them first and then changes the image setting in the data directory. Slots then show "配置待应用" (pending); in the web UI, stop and start each gateway and use "重建 worker" (recreate worker) on each slot to move them over. HOME and identity are kept. Pick a moment when nothing is running in the slots.
+Images are not updated by default; the current ones keep working. To update them, run `cc-cluster update --images`: it pulls the new images first and changes the image setting only if the pulls succeed. Running slots then show "配置待应用" (pending) and their continuous exit checks pause; in the web UI, stop and start each gateway and use "重建 worker" (recreate worker) on each slot to apply the change. HOME and identity are kept. Do this when the slots are idle.
 
-v0.0.2 and earlier have no `update` command: run the install command once more to get there (it also switches the image setting to the new version), and use `cc-cluster update` from then on.
+v0.0.2 and earlier have no `update` command: run the install command once more to upgrade (the install script also updates the image setting), and use `cc-cluster update` from then on.
 
 ## Getting started
 
