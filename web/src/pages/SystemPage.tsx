@@ -106,19 +106,19 @@ export function SystemPage({ state, refresh }: Props) {
       <PageHeader title="系统" subtitle="集群信息、环境检查与操作记录。" />
       {error && <ErrorBox text={error} onClose={() => setError("")} />}
 
-      <div className="grid items-stretch gap-3.5 min-[1100px]:grid-cols-2">
+      <div className="grid items-stretch gap-3.5 min-[1400px]:grid-cols-2">
         <Card className="panel">
           <PanelHead title="数据" hint="数据目录与所用镜像">
             <Button variant="outline" size="sm" disabled={!state} onClick={() => state && setImages({ gateway: state.cluster.gateway_image, worker: state.cluster.worker_image })}>
               <Pencil />更换镜像
             </Button>
           </PanelHead>
-          <div className="kv-grid">
+          <div className="kv-grid two">
             <KV k="版本" v={state?.version} />
             <KV k="容器名前缀" v={state?.cluster.name} />
-            <KV k="数据目录" v={state?.data_dir} wide />
             <KV k="网关镜像" v={imageName(state?.cluster.gateway_image)} title={state?.cluster.gateway_image} />
             <KV k="worker 镜像" v={imageName(state?.cluster.worker_image)} title={state?.cluster.worker_image} />
+            <KV k="数据目录" v={state?.data_dir} wide />
           </div>
           <SwitchItem
             label="启动槽位时查询出口评估"
