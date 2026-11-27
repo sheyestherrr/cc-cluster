@@ -3,6 +3,7 @@ package subscription
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,6 +89,53 @@ func TestParseRejectsNonClash(t *testing.T) {
 		if _, err := Parse([]byte(body)); err == nil {
 			t.Errorf("%s：应报错", name)
 		}
+	}
+}
+
+// 默认的客户端跟随重定向，但不从 HTTPS 降到 HTTP：订阅内容里有节点的账号密码。
+func TestFetchRefusesRedirectToPlainHTTP(t *testing.T) {
+	served := false
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		served = true
+		_, _ = w.Write([]byte(sample))
+	}))
+	defer plain.Close()
+	secure := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/down":
+			http.Redirect(w, r, plain.URL+"/ok", http.StatusFound)
+		case "/loop":
+			http.Redirect(w, r, "/loop", http.StatusFound)
+		case "/moved":
+			http.Redirect(w, r, "/ok", http.StatusFound)
+		default:
+			_, _ = w.Write([]byte(sample))
+		}
+	}))
+	defer secure.Close()
+	// 沿用默认客户端的重定向规则，只把传输换成信任测试证书的那个。
+	client := &http.Client{Transport: secure.Client().Transport, CheckRedirect: defaultClient.CheckRedirect}
+
+	if body, err := Fetch(context.Background(), client, secure.URL+"/moved?token=SECRET"); err != nil || string(body) != sample {
+		t.Fatalf("HTTPS 之间的重定向应照常跟随: %v", err)
+	}
+	_, err := Fetch(context.Background(), client, secure.URL+"/down?token=SECRET")
+	if !errors.Is(err, errDowngrade) {
+		t.Fatalf("降到 HTTP 的重定向应被拒绝: %v", err)
+	}
+	if served {
+		t.Fatal("不应向 HTTP 地址发出请求")
+	}
+	_, err = Fetch(context.Background(), client, secure.URL+"/loop?token=SECRET")
+	if !errors.Is(err, errTooManyRedirects) {
+		t.Fatalf("无休止的重定向应被拒绝: %v", err)
+	}
+	if strings.Contains(err.Error(), "SECRET") || strings.Contains(err.Error(), secure.URL) {
+		t.Errorf("错误信息里不应带订阅地址: %v", err)
+	}
+	// 地址本身是 HTTP 的照常访问。
+	if _, err := Fetch(context.Background(), &http.Client{CheckRedirect: defaultClient.CheckRedirect}, plain.URL+"/ok"); err != nil {
+		t.Fatalf("HTTP 的订阅地址应照常访问: %v", err)
 	}
 }
 

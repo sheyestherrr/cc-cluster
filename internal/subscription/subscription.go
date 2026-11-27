@@ -55,13 +55,30 @@ func CheckURL(raw string) error {
 	return nil
 }
 
+var (
+	errDowngrade        = errors.New("订阅服务器将 HTTPS 地址重定向到 HTTP，已停止下载：订阅内容含节点的账号密码，不经明文连接传输")
+	errTooManyRedirects = errors.New("订阅地址的重定向次数过多")
+)
+
+// defaultClient 是没有另外指定时拉取订阅用的客户端：跟随重定向，但不从 HTTPS 降到 HTTP。
+// 订阅地址本身是 HTTP 的照常访问（那是使用者自己给的地址）。
+var defaultClient = &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errTooManyRedirects
+	}
+	if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
+		return errDowngrade
+	}
+	return nil
+}}
+
 // Fetch 拉取订阅内容。错误信息里不带订阅地址（地址里通常有令牌）。
 func Fetch(ctx context.Context, client *http.Client, raw string) ([]byte, error) {
 	if err := CheckURL(raw); err != nil {
 		return nil, err
 	}
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultClient
 	}
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
@@ -74,6 +91,11 @@ func Fetch(ctx context.Context, client *http.Client, raw string) ([]byte, error)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return nil, errors.New("订阅下载超时")
+		}
+		for _, known := range []error{errDowngrade, errTooManyRedirects} {
+			if errors.Is(err, known) {
+				return nil, known
+			}
 		}
 		return nil, errors.New("无法连接订阅服务器，请检查地址和网络")
 	}
