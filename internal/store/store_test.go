@@ -117,6 +117,9 @@ func TestSlotLifecycleKeepsIdentityAndHome(t *testing.T) {
 	if err := s.SaveApplied("a", model.Applied{Digest: "d", ExitIP: "198.51.100.3"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.SaveWatch("a", model.Watch{Slot: "a", Status: "changed"}); err != nil {
+		t.Fatal(err)
+	}
 
 	// 不带 purge 删除：期望配置与标记消失，HOME 与身份保留。
 	if err := s.DeleteSlot("a", false); err != nil {
@@ -130,6 +133,9 @@ func TestSlotLifecycleKeepsIdentityAndHome(t *testing.T) {
 	}
 	if _, ok, _ := s.Applied("a"); ok {
 		t.Fatal("删除槽位应清掉应用记录")
+	}
+	if _, ok, _ := s.Watch("a"); ok {
+		t.Fatal("删除槽位应清掉检测结果")
 	}
 	if got, ok, _ := s.Identity("a"); !ok || got.MachineID != ident.MachineID {
 		t.Fatal("不带 purge 时身份应保留")

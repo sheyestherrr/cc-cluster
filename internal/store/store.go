@@ -334,7 +334,8 @@ func (s *Store) DeleteSlot(id string, purge bool) error {
 	if purge {
 		return os.RemoveAll(s.SlotDir(id))
 	}
-	for _, f := range []string{"slot.json", "applied.json", "hold.json"} {
+	// 检测结果是对上一次接线说的；槽位删除后留着，重新登记同名槽位时会显示成它的状态。
+	for _, f := range []string{"slot.json", "applied.json", "hold.json", "watch.json"} {
 		if err := os.Remove(filepath.Join(s.SlotDir(id), f)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
