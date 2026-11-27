@@ -26,6 +26,6 @@ cc-cluster tmux work                       # 在另一个终端接入同一个 t
 cc-cluster tmux work --kill                # 结束宿主 tmux，并终止其中的程序
 ```
 
-每个槽位在宿主上有一个专用的 tmux，槽内经 [tmux-mcp](https://github.com/bnomei/tmux-mcp) 操作它，默认不开放结束 session / window / pane 的工具（可用 `--tools` 修改）。
+每个槽位在宿主上有一个专用的 tmux，槽内经 [tmux-mcp](https://github.com/bnomei/tmux-mcp) 操作它，默认不开放结束 session / window / pane 的工具（可用 `--tools` 修改）。工具范围只决定 Claude Code 可以调用哪些工具，用于避免误操作，不是安全边界：该 tmux 的 socket 挂载在槽内，槽内的任何程序都可以用 tmux 客户端直接连接它。
 
 宿主升级 tmux 后需重新执行 `make image-worker` 与 `slot up --recreate`（客户端与 server 的版本必须一致）。macOS 上不可用。
