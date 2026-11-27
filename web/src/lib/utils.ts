@@ -6,29 +6,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export const PALETTE = [
-  "rgb(66 133 180)",
-  "rgb(76 150 96)",
-  "rgb(150 96 180)",
-  "rgb(190 80 110)",
-  "rgb(60 150 150)",
-  "rgb(90 110 200)",
-  "rgb(200 150 50)",
-  "rgb(80 86 100)",
-];
-
-export function badgeLetter(name: string): string {
-  const c = Array.from(name).find((ch) => /[\p{L}\p{N}]/u.test(ch)) ?? name.charAt(0);
-  return (c ?? "?").toUpperCase();
-}
-
-/** 由名字得到一个稳定的调色板下标。 */
-export function colorIndex(name: string): number {
-  let h = 0;
-  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return h % PALETTE.length;
-}
-
 export function relativeTime(iso?: string | null): string {
   if (!iso) return "从未";
   const ms = Date.parse(iso);
@@ -90,6 +67,14 @@ export function imageName(ref?: string): string {
   const full = (ref ?? "").trim();
   const cut = full.lastIndexOf("/", full.includes("@") ? full.indexOf("@") : full.length);
   return full.slice(cut + 1).replace(/@sha256:([0-9a-f]{12})[0-9a-f]+$/, "@sha256:$1…");
+}
+
+/**
+ * 去掉订阅节点名称开头的国旗表情：“🇸🇬 新加坡 07”→“新加坡 07”。
+ * 旁边已经显示了国旗图标时使用，避免同一面旗出现两次；没有彩色表情字体的系统上，表情会显示成字母。
+ */
+export function plainName(name: string): string {
+  return name.replace(/^(?:\p{Regional_Indicator}{2}\s*)+/u, "") || name;
 }
 
 export function formatBytes(n?: number): string {

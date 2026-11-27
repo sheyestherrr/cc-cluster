@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { PALETTE, badgeLetter, bytesText, colorIndex, formatBytes, imageName, rateText, relativeTime, spanText } from "./utils.ts";
+import { bytesText, formatBytes, imageName, plainName, rateText, relativeTime, spanText } from "./utils.ts";
+
+test("plainName 去掉开头的国旗表情", () => {
+  assert.equal(plainName("🇸🇬 新加坡 07"), "新加坡 07");
+  assert.equal(plainName("🇭🇰香港 01"), "香港 01");
+  assert.equal(plainName("香港 01"), "香港 01");
+  assert.equal(plainName("节点 🇯🇵"), "节点 🇯🇵");
+  // 只有旗帜时保留原样，不留下空名称。
+  assert.equal(plainName("🇺🇸"), "🇺🇸");
+});
 
 test("imageName 去掉仓库前缀", () => {
   assert.equal(imageName("ghcr.io/sheyestherrr/cc-cluster-gateway:v0.0.1"), "cc-cluster-gateway:v0.0.1");
@@ -49,16 +58,3 @@ test("relativeTime 相对现在的说法", () => {
   assert.equal(relativeTime(ago(2 * 86_400_000)), "2 天前");
 });
 
-test("badgeLetter 取第一个字母或数字", () => {
-  assert.equal(badgeLetter("work"), "W");
-  assert.equal(badgeLetter("-az1"), "A");
-  assert.equal(badgeLetter("中转"), "中");
-});
-
-test("colorIndex 对同一个名字稳定，且落在调色板里", () => {
-  assert.equal(colorIndex("work"), colorIndex("work"));
-  for (const name of ["work", "research", "中转", ""]) {
-    const i = colorIndex(name);
-    assert.ok(Number.isInteger(i) && i >= 0 && i < PALETTE.length, `${name} → ${i}`);
-  }
-});

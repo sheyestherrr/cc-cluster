@@ -65,6 +65,18 @@ function byteTicks(max: number): number[] {
   return [0, top / 4, top / 2, (top * 3) / 4, top];
 }
 
+/** 数量（连接数）纵轴的刻度：上限是不小于最大值的整数，四等分后仍是整数。 */
+export function countTicks(max: number): number[] {
+  let top = 4;
+  outer: for (let unit = 1; ; unit *= 10) {
+    for (const m of [4, 8, 12, 20]) {
+      top = m * unit;
+      if (top >= max) break outer;
+    }
+  }
+  return [0, top / 4, top / 2, (top * 3) / 4, top];
+}
+
 // ---- 画布、图例、提示框 ----
 
 /** 带框的画布，下面一行是时间范围的两端。 */
@@ -223,6 +235,7 @@ export function ConnsChart({ points, step, slot, height = 260 }: { points: Histo
   const to = rows[rows.length - 1].t + step * 1000;
   const { ticks, format } = timeTicks(from, to);
   const long = to - from > 2 * 24 * 3600_000;
+  const yTicks = countTicks(rows.reduce((m, r) => Math.max(m, r.conns), 0));
   return (
     <Plot height={height} footer={[mdhm(from), mdhm(to)]}>
       <ResponsiveContainer width="100%" height="100%">
@@ -235,7 +248,7 @@ export function ConnsChart({ points, step, slot, height = 260 }: { points: Histo
           </defs>
           <CartesianGrid stroke={GRID} strokeDasharray="2 4" vertical={false} />
           <XAxis dataKey="t" type="number" scale="time" domain={[from, to]} ticks={ticks.filter((_, i) => i % 2 === 0)} tickFormatter={format} {...AXIS} tickMargin={6} height={24} />
-          <YAxis width={36} tickMargin={4} allowDecimals={false} domain={[0, (max: number) => Math.max(4, Math.ceil(max * 1.15))]} {...AXIS} />
+          <YAxis width={36} tickMargin={4} allowDecimals={false} domain={[0, yTicks[yTicks.length - 1]]} ticks={yTicks} {...AXIS} />
           <Tooltip
             isAnimationActive={false}
             cursor={CURSOR}
@@ -433,6 +446,8 @@ export function WatchTimeline({ slots, watch, from, to }: { slots: string[]; wat
   const { ticks, format } = timeTicks(a, b);
   const long = total > 2 * 24 * 3600_000;
   const stamp = (iso: string) => (long ? mdhm(Date.parse(iso)) : hm(Date.parse(iso)));
+  // 名称一列的宽度随最长的槽位名变化（上限 200），较长的名称不再被裁切。
+  const nameWidth = Math.min(200, Math.max(72, slots.reduce((m, id) => Math.max(m, id.length), 0) * 7.5 + 18));
 
   return (
     <Plot height={rows.length * 38 + 44} footer={[mdhm(a), mdhm(b)]}>
@@ -440,7 +455,7 @@ export function WatchTimeline({ slots, watch, from, to }: { slots: string[]; wat
         <BarChart data={rows} layout="vertical" margin={{ top: 10, right: 14, bottom: 4, left: 8 }} barCategoryGap={0}>
           <CartesianGrid stroke={GRID} strokeDasharray="2 4" horizontal={false} />
           <XAxis type="number" domain={[0, total]} ticks={ticks.map((t) => t - a)} tickFormatter={(v: number) => format(a + v)} {...AXIS} tickMargin={6} height={24} />
-          <YAxis type="category" dataKey="slot" width={92} {...AXIS} tick={{ fill: "#3f4b63", fontSize: 12, fontWeight: 600 }} />
+          <YAxis type="category" dataKey="slot" width={nameWidth} {...AXIS} tick={{ fill: "#3f4b63", fontSize: 12, fontWeight: 600 }} />
           <Tooltip
             shared={false}
             isAnimationActive={false}

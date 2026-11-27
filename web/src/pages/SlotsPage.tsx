@@ -2,7 +2,7 @@
 // “卡片网格 + 详情页”的版面和样式取自 Resin（MIT）webui 的 features/platforms/PlatformPage.tsx 与 PlatformDetailPage.tsx，内容是本项目的。
 import { ArrowRight, Ban, Box, Loader2, Pencil, Play, Plus, Power, RefreshCw, RotateCw, ShieldCheck, Sparkles, Terminal, Trash2 } from "lucide-react";
 import type React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ActionNotice, useActions } from "@/components/Actions";
 import { CopyButton } from "@/components/CopyButton";
 import { ExitCard } from "@/components/ExitCard";
@@ -10,7 +10,7 @@ import { RegionIcon } from "@/components/Flag";
 import { Field, FormGrid, FormSection, NameInput, SwitchItem } from "@/components/Form";
 import { Menu, type MenuEntry } from "@/components/Menu";
 import { NOTE_PLACEHOLDER, NoteDialog, type NoteTarget } from "@/components/NoteDialog";
-import { ErrorBox, Page, PageHeader, Tabs, Tag } from "@/components/PageHeader";
+import { ErrorBox, Fact, Page, PageHeader, Tabs, Tag, TileTitle, tabPanelProps, tileProps } from "@/components/PageHeader";
 import { SlotTraffic } from "@/components/SlotTraffic";
 import { Button } from "@/components/ui/button";
 import { Badge, Card } from "@/components/ui/card";
@@ -19,6 +19,8 @@ import { Input, Select, Textarea } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { ID_HINT, NOTE_MAX, api, errorText, type Delay, type History, type Slot, type SlotInput, type SlotLive, type SlotState, type State } from "@/lib/api";
 import { usePolling } from "@/lib/live";
+import { routeHash } from "@/lib/route";
+import { dotTone, isRunning, isWired } from "@/lib/slot-state";
 import { formatBytes, rateText, relativeTime } from "@/lib/utils";
 
 interface Props {
@@ -45,9 +47,7 @@ export const stateText: Record<SlotState, string> = {
 /** 还不能新建槽位时的说明：槽位需要一个出口。 */
 const NEED_EXIT = "请先在“节点与网关”页添加落地节点与网关，或在“订阅管理”页添加订阅";
 
-const isWired = (s: Slot) => s.state === "ready" || s.state === "pending";
-const isRunning = (s: Slot) => isWired(s) || s.state === "offline";
-const dotTone = (s: Slot) => (isWired(s) ? "ok" : s.state === "hold" ? "bad" : s.state === "offline" ? "warn" : "");
+
 
 interface Actions {
   up: (s: Slot, recreate?: boolean) => void;
@@ -287,18 +287,11 @@ function SlotTile({ s, state, live, busy, a, onOpen }: { s: Slot; state: State; 
   const landing = state.nodes.find((n) => n.id === s.landing);
   const wired = isWired(s);
   return (
-    <div
-      className="tile"
-      role="button"
-      tabIndex={0}
-      aria-label={`槽位 ${s.id}，打开详情`}
-      onClick={(e) => !(e.target as HTMLElement).closest("button, [data-menu]") && onOpen()}
-      onKeyDown={(e) => e.target === e.currentTarget && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
-    >
+    <div {...tileProps(onOpen)}>
       <div className="tile-head">
         <RegionIcon code={landing?.region} from={landing?.region_from} icon={Box} />
         <div className="tile-title">
-          <p title={s.note}>{s.id}{s.note && <span className="ml-2 font-sans text-[12px] font-normal text-muted">{s.note}</span>}</p>
+          <TileTitle href={routeHash("slots", [s.id])} name={s.id} note={s.note} label={`槽位 ${s.id}，打开详情`} />
           <p><span className={`status-dot mr-1.5 inline-block align-middle ${dotTone(s)}`} />{stateText[s.state]}</p>
         </div>
         <Menu items={menuItems(s, a)} disabled={!!busy} />
@@ -352,17 +345,9 @@ function Hop({ label, name, sub, icon }: { label: string; name: string; sub?: st
   );
 }
 
-function Fact({ k, children }: { k: string; children: React.ReactNode }) {
-  return (
-    <span className="platform-fact">
-      <span>{k}</span>
-      <strong>{children}</strong>
-    </span>
-  );
-}
-
 function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: DetailProps) {
   const [tab, setTab] = useState<DetailTab>("overview");
+  const panel = useId();
   const wired = isWired(s);
   const landing = state.nodes.find((n) => n.id === s.landing);
   const gateway = state.gateways.find((g) => g.id === s.gateway);
@@ -419,7 +404,7 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
             {landing?.direct ? <Fact k="出口方式">直出</Fact> : <Fact k="网关">{s.gateway}</Fact>}
             {gateway?.transit && <Fact k="中转">{gateway.transit}</Fact>}
             <Fact k="用户">{s.user}</Fact>
-            <Fact k="时区">{s.tz || "UTC"}</Fact>
+            <Fact k="时区">{s.tz || "未设置"}</Fact>
             {limits && <Fact k="资源上限">{limits}</Fact>}
           </div>
         </div>
@@ -428,11 +413,13 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
       <Card className="platform-cards-container platform-detail-main-card">
         <Tabs
           label="槽位详情板块"
+          panel={panel}
           value={tab}
           onChange={setTab}
           items={[["overview", "概况"], ["traffic", "流量与连接"], ["env", "环境与挂载"], ["ops", "运维"]]}
         />
 
+        <div className="flex min-w-0 flex-col gap-3" {...tabPanelProps(panel, tab)}>
         {tab === "overview" && (
           <div className="grid items-stretch gap-3.5 min-[1100px]:grid-cols-2">
             <ExitCard
@@ -500,7 +487,7 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
               <div className="kv">
                 <span>时区</span>
                 <strong className="flex flex-wrap items-center gap-1.5">
-                  <span className="mono">{s.tz || "UTC（未设置）"}</span>
+                  <span className="mono">{s.tz || "未设置"}</span>
                   {inheritsTZ && landing?.tz_fallback && <Tag tone="warn" title="带时区信息的探测地址均无响应，暂用默认值；下次启动时重新探测，也可为落地指定时区">默认值</Tag>}
                   {inheritsTZ && landing?.tz_auto && !landing.tz_fallback && <Tag title="按探测到的出口所在地自动设置，保存在落地上">随出口</Tag>}
                 </strong>
@@ -568,6 +555,7 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
             </div>
           </div>
         )}
+        </div>
       </Card>
     </Page>
   );

@@ -1,6 +1,6 @@
 // 落地出口 IP 的评估卡片。
 // 数据是第三方接口对这个 IP 的看法，各家经常不一致，所以标记写成“命中的家数 / 给出判断的家数”。
-import { Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 import { Flag } from "@/components/Flag";
 import { Tag } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -116,7 +116,7 @@ export function ExitCard({ report: r, currentIP, busy, onRefresh, disabledWhy, c
         </div>
         {network && <div className="mt-0.5 truncate text-[12.5px] text-muted" title={network}>{network}</div>}
       </div>
-      {stale && <div className="callout callout-warning">该评估针对 {r.ip}，槽位最近一次检测到的出口为 {currentIP}。重新检测后更新。</div>}
+      {stale && <div className="callout callout-warning"><AlertTriangle size={15} /><span>该评估针对 {r.ip}，槽位最近一次检测到的出口为 {currentIP}。重新检测后更新。</span></div>}
 
       <div className="grid grid-cols-3 gap-2.5">
         <Score label="信任分" value={r.trust_score === undefined ? "—" : String(r.trust_score)} pct={r.trust_score} tone={trustTone} hint="ip.net.coffee 的综合评分（0–100），越高越好" />

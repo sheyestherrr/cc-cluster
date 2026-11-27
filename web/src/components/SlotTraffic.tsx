@@ -3,12 +3,13 @@
 // 版面参考了 Resin（MIT）平台详情页的监控面板：一排指标卡、趋势图、下面是表格。
 import { ArrowDownToLine, ArrowUpFromLine, Cable, Info } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { ChartEmpty, ConnsChart, Legend, TrafficChart, trafficLegend } from "@/components/charts";
-import { Tabs } from "@/components/PageHeader";
+import { Tabs, tabPanelProps } from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
 import { api, type History, type Slot, type SlotLive } from "@/lib/api";
 import { usePolling } from "@/lib/live";
+import { isWired } from "@/lib/slot-state";
 import { bytesText, rateText, relativeTime, spanText } from "@/lib/utils";
 
 type Tab = "now" | "hosts" | "ended";
@@ -29,8 +30,9 @@ function Kpi({ icon, tone, label, value, sub }: { icon: React.ReactNode; tone: s
 const target = (host: string, port?: number) => (port ? `${host}:${port}` : host);
 
 export function SlotTraffic({ s, live, history }: { s: Slot; live?: SlotLive; history: History | null }) {
-  const wired = s.state === "ready" || s.state === "pending";
+  const wired = isWired(s);
   const [tab, setTab] = useState<Tab>("now");
+  const panel = useId();
   const conns = usePolling(() => (wired ? api.slotConns(s.id) : Promise.resolve([])), 5000, [s.id, wired]);
   const log = usePolling(() => api.slotConnLog(s.id, 24, 100), 30_000, [s.id]);
   const total = history?.totals[s.id];
@@ -69,6 +71,7 @@ export function SlotTraffic({ s, live, history }: { s: Slot; live?: SlotLive; hi
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <Tabs
           label="连接"
+          panel={panel}
           value={tab}
           onChange={setTab}
           items={[
@@ -79,7 +82,7 @@ export function SlotTraffic({ s, live, history }: { s: Slot; live?: SlotLive; hi
         />
       </div>
 
-      <div className="data-table-wrap">
+      <div className="data-table-wrap" {...tabPanelProps(panel, tab)}>
         {tab === "now" && (
           <ConnTable
             head={["目标", "已持续", "经由", "下行", "上行"]}

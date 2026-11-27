@@ -111,7 +111,7 @@ export function SystemPage({ state, loadError, refresh }: Props) {
 
       <div className="grid items-stretch gap-3.5 min-[1400px]:grid-cols-2">
         <Card className="panel">
-          <PanelHead title="数据" hint="数据目录与所用镜像">
+          <PanelHead title="集群" hint="版本、镜像与数据目录">
             <Button variant="outline" size="sm" disabled={!state} onClick={() => state && (setImagesError(""), setImages({ gateway: state.cluster.gateway_image, worker: state.cluster.worker_image }))}>
               <Pencil />更换镜像
             </Button>
@@ -182,7 +182,7 @@ export function SystemPage({ state, loadError, refresh }: Props) {
               </thead>
               <tbody>
                 {ops.slice(0, 40).map((op, i) => (
-                  <tr key={`${op.time}-${i}`} className="!cursor-default">
+                  <tr key={`${op.time}-${i}`}>
                     <td className="mono cell-sub whitespace-nowrap">{clockTime(op.time)}</td>
                     <td className="whitespace-nowrap" title={op.op}>{opName(op.op)}</td>
                     <td className="cell-main mono whitespace-nowrap">{op.target || "—"}</td>

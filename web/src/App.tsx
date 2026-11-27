@@ -5,6 +5,7 @@ import { AppShell, pageTitles } from "@/components/AppShell";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { api, errorText, isUnauthorized, type State, type UpdateInfo } from "@/lib/api";
 import { useRoute } from "@/lib/route";
+import { isWired } from "@/lib/slot-state";
 import { NetworkPage } from "@/pages/NetworkPage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { SlotsPage } from "@/pages/SlotsPage";
@@ -88,14 +89,14 @@ export default function App() {
   if (version && !firstVersion.current) firstVersion.current = version;
   const stale = !!version && version !== firstVersion.current;
 
-  const ready = state?.slots.filter((s) => s.state === "ready" || s.state === "pending").length ?? 0;
+  const ready = state?.slots.filter(isWired).length ?? 0;
 
   // 没有令牌（第一次用这个浏览器，或令牌换过）：只显示怎么拿到链接，不显示一堆读取失败的页面。
   if (locked) {
     return (
       <div className="flex min-h-screen items-center justify-center p-6">
         <div className="card max-w-[520px] p-7">
-          <h2 className="text-[20px]">需要访问链接</h2>
+          <h1 className="text-[20px]">需要访问链接</h1>
           <p className="mt-3 text-[14px] leading-7 text-fg-2">请在运行 cc-cluster 的机器上执行：</p>
           <pre className="mono mt-2 rounded-xl border border-line bg-white/70 px-3.5 py-2.5 text-[14px]">cc-cluster web</pre>
           <p className="mt-3 text-[14px] leading-7 text-fg-2">然后在浏览器中打开输出的带 <span className="mono">#token=</span> 的地址。此后该浏览器可直接访问，无需再带令牌。</p>

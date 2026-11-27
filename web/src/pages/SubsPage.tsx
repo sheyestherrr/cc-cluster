@@ -2,20 +2,21 @@
 // 版面与样式取自 Resin（MIT）webui 的订阅页与节点池页（卡片、筛选栏、数据表），内容是本项目的。
 import { FileText, Gauge, Loader2, Pencil, Plus, RefreshCw, Rss, Trash2 } from "lucide-react";
 import type React from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ActionNotice, useActions, type Notice } from "@/components/Actions";
 import { Flag, RegionIcon, regionName } from "@/components/Flag";
 import { Field, FormGrid, NameInput } from "@/components/Form";
 import { Menu, type MenuEntry } from "@/components/Menu";
 import { NOTE_PLACEHOLDER, NoteDialog, type NoteTarget } from "@/components/NoteDialog";
-import { ErrorBox, Page, PageHeader, Tabs, Tag } from "@/components/PageHeader";
+import { ErrorBox, Page, PageHeader, Tabs, Tag, TileTitle, tabPanelProps, tileProps } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Badge, Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
-import { ID_HINT, NOTE_MAX, api, errorText, type Delay, type RefreshResult, type Role, type State, type Sub } from "@/lib/api";
-import { relativeTime } from "@/lib/utils";
+import { ID_HINT, NOTE_MAX, api, errorText, roleText, type Delay, type RefreshResult, type Role, type State, type Sub } from "@/lib/api";
+import { routeHash } from "@/lib/route";
+import { plainName, relativeTime } from "@/lib/utils";
 
 interface Props {
   state: State | null;
@@ -28,7 +29,6 @@ interface Props {
 
 type Editing = { mode: "add" } | { mode: "edit"; sub: Sub } | null;
 
-const roleText: Record<Role, string> = { transit: "中转", landing: "落地" };
 
 /** 自动刷新可选的间隔（分钟）。 */
 const EVERY: [number, string][] = [[0, "不自动刷新"], [60, "每小时"], [360, "每 6 小时"], [720, "每 12 小时"], [1440, "每天"], [4320, "每 3 天"], [10080, "每周"]];
@@ -76,13 +76,14 @@ function subMenu(s: Sub, a: SubActions): (MenuEntry | "sep")[] {
   ];
 }
 
-function SubBadges({ s }: { s: Sub }) {
+/** 订阅的徽标。详情页头部只显示异常（problems）：类型与刷新间隔在旁边已有文字和下拉框。 */
+function SubBadges({ s, problems }: { s: Sub; problems?: boolean }) {
   return (
     <>
-      <Badge variant={s.local ? "neutral" : "info"}>{s.local ? "本地" : "远程"}</Badge>
-      {!!s.every_min && <Badge variant="neutral" title="在 cc-cluster web 或 cc-cluster watch 运行期间自动刷新">{everyText(s.every_min)}</Badge>}
+      {!problems && <Badge variant={s.local ? "neutral" : "info"}>{s.local ? "本地" : "远程"}</Badge>}
+      {!problems && !!s.every_min && <Badge variant="neutral" title="在 cc-cluster web 或 cc-cluster watch 运行期间自动刷新">{everyText(s.every_min)}</Badge>}
       {s.last_error && <Badge variant="danger" title={s.last_error}>刷新失败</Badge>}
-      {!!s.skipped && <Badge variant="warning" title="协议不受支持、格式有误，或使用了核心不支持的传输方式">{s.skipped} 行无法识别</Badge>}
+      {!problems && !!s.skipped && <Badge variant="warning" title="协议不受支持、格式有误，或使用了核心不支持的传输方式">{s.skipped} 行无法识别</Badge>}
     </>
   );
 }
@@ -196,18 +197,11 @@ export function SubsPage({ state, loadError, refresh, open, setOpen }: Props) {
 
 function SubTile({ s, busy, a, onOpen }: { s: Sub; busy?: string; a: SubActions; onOpen: () => void }) {
   return (
-    <div
-      className="tile"
-      role="button"
-      tabIndex={0}
-      aria-label={`订阅 ${s.id}，打开详情`}
-      onClick={(e) => !(e.target as HTMLElement).closest("button, [data-menu]") && onOpen()}
-      onKeyDown={(e) => e.target === e.currentTarget && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
-    >
+    <div {...tileProps(onOpen)}>
       <div className="tile-head">
         <RegionIcon icon={s.local ? FileText : Rss} />
         <div className="tile-title">
-          <p title={s.note}>{s.id}{s.note && <span className="ml-2 font-sans text-[12px] font-normal text-muted">{s.note}</span>}</p>
+          <TileTitle href={routeHash("subs", [s.id])} name={s.id} note={s.note} label={`订阅 ${s.id}，打开详情`} />
           <p>{relativeTime(s.fetched_at)}更新</p>
         </div>
         <Menu items={subMenu(s, a)} disabled={!!busy} />
@@ -355,7 +349,7 @@ function SubDetail({ s, state, busy, a, alerts, refresh, onBack }: { s: Sub; sta
             </div>
           </div>
           <div className="platform-detail-header-meta">
-            <div className="flex flex-wrap justify-end gap-1.5"><SubBadges s={s} /></div>
+            <div className="flex flex-wrap justify-end gap-1.5"><SubBadges s={s} problems /></div>
             <span>{s.tested_at ? `${s.usable} 个可用，${relativeTime(s.tested_at)}测试` : "尚未测试延迟"}</span>
           </div>
         </div>
@@ -401,7 +395,7 @@ function SubDetail({ s, state, busy, a, alerts, refresh, onBack }: { s: Sub; sta
         </div>
 
         <div className="toolbar">
-          <Input aria-label="搜索节点" placeholder="搜索名称、服务器或已添加的节点" value={query} onChange={(e) => setQuery(e.target.value)} className="!w-auto min-w-[200px] max-w-[320px] flex-1" />
+          <Input aria-label="搜索节点" placeholder="搜索名称或服务器" title="按节点名称、服务器或已添加的节点名搜索" value={query} onChange={(e) => setQuery(e.target.value)} className="!w-auto min-w-[200px] max-w-[320px] flex-1" />
           <Select aria-label="地区" value={region} onChange={(e) => setRegion(e.target.value)} className="!w-auto">
             <option value="">全部地区</option>
             {regions.filter(([code]) => code).map(([code, n]) => <option key={code} value={code}>{regionName(code)}（{n}）</option>)}
@@ -434,7 +428,7 @@ function SubDetail({ s, state, busy, a, alerts, refresh, onBack }: { s: Sub; sta
         {nodes && !shown.length && <div className="empty-box plain"><p>无符合条件的节点</p></div>}
         {!!visible.length && (
           <div className="data-table-wrap !mt-0 !max-h-none">
-            <table className="data-table compact">
+            <table className="data-table compact !min-w-[760px]">
               <thead>
                 <tr>
                   <th>节点</th>
@@ -448,10 +442,10 @@ function SubDetail({ s, state, busy, a, alerts, refresh, onBack }: { s: Sub; sta
               </thead>
               <tbody>
                 {visible.map((d, i) => (
-                  <tr key={`${d.name}-${i}`} className={d.info ? "!cursor-default opacity-60" : "!cursor-default"}>
+                  <tr key={`${d.name}-${i}`} className={d.info ? "opacity-60" : undefined}>
                     <td>
                       <span className="flex items-center gap-1.5">
-                        <span className="cell-main">{d.name}</span>
+                        <span className="cell-main" title={d.name}>{d.region ? plainName(d.name) : d.name}</span>
                         {d === fastest && <Tag tone="ok">最快</Tag>}
                         {d.info && <Tag title="订阅中的提示信息，不是可用的线路">提示项</Tag>}
                       </span>
@@ -591,6 +585,7 @@ function SourceDialog({ editing, onClose, onDone }: { editing: Editing; onClose:
   const [id, setId] = useState("");
   const [note, setNote] = useState("");
   const [kind, setKind] = useState<"url" | "content">("url");
+  const panel = useId();
   const [url, setUrl] = useState("");
   const [content, setContent] = useState("");
   const [append, setAppend] = useState(true);
@@ -663,8 +658,9 @@ function SourceDialog({ editing, onClose, onDone }: { editing: Editing; onClose:
           </FormGrid>
         )}
 
-        <Tabs label="来源" value={kind} onChange={setKind} items={[["url", "订阅地址"], ["content", "粘贴内容"]]} />
+        <Tabs label="来源" panel={panel} value={kind} onChange={setKind} items={[["url", "订阅地址"], ["content", "粘贴内容"]]} />
 
+        <div {...tabPanelProps(panel, kind)}>
         {kind === "url" ? (
           <Field label={sub ? "新地址" : "订阅地址"} hint={<>支持 Clash（Mihomo）格式与通用的 base64 订阅。由本机直接访问订阅服务器，不经过任何槽位的出口。{sub?.local && " 保存后该订阅转为远程订阅，原有内容不再保留。"}</>}>
             {/* 地址里通常带有令牌，默认遮住；需要核对粘贴的内容时可以显示。 */}
@@ -687,6 +683,7 @@ function SourceDialog({ editing, onClose, onDone }: { editing: Editing; onClose:
             )}
           </Field>
         )}
+        </div>
         {error && <ErrorBox text={error} />}
       </div>
     </Dialog>

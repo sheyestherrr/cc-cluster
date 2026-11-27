@@ -149,6 +149,24 @@ h6 {
   }
 }
 
+/* 页面标题是一级标题（每页一个），字号沿用 Resin 给 h2 的。中文回退字体补上 Linux 常见的两种。 */
+.module-header h1 {
+  font-size: 24px;
+}
+
+body {
+  font-family: "Manrope", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: "Sora", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+}
+
 .nav-item {
   width: 100%;
   background: transparent;
@@ -415,34 +433,6 @@ select.field {
   color: var(--text-muted);
 }
 
-.group-label {
-  padding: 0 2px 8px;
-  font-family: "Sora", "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-size: 13px;
-  font-weight: 600;
-  color: #3f4b63;
-}
-
-.list-card {
-  border-radius: 14px;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.86);
-}
-
-.list-card > :first-child {
-  border-top-left-radius: inherit;
-  border-top-right-radius: inherit;
-}
-
-.list-card > :last-child {
-  border-bottom-left-radius: inherit;
-  border-bottom-right-radius: inherit;
-}
-
-.list-card > * + * {
-  border-top: 1px solid rgba(37, 72, 120, 0.1);
-}
-
 .kv-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -541,6 +531,21 @@ select.field {
   flex: 1 1 auto;
 }
 
+/* 卡片标题是打开详情页的链接：外观与普通标题相同，键盘聚焦时描出整张卡片。 */
+.tile-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.tile-link:focus-visible {
+  outline: none;
+}
+
+.tile:has(.tile-link:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 .tile-title p:first-child {
   font-family: "Sora", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 15px;
@@ -586,12 +591,6 @@ select.field {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.tile-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 /* ── 总览 ── */
@@ -737,6 +736,15 @@ button.snapshot-row:hover {
   text-align: right;
 }
 
+/* Resin 的表格行默认可点（手形光标与悬停高亮）；这里的表格行都只是数据，默认不可点，可点的行加 .clickable-row。 */
+.data-table tbody tr {
+  cursor: default;
+}
+
+.data-table tbody tr:hover {
+  background: transparent;
+}
+
 .data-table tr.clickable-row {
   cursor: pointer;
 }
@@ -764,12 +772,6 @@ button.snapshot-row:hover {
 
 .toolbar .grow {
   flex: 1 1 auto;
-}
-
-.toolbar .search-box {
-  margin: 0;
-  flex: 1 1 200px;
-  max-width: 280px;
 }
 
 /* ── 菜单、弹窗、提示 ── */

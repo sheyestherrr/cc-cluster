@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 const variants = {
   /** 主要操作。 */
   default: "btn-primary",
-  brand: "btn-primary",
   destructive: "btn-danger",
   /** 次要操作，白底描边。 */
   outline: "btn-secondary",
@@ -17,7 +16,6 @@ const sizes = {
   default: "btn-md",
   sm: "btn-sm",
   icon: "btn-sm btn-icon",
-  iconSm: "btn-sm btn-icon",
 } as const;
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {

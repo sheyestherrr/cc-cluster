@@ -4,7 +4,6 @@ const token = (name) => `rgb(var(--${name}) / <alpha-value>)`;
 
 module.exports = {
   content: ["./src/index.html", "./src/**/*.{ts,tsx}"],
-  darkMode: ["selector", ".dark"],
   theme: {
     extend: {
       colors: {
@@ -27,20 +26,9 @@ module.exports = {
       },
       borderRadius: { sm: "6px", md: "8px", lg: "10px", xl: "12px", "2xl": "18px" },
       fontFamily: {
-        sans: ['"Manrope"', '"PingFang SC"', '"Microsoft YaHei"', "sans-serif"],
-        display: ['"Sora"', '"PingFang SC"', '"Microsoft YaHei"', "sans-serif"],
+        sans: ['"Manrope"', '"PingFang SC"', '"Microsoft YaHei"', '"Noto Sans CJK SC"', '"Source Han Sans SC"', "sans-serif"],
+        display: ['"Sora"', '"PingFang SC"', '"Microsoft YaHei"', '"Noto Sans CJK SC"', '"Source Han Sans SC"', "sans-serif"],
         mono: ["ui-monospace", '"SF Mono"', "Menlo", "Consolas", "monospace"],
-      },
-      transitionTimingFunction: { soft: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
-      keyframes: {
-        fadeIn: { "0%": { opacity: "0" }, "100%": { opacity: "1" } },
-        popIn: { "0%": { opacity: "0", transform: "translateY(4px) scale(0.985)" }, "100%": { opacity: "1", transform: "none" } },
-        slideIn: { "0%": { opacity: "0", transform: "translateX(16px)" }, "100%": { opacity: "1", transform: "none" } },
-      },
-      animation: {
-        "fade-in": "fadeIn 0.16s ease-out",
-        "pop-in": "popIn 0.18s cubic-bezier(0.2, 0.8, 0.2, 1)",
-        "slide-in": "slideIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1)",
       },
     },
   },

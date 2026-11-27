@@ -1,5 +1,5 @@
-// 各页共用的骨架：页头、分组卡片、设置行、键值、徽标、出错说明。
-// 页头与卡片的样式类取自 Resin（MIT）的样式表；Group / Row / Line / KeyValue / Tag 这些名字沿用本项目原有的。
+// 各页共用的骨架：页头、卡片标题、徽标、出错说明、页签。
+// 页头与卡片的样式类取自 Resin（MIT）的样式表。
 import { AlertTriangle, ChevronLeft } from "lucide-react";
 import type React from "react";
 import { Badge, type BadgeVariant } from "@/components/ui/card";
@@ -9,6 +9,27 @@ import { cn } from "@/lib/utils";
 export function NoteText({ note, className }: { note?: string; className?: string }) {
   if (!note) return null;
   return <span title={note} className={cn("min-w-0 shrink truncate text-[12.5px] font-normal text-muted", className)}>{note}</span>;
+}
+
+/**
+ * 卡片的标题：名称是打开详情页的链接，备注跟在后面。
+ * 卡片本身只响应鼠标点击，不是按钮：键盘与读屏软件经由这个链接打开详情，卡片里的菜单与按钮不再嵌在另一个可交互元素中。
+ */
+export function TileTitle({ href, name, note, label }: { href: string; name: string; note?: string; label: string }) {
+  return (
+    <p title={note}>
+      <a className="tile-link" href={href} aria-label={label}>{name}</a>
+      <NoteText note={note} className="ml-2 font-sans text-[12px]" />
+    </p>
+  );
+}
+
+/** 卡片外层的属性：整张响应鼠标点击，里面的按钮、菜单与链接除外。 */
+export function tileProps(onOpen: () => void) {
+  return {
+    className: "tile",
+    onClick: (e: React.MouseEvent) => !(e.target as HTMLElement).closest("button, a, [data-menu]") && onOpen(),
+  };
 }
 
 interface PageHeaderProps {
@@ -32,7 +53,7 @@ export function PageHeader({ title, note, subtitle, actions, back }: PageHeaderP
           </button>
         )}
         <div className="flex min-w-0 items-baseline gap-3">
-          <h2 className={cn("min-w-0 truncate", note && "max-w-[70%] shrink-0")}>{title}</h2>
+          <h1 className={cn("min-w-0 truncate", note && "max-w-[70%] shrink-0")}>{title}</h1>
           <NoteText note={note} className="text-[14px]" />
         </div>
         {subtitle && <p className="module-description">{subtitle}</p>}
@@ -47,53 +68,6 @@ export function Page({ children, className }: { children: React.ReactNode; class
   return <section className={cn("page", className)}>{children}</section>;
 }
 
-/** 带标题的一组：标题在上，下面是一张分行的卡片。 */
-export function Group({ label, action, children, className }: { label?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
-  return (
-    <section className={className}>
-      {(label || action) && (
-        <div className="flex items-end justify-between gap-3">
-          {label ? <div className="group-label">{label}</div> : <span />}
-          {action && <div className="pb-2">{action}</div>}
-        </div>
-      )}
-      <div className="list-card">{children}</div>
-    </section>
-  );
-}
-
-/** 卡片里的一行设置：左边是名称与说明，右边是控件。 */
-export function Row({ label, hint, children }: { label: React.ReactNode; hint?: React.ReactNode; children?: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-6 px-4 py-3.5">
-      <div className="min-w-0">
-        <div className="text-[14px] font-semibold text-fg">{label}</div>
-        {hint && <div className="mt-0.5 text-[12.5px] leading-[19px] text-muted">{hint}</div>}
-      </div>
-      {children !== undefined && <div className="flex shrink-0 items-center gap-2">{children}</div>}
-    </div>
-  );
-}
-
-/** 表单里的一行：左边是标签，右边是控件。 */
-export function Line({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[96px_1fr] items-center gap-3 px-4 py-2.5">
-      <span className="field-label">{label}</span>
-      <div className="flex min-w-0 items-center gap-2">{children}</div>
-    </div>
-  );
-}
-
-export function KeyValue({ k, v, plain, children }: { k: string; v?: string | null; plain?: boolean; children?: React.ReactNode }) {
-  return (
-    <div className="flex gap-4 px-4 py-3 text-[13px]">
-      <span className="w-24 shrink-0 text-muted">{k}</span>
-      {children ?? <span className={cn("min-w-0 break-all text-fg", !plain && "mono")}>{v || "—"}</span>}
-    </div>
-  );
-}
-
 const toneVariant: Record<string, BadgeVariant> = { warn: "warning", env: "info", danger: "danger", ok: "success" };
 
 export function Tag({ children, tone, title }: { children: React.ReactNode; tone?: "warn" | "env" | "danger" | "ok"; title?: string }) {
@@ -101,6 +75,16 @@ export function Tag({ children, tone, title }: { children: React.ReactNode; tone
     <Badge title={title} variant={tone ? toneVariant[tone] : "neutral"} className="max-w-[220px] shrink-0 truncate">
       {children}
     </Badge>
+  );
+}
+
+/** 卡片页脚与详情页头部的一项：名称在前（可省略），取值在后。 */
+export function Fact({ k, children }: { k?: string; children: React.ReactNode }) {
+  return (
+    <span className="platform-fact">
+      {k && <span>{k}</span>}
+      <strong>{children}</strong>
+    </span>
   );
 }
 
@@ -118,25 +102,30 @@ export function ErrorBox({ text, log, onClose, tone = "error" }: { text: string;
   );
 }
 
-/** 没有内容时占位的一句话。 */
-export function Empty({ icon, children, className }: { icon?: React.ReactNode; children: React.ReactNode; className?: string }) {
+/**
+ * 分段的页签：只有选中的一项在 Tab 顺序里，左右方向键与 Home、End 在各项之间移动并选中。
+ * panel 是它切换的那块内容的 id，内容的外层用 tabPanelProps 取得对应的属性。
+ */
+export function Tabs<T extends string>({ value, onChange, items, label, panel }: { value: T; onChange: (v: T) => void; items: [T, string][]; label: string; panel: string }) {
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const at = items.findIndex(([k]) => k === value);
+    const next = e.key === "ArrowRight" ? at + 1 : e.key === "ArrowLeft" ? at - 1 : e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : -2;
+    if (next === -2) return;
+    e.preventDefault();
+    const to = (next + items.length) % items.length;
+    onChange(items[to][0]);
+    e.currentTarget.querySelectorAll<HTMLButtonElement>("[role=tab]")[to]?.focus();
+  };
   return (
-    <div className={cn("empty-box plain", className)}>
-      {icon}
-      <p>{children}</p>
-    </div>
-  );
-}
-
-/** 分段的页签。 */
-export function Tabs<T extends string>({ value, onChange, items, label }: { value: T; onChange: (v: T) => void; items: [T, string][]; label: string }) {
-  return (
-    <div className="segmented-control" role="tablist" aria-label={label}>
+    <div className="segmented-control" role="tablist" aria-label={label} onKeyDown={onKeyDown}>
       {items.map(([k, text]) => (
-        <button key={k} type="button" role="tab" aria-selected={value === k} className="segmented-control-option" onClick={() => onChange(k)}>
+        <button key={k} type="button" role="tab" id={`${panel}-${k}`} aria-controls={panel} aria-selected={value === k} tabIndex={value === k ? 0 : -1} className="segmented-control-option" onClick={() => onChange(k)}>
           <span>{text}</span>
         </button>
       ))}
     </div>
   );
 }
+
+/** 页签切换的那块内容外层的属性。 */
+export const tabPanelProps = (panel: string, tab: string) => ({ role: "tabpanel", id: panel, "aria-labelledby": `${panel}-${tab}` }) as const;

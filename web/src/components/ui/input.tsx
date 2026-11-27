@@ -1,4 +1,4 @@
-// 输入框、文本框、下拉框和标签：样式类取自 Resin（MIT）webui 的 components/ui/Input.tsx 等。
+// 输入框、文本框和下拉框：样式类取自 Resin（MIT）webui 的 components/ui/Input.tsx 等。
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
@@ -16,7 +16,3 @@ export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttrib
   ({ className, ...props }, ref) => <select ref={ref} className={cn("field", className)} {...props} />,
 );
 Select.displayName = "Select";
-
-export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
-  return <label className={cn("field-label", className)} {...props} />;
-}

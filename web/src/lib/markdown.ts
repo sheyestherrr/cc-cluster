@@ -24,7 +24,7 @@ export type Block =
 const INLINE = /`([^`]+)`|\*\*(.+?)\*\*|\[([^\]]+)\]\(([^)\s]+)\)/g;
 
 /** 只有 http(s) 的地址才做成链接；别的（javascript: 之类）只留下文字。 */
-const safeHref = (href: string) => /^https?:\/\//i.test(href);
+export const safeHref = (href: string) => /^https?:\/\//i.test(href);
 
 export function parseInline(src: string): Inline[] {
   const out: Inline[] = [];

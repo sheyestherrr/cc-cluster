@@ -15,6 +15,7 @@ import { api, errorText, type Delay, type History, type Slot, type SlotLive, typ
 import { usePolled, usePolling } from "@/lib/live";
 import { opDetail, opName } from "@/lib/ops";
 import type { Navigate } from "@/lib/route";
+import { dotTone, isWired } from "@/lib/slot-state";
 import { bytesText, rateText, relativeTime } from "@/lib/utils";
 import { stateText } from "@/pages/SlotsPage";
 
@@ -119,7 +120,7 @@ export function OverviewPage({ state, loadError, go }: Props) {
     );
   }
 
-  const wired = state.slots.filter((s) => s.state === "ready" || s.state === "pending").length;
+  const wired = state.slots.filter(isWired).length;
   const running = state.gateways.filter((g) => g.container === "running").length;
   const landings = state.nodes.filter((n) => n.role === "landing");
   const transits = state.nodes.filter((n) => n.role === "transit").length;
@@ -283,11 +284,10 @@ function Kpi({ icon, tone, label, value, badge, children }: { icon: React.ReactN
     <Card className="dashboard-kpi-card">
       <div className={`dashboard-kpi-icon ${tone}`}>{icon}</div>
       <div className="min-w-0">
-        <p className="dashboard-kpi-label">{label}</p>
+        <p className="dashboard-kpi-label flex items-center gap-2">{label}{badge}</p>
         <p className="dashboard-kpi-value num truncate">{value}</p>
         <p className="dashboard-kpi-sub">{children}</p>
       </div>
-      {badge && <div className="dashboard-kpi-badge">{badge}</div>}
     </Card>
   );
 }
@@ -307,7 +307,6 @@ function PanelHead({ title, hint, children }: { title: string; hint?: string; ch
 /** 一个槽位：行首是出口所在地的国旗，右边是此刻的速率和实际的出口地址。 */
 function SlotLine({ s, state, live, onClick }: { s: Slot; state: State; live?: SlotLive; onClick: () => void }) {
   const node = state.nodes.find((n) => n.id === s.landing);
-  const wired = s.state === "ready" || s.state === "pending";
   return (
     <button type="button" className="snapshot-row" onClick={onClick}>
       <RegionIcon code={node?.region} from={node?.region_from} icon={Box} />
@@ -317,10 +316,10 @@ function SlotLine({ s, state, live, onClick }: { s: Slot; state: State; live?: S
           {s.note && <span className="truncate text-[12px] font-normal text-muted">{s.note}</span>}
           {s.watch?.status === "changed" && <Badge variant="danger" title={s.watch.detail}>出口已变更</Badge>}
           {s.watch?.status === "unreachable" && <Badge variant="warning" title={s.watch.detail}>无法连接</Badge>}
-          {s.state === "hold" && <Badge variant="warning" title={s.hold_reason}>已断网</Badge>}
+          {s.state === "hold" && <Badge variant="danger" title={s.hold_reason}>已断网</Badge>}
         </p>
         <p>
-          <span className={`status-dot mr-1.5 inline-block align-middle ${wired ? "ok" : s.state === "hold" || s.state === "offline" ? "warn" : ""}`} />
+          <span className={`status-dot mr-1.5 inline-block align-middle ${dotTone(s)}`} />
           {stateText[s.state]} · 落地 {s.landing}{node?.direct ? "（直出）" : ` · 网关 ${s.gateway}`}
         </p>
       </div>

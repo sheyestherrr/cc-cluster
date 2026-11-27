@@ -9,13 +9,16 @@ import { RegionIcon } from "@/components/Flag";
 import { Field, FormGrid, FormSection, NameInput, SwitchItem } from "@/components/Form";
 import { Menu, type MenuEntry } from "@/components/Menu";
 import { NOTE_PLACEHOLDER, NoteDialog, type NoteTarget } from "@/components/NoteDialog";
-import { ErrorBox, Page, PageHeader, Tag } from "@/components/PageHeader";
+import { ErrorBox, Fact, Page, PageHeader, Tag, TileTitle, tileProps } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Badge, Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
-import { ID_HINT, NOTE_MAX, api, errorText, type Gateway, type NodeInfo, type NodeInput, type Role, type State } from "@/lib/api";
+import { ID_HINT, NOTE_MAX, api, errorText, roleText, type Gateway, type NodeInfo, type NodeInput, type Role, type State } from "@/lib/api";
+import { routeHash } from "@/lib/route";
+import { plainName } from "@/lib/utils";
+import { isRunning, isWired } from "@/lib/slot-state";
 
 interface Props {
   state: State | null;
@@ -30,37 +33,9 @@ interface Props {
 
 type Selection = { readonly kind: "gateway" | "node"; readonly id: string };
 
-const roleText: Record<Role, string> = { transit: "中转", landing: "落地" };
-
 const gatewayStatus = (g: Gateway) =>
   g.container === "running" ? (g.core_ready ? "运行中" : "核心未就绪") : g.container === "absent" ? "未创建" : g.container === "unknown" ? "状态未知" : "已停止";
 const gatewayDot = (g: Gateway) => (g.container !== "running" ? "" : g.core_ready ? "ok" : "warn");
-
-/** 卡片：整张可点，里面的按钮和菜单不算。 */
-function tileProps(label: string, onOpen: () => void) {
-  return {
-    className: "tile",
-    role: "button",
-    tabIndex: 0,
-    "aria-label": label,
-    onClick: (e: React.MouseEvent) => !(e.target as HTMLElement).closest("button, [data-menu]") && onOpen(),
-    onKeyDown: (e: React.KeyboardEvent) => {
-      if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
-        e.preventDefault();
-        onOpen();
-      }
-    },
-  };
-}
-
-function Fact({ k, children }: { k?: string; children: React.ReactNode }) {
-  return (
-    <span className="platform-fact">
-      {k && <span>{k}</span>}
-      <strong>{children}</strong>
-    </span>
-  );
-}
 
 function KV({ k, children, mono }: { k: string; children: React.ReactNode; mono?: boolean }) {
   return (
@@ -93,7 +68,7 @@ export function NetworkPage({ state, loadError, refresh, goSubs, open, setOpen }
     up: () => run(`gateway:${g.id}`, "启动中…", () => api.gatewayUp(g.id), `网关 ${g.id} 已就绪`),
     // 有槽位在运行时停止网关会使它们断网：先确认，确认后强制停止。
     down: () => {
-      const running = (state?.slots ?? []).filter((s) => s.gateway === g.id && (s.state === "ready" || s.state === "pending" || s.state === "offline")).map((s) => s.id);
+      const running = (state?.slots ?? []).filter((s) => s.gateway === g.id && isRunning(s)).map((s) => s.id);
       const down = () => run(`gateway:${g.id}`, "停止中…", () => api.gatewayDown(g.id, running.length > 0), `已停止网关 ${g.id}`);
       if (!running.length) return void down();
       confirm({ title: `停止网关 ${g.id}？`, text: `槽位 ${running.join("、")} 正在运行，停止网关后这些槽位将断网。`, action: "停止", onConfirm: down });
@@ -272,11 +247,11 @@ function GatewayToggle({ g, a, busy, size = "sm" }: { g: Gateway; a: GatewayActi
 
 function GatewayTile({ g, busy, a, onOpen }: { g: Gateway; busy?: string; a: GatewayActions; onOpen: () => void }) {
   return (
-    <div {...tileProps(`网关 ${g.id}，打开详情`, onOpen)}>
+    <div {...tileProps(onOpen)}>
       <div className="tile-head">
         <RegionIcon icon={Router} />
         <div className="tile-title">
-          <p title={g.note}>{g.id}{g.note && <span className="ml-2 font-sans text-[12px] font-normal text-muted">{g.note}</span>}</p>
+          <TileTitle href={routeHash("network", ["gateway", g.id])} name={g.id} note={g.note} label={`网关 ${g.id}，打开详情`} />
           <p><span className={`status-dot mr-1.5 inline-block align-middle ${gatewayDot(g)}`} />{gatewayStatus(g)}</p>
         </div>
         <Menu items={gatewayMenu(g, a)} disabled={!!busy} />
@@ -297,27 +272,27 @@ function GatewayTile({ g, busy, a, onOpen }: { g: Gateway; busy?: string; a: Gat
 
 function NodeTile({ n, busy, a, onOpen }: { n: NodeInfo; busy?: string; a: NodeActions; onOpen: () => void }) {
   const r = n.exit_report;
-  const where = r ? [r.country_code || r.country, r.city].filter(Boolean).join(" ") : "";
+  const where = r ? [r.country || r.country_code, r.city].filter(Boolean).join(" ") : "";
   return (
-    <div {...tileProps(`节点 ${n.id}，打开详情`, onOpen)}>
+    <div {...tileProps(onOpen)}>
       <div className="tile-head">
         <RegionIcon code={n.region} from={n.region_from} icon={n.role === "landing" ? Globe2 : Waypoints} />
         <div className="tile-title">
-          <p title={n.note}>{n.id}{n.note && <span className="ml-2 font-sans text-[12px] font-normal text-muted">{n.note}</span>}</p>
+          <TileTitle href={routeHash("network", ["node", n.id])} name={n.id} note={n.note} label={`节点 ${n.id}，打开详情`} />
           <p className="mono">{n.type} · {n.server}:{n.port}</p>
         </div>
         <Menu items={nodeMenu(n, a)} disabled={!!busy} />
       </div>
       <div className="platform-tile-facts">
         <Badge variant={n.role === "landing" ? "info" : "neutral"}>{roleText[n.role]}</Badge>
-        {n.source && <Badge variant="neutral" title={`取自订阅 ${n.source.sub}`} className="max-w-[180px] truncate">{n.source.name}</Badge>}
+        {n.source && <Badge variant="neutral" title={`取自订阅 ${n.source.sub}：${n.source.name}`} className="max-w-[180px] truncate">{n.region ? plainName(n.source.name) : n.source.name}</Badge>}
         {r?.trust_score !== undefined && <Fact k="信任分">{r.trust_score}</Fact>}
         {r && (r.flags.length ? <Badge variant="warning" title={r.flags.map((f) => f.name).join("、")}>{r.flags.length} 个不利标记</Badge> : <Badge variant="success">无不利标记</Badge>)}
         {n.tz_fallback && <Badge variant="warning" title="未探测到出口所在的时区，暂用默认值">默认时区</Badge>}
       </div>
       <div className="platform-tile-foot">
         <span className="min-w-0 flex-1 truncate">
-          {r ? <><span className="mono font-semibold text-fg">{r.ip}</span>{where && ` · ${where}`}</> : n.connect_ipv4 ? <>首跳 <span className="mono">{n.connect_ipv4}</span></> : n.role === "landing" ? "暂无出口评估" : "中转"}
+          {r ? <><span className="mono font-semibold text-fg">{r.ip}</span>{where && ` · ${where}`}</> : n.connect_ipv4 ? <>首跳 <span className="mono">{n.connect_ipv4}</span></> : n.role === "landing" ? "暂无出口评估" : n.source ? `来自订阅 ${n.source.sub}` : "手动添加"}
         </span>
         {busy ? <span className="flex items-center gap-1.5"><Loader2 size={14} className="spin" />{busy}</span> : <span className="max-w-[45%] truncate" title={n.used_by.join("、")}>{n.used_by.length ? `${n.used_by.join("、")} 使用中` : "未使用"}</span>}
       </div>
@@ -341,7 +316,7 @@ function NodeDetail({ n, state, busy, a, alerts, back }: DetailCommon & { n: Nod
     const g = state.gateways.find((x) => x.id === s.gateway);
     return g?.container === "running" && g.core_ready;
   });
-  const wired = slots.find((s) => (s.state === "ready" || s.state === "pending") && s.exit_ip);
+  const wired = slots.find((s) => isWired(s) && s.exit_ip);
   return (
     <Page className="platform-page platform-detail-page">
       <PageHeader
@@ -364,7 +339,7 @@ function NodeDetail({ n, state, busy, a, alerts, back }: DetailCommon & { n: Nod
             <RegionIcon code={n.region} from={n.region_from} icon={landing ? Globe2 : Waypoints} size="detail" />
             <div className="min-w-0">
               <h3 className="truncate">{n.exit_report ? <span className="mono">{n.exit_report.ip}</span> : n.id}</h3>
-              <p>{roleText[n.role]} · {n.type} · {n.used_by.length ? `${n.used_by.join("、")} 使用中` : "未使用"}</p>
+              <p>{n.used_by.length ? `${n.used_by.join("、")} 使用中` : "未使用"}</p>
             </div>
           </div>
           <div className="platform-detail-header-meta">
@@ -373,14 +348,6 @@ function NodeDetail({ n, state, busy, a, alerts, back }: DetailCommon & { n: Nod
               {n.direct && <Badge variant="warning" title="直接使用订阅中的节点作为出口：出口地址为多人共用">直出</Badge>}
               {n.tz_fallback && <Badge variant="warning" title="带时区信息的探测地址均无响应，暂用默认值；下次启动槽位时重新探测">默认时区</Badge>}
             </div>
-          </div>
-        </div>
-        <div className="platform-detail-header-footer">
-          <div className="platform-tile-facts">
-            <Fact k="服务器">{n.server}:{n.port}</Fact>
-            <Fact k="协议">{n.type}</Fact>
-            {n.connect_ipv4 && <Fact k="首跳">{n.connect_ipv4}</Fact>}
-            {n.source && <Fact k="来自订阅">{n.source.sub}</Fact>}
           </div>
         </div>
       </Card>
@@ -481,8 +448,6 @@ function GatewayDetail({ g, state, busy, a, alerts, back, refresh }: DetailCommo
         <div className="platform-detail-header-footer">
           <div className="platform-tile-facts">
             {g.transit ? <Fact k="中转">{g.transit}</Fact> : <Fact>不经中转</Fact>}
-            <Fact k="出口网络">{g.egress_network}</Fact>
-            <Fact k="地址池">{g.pool}</Fact>
           </div>
         </div>
       </Card>

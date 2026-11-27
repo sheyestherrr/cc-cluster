@@ -127,6 +127,7 @@ export interface Gateway {
 }
 
 export type Role = "transit" | "landing";
+export const roleText: Record<Role, string> = { transit: "中转", landing: "落地" };
 
 /** 一项不利标记：by 是命中它的数据来源，of 是对这一项给出了判断的来源数。 */
 export interface ExitFlag {

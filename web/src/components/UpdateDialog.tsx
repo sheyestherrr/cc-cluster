@@ -6,6 +6,7 @@ import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import type { Release, UpdateInfo } from "@/lib/api";
+import { safeHref } from "@/lib/markdown";
 import { dateText, relativeTime } from "@/lib/utils";
 
 interface Props {
@@ -25,9 +26,6 @@ function publishedText(r?: Release): string {
   const ms = r ? Date.parse(r.published_at) : NaN;
   return Number.isNaN(ms) || ms < Date.UTC(2000, 0, 1) ? "" : dateText(r!.published_at);
 }
-
-/** 只有 http(s) 的地址才做成链接。 */
-const safeHref = (href: string) => (/^https?:\/\//i.test(href) ? href : undefined);
 
 function Fact({ k, v, strong }: { k: string; v?: string; strong?: boolean }) {
   return (
@@ -65,7 +63,7 @@ export function UpdateDialog({ open, onClose, version, info, checking, error, on
             {info?.checked_at ? `上次检查：${relativeTime(info.checked_at)}` : info ? "尚未检查" : ""}
           </span>
           <Button variant="outline" onClick={onCheck} disabled={checking}>
-            <RefreshCw className={checking ? "animate-spin" : undefined} />
+            <RefreshCw className={checking ? "spin" : undefined} />
             {checking ? "检查中…" : "检查更新"}
           </Button>
           <Button onClick={onClose}>关闭</Button>
@@ -139,7 +137,7 @@ export function UpdateDialog({ open, onClose, version, info, checking, error, on
                   <strong className="mono">{r.version}</strong>
                   {publishedText(r) && <span>{publishedText(r)}</span>}
                   {safeHref(r.url) && (
-                    <a href={safeHref(r.url)} target="_blank" rel="noopener noreferrer">
+                    <a href={r.url} target="_blank" rel="noopener noreferrer">
                       在 GitHub 查看
                       <ExternalLink size={12} />
                     </a>
@@ -152,7 +150,7 @@ export function UpdateDialog({ open, onClose, version, info, checking, error, on
         </section>
       )}
 
-      {!info && !problem && checking && <p className="field-hint mt-3">加载中…</p>}
+      {!info && !problem && <p className="field-hint mt-3">正在检查更新…</p>}
       {info && !info.auto_check && !latest && !problem && !checking && <p className="field-hint mt-3">自动检查已关闭。点击“检查更新”手动检查。</p>}
     </Dialog>
   );
