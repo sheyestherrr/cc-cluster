@@ -31,7 +31,6 @@ function Logo() {
 interface AppShellProps {
   activePage: PageId;
   onPageChange: (page: PageId) => void;
-  cluster?: string;
   /** 正在运行的 cc-cluster 的版本；点它打开“版本与更新”。 */
   version?: string;
   /** 有新版本时是它的版本号。 */
@@ -62,7 +61,7 @@ function VersionChip({ version, newVersion, stale, onClick }: Pick<AppShellProps
   );
 }
 
-export function AppShell({ activePage, onPageChange, cluster, version, newVersion, stale, onVersionClick, status, children }: AppShellProps) {
+export function AppShell({ activePage, onPageChange, version, newVersion, stale, onVersionClick, status, children }: AppShellProps) {
   return (
     <div className="app-layout">
       <aside className="sidebar">
@@ -71,10 +70,7 @@ export function AppShell({ activePage, onPageChange, cluster, version, newVersio
             <Logo />
           </div>
           <div className="brand-copy">
-            <div className="brand-title-row">
-              <p className="brand-title">cc-cluster</p>
-              {cluster && cluster !== "cc-cluster" && <span className="brand-version" title={cluster}>{cluster}</span>}
-            </div>
+            <p className="brand-title">cc-cluster</p>
             <VersionChip version={version} newVersion={newVersion} stale={stale} onClick={onVersionClick} />
           </div>
         </div>

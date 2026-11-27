@@ -45,10 +45,10 @@ export default function App() {
     };
   }, [refresh]);
 
-  // 标签页标题：当前页面在前，开着几个集群的页面时靠集群名区分。
+  // 标签页标题：当前页面在前；同时打开多个集群的页面时，靠容器名前缀区分。
   const cluster = state?.cluster.name;
   useEffect(() => {
-    document.title = [pageTitles[page], cluster !== APP_NAME && cluster, APP_NAME].filter(Boolean).join(" · ");
+    document.title = [pageTitles[page], cluster, APP_NAME].filter(Boolean).join(" · ");
   }, [page, cluster]);
 
   // 换页时回到页面顶部；从侧栏点当前这一页，也从详情页回到卡片网格（节点与订阅页靠重新挂载）。
@@ -110,7 +110,6 @@ export default function App() {
     <AppShell
       activePage={page}
       onPageChange={go}
-      cluster={cluster}
       version={version}
       newVersion={update?.newer ? update.latest?.version : undefined}
       stale={stale}
