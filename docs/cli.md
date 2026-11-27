@@ -147,7 +147,7 @@ cc-cluster slot add research --direct "air:节点名" && cc-cluster slot up rese
 
 `slot add` 的常用参数：`--memory 8g`、`--cpus 4`、`--mount 宿主目录[:容器路径[:ro]]`、`--tz Asia/Tokyo`、`--user`（槽内的用户名，默认为 `user`）、`--hostname`、`--env 名=值`、`--fake-dmi`、`--fake-proc`。
 
-挂载的限制：不能挂载主目录、数据目录，或包含它们的上级目录。每个挂载在槽内的 `~` 下有同名的快捷方式；`~` 中已有同名文件时不创建。
+挂载的限制：不能挂载主目录、数据目录、Docker socket，或包含它们的上级目录；符号链接按其实际指向的位置判断。每次启动槽位时重新检查，不符合的挂载用 `slot unmount` 去掉后再启动。每个挂载在槽内的 `~` 下有同名的快捷方式；`~` 中已有同名文件时不创建。
 
 ## 名称与备注
 
