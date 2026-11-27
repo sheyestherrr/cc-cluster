@@ -25,7 +25,7 @@ export function regionName(code: string): string {
 export function regionTitle(code: string, from?: string): string {
   const name = regionName(code);
   if (from === "exit") return `${name}（出口评估的所在地）`;
-  if (from === "name") return `${name}（从名称里认出来的，不代表实际出口）`;
+  if (from === "name") return `${name}（根据名称识别，不代表实际出口）`;
   return name;
 }
 

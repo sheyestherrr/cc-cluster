@@ -97,7 +97,7 @@ export function AppShell({ activePage, onPageChange, cluster, version, newVersio
         <div className="sidebar-bottom">
           <div className="sidebar-status">
             <span className={cn("status-dot", status?.ready && "ok")} />
-            <span>{status ? `${status.ready} 个已接线 · 共 ${status.total} 个槽位` : "读取中…"}</span>
+            <span>{status ? `${status.ready} 个已接线 · 共 ${status.total} 个槽位` : "加载中…"}</span>
           </div>
         </div>
       </aside>

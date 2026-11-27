@@ -284,7 +284,7 @@ export function DelayBars({ buckets, total, height = 226 }: { buckets: Bucket[];
                   <p className="histogram-tooltip-title">{r.label} 毫秒</p>
                   <p className="histogram-tooltip-value">
                     节点数 {r.count}
-                    {total ? `，占测通的 ${Math.round((r.count / total) * 100)}%` : ""}
+                    {total ? `，占可用节点的 ${Math.round((r.count / total) * 100)}%` : ""}
                   </p>
                 </div>
               );
@@ -308,7 +308,7 @@ interface SubRow {
 const TOTAL_COLOR = "#9aa9c0";
 
 export const subLegend = [
-  { color: C1, label: "测通" },
+  { color: C1, label: "可用" },
   { color: TOTAL_COLOR, label: "节点总数" },
 ];
 
@@ -343,7 +343,7 @@ export function SubUsableChart({ points, from, to, height = 180 }: { points: Sub
                 <Tip
                   title={mdhm(r.t)}
                   rows={[
-                    { color: C1, label: "测通", value: `${r.usable} 个` },
+                    { color: C1, label: "可用", value: `${r.usable} 个` },
                     { color: TOTAL_COLOR, label: "节点总数", value: `${r.total} 个` },
                   ]}
                 />
@@ -362,7 +362,7 @@ export function SubUsableChart({ points, from, to, height = 180 }: { points: Sub
 // ---- 持续检测的时间线 ----
 
 const watchColor: Record<WatchStatus, string> = { ok: "var(--watch-ok)", unreachable: "var(--watch-warn)", changed: "var(--watch-bad)" };
-const watchText: Record<WatchStatus, string> = { ok: "正常", unreachable: "连不上", changed: "出口变了" };
+const watchText: Record<WatchStatus, string> = { ok: "正常", unreachable: "无法连接", changed: "出口已变更" };
 
 export const watchLegend = (["ok", "unreachable", "changed"] as const).map((s) => ({ color: watchColor[s], label: watchText[s] }));
 

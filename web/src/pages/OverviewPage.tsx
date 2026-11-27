@@ -39,14 +39,14 @@ function notices(state: State): Notice[] {
   const out: Notice[] = [];
   for (const s of state.slots) {
     const at = { page: "slots" as const, target: s.id };
-    if (s.watch?.status === "changed") out.push({ key: `slot:${s.id}:changed`, tone: "danger", text: `槽位 ${s.id} 的出口变了，已自动断网：${s.watch.detail ?? ""}`, ...at });
-    else if (s.watch?.status === "unreachable") out.push({ key: `slot:${s.id}:unreachable`, tone: "warning", text: `槽位 ${s.id} 自${relativeTime(s.watch.since)}起连不上出口`, ...at });
-    if (s.state === "hold") out.push({ key: `slot:${s.id}:hold`, tone: "warning", text: `槽位 ${s.id} 处于手动断网${s.hold_reason ? `：${s.hold_reason}` : ""}`, ...at });
-    else if (s.state === "offline") out.push({ key: `slot:${s.id}:offline`, tone: "warning", text: `槽位 ${s.id} 在运行，但没有接线（没有网络）`, ...at });
-    else if (s.state === "pending") out.push({ key: `slot:${s.id}:pending`, tone: "warning", text: `槽位 ${s.id} 的配置改过，还没应用`, ...at });
+    if (s.watch?.status === "changed") out.push({ key: `slot:${s.id}:changed`, tone: "danger", text: `槽位 ${s.id} 的出口已变更，已自动断网：${s.watch.detail ?? ""}`, ...at });
+    else if (s.watch?.status === "unreachable") out.push({ key: `slot:${s.id}:unreachable`, tone: "warning", text: `槽位 ${s.id} 自${relativeTime(s.watch.since)}起无法连接出口`, ...at });
+    if (s.state === "hold") out.push({ key: `slot:${s.id}:hold`, tone: "warning", text: `槽位 ${s.id} 已手动断网${s.hold_reason ? `：${s.hold_reason}` : ""}`, ...at });
+    else if (s.state === "offline") out.push({ key: `slot:${s.id}:offline`, tone: "warning", text: `槽位 ${s.id} 正在运行，但未接线（无网络）`, ...at });
+    else if (s.state === "pending") out.push({ key: `slot:${s.id}:pending`, tone: "warning", text: `槽位 ${s.id} 的配置已修改，尚未应用`, ...at });
   }
   for (const g of state.gateways) {
-    if (g.container === "running" && !g.core_ready) out.push({ key: `gw:${g.id}`, tone: "warning", text: `网关 ${g.id} 在运行，但核心没有就绪`, page: "network" });
+    if (g.container === "running" && !g.core_ready) out.push({ key: `gw:${g.id}`, tone: "warning", text: `网关 ${g.id} 正在运行，但核心未就绪`, page: "network" });
   }
   for (const n of state.nodes) {
     const flags = n.exit_report?.flags ?? [];
@@ -113,7 +113,7 @@ export function OverviewPage({ state, loadError, go }: Props) {
     return (
       <Page className="dashboard-page">
         {header}
-        {loadError ? <ErrorBox text={loadError} /> : <Card className="dashboard-panel"><p className="muted">正在读取集群的现状…</p></Card>}
+        {loadError ? <ErrorBox text={loadError} /> : <Card className="dashboard-panel"><p className="muted">正在加载集群状态…</p></Card>}
       </Page>
     );
   }
@@ -140,20 +140,20 @@ export function OverviewPage({ state, loadError, go }: Props) {
   const totalUp = history?.traffic.reduce((sum, p) => sum + p.up, 0) ?? 0;
   const peakConns = history?.traffic.reduce((m, p) => Math.max(m, p.conns ?? 0), 0) ?? 0;
   const watchSlots = state.slots.map((s) => s.id).filter((id) => history?.watch[id]?.length);
-  const noHistory = `这段时间里还没有记录。流量每五分钟记一档，在这个网页或 cc-cluster watch 开着的时候记录${traffic && !traffic.recording && sampled ? "；现在有另一个进程在记录，这里稍后就能看到" : ""}。`;
+  const noHistory = `该时段内暂无记录。流量每 5 分钟记录一次，仅在网页界面或 cc-cluster watch 运行期间记录${traffic && !traffic.recording && sampled ? "；当前由另一进程记录，稍后可在此查看" : ""}。`;
 
   return (
     <Page className="dashboard-page">
       {header}
       {loadError && <ErrorBox text={loadError} />}
-      {state.docker_error && <ErrorBox text={`连不上 Docker，槽位和网关的状态读不到：${state.docker_error}`} />}
+      {state.docker_error && <ErrorBox text={`无法连接 Docker，无法读取槽位与网关的状态：${state.docker_error}`} />}
 
       <div className="dashboard-kpi-grid">
         <Kpi icon={<Waves size={20} />} tone="waves" label="实时吞吐" value={sampled ? rateText(downNow + upNow) : "—"}>
-          {sampled ? `下行 ${rateText(downNow)} · 上行 ${rateText(upNow)}` : "等待第一次采样"}
+          {sampled ? `下行 ${rateText(downNow)} · 上行 ${rateText(upNow)}` : "等待首次采样"}
         </Kpi>
         <Kpi icon={<Gauge size={20} />} tone="gauge" label="实时连接数" value={sampled ? connsNow : "—"}>
-          {sampled ? `${live.filter((s) => s.conns > 0).length} 个槽位有连接 · ${rangeText}峰值 ${peakConns}` : "等待第一次采样"}
+          {sampled ? `${live.filter((s) => s.conns > 0).length} 个槽位有连接 · ${rangeText}峰值 ${peakConns}` : "等待首次采样"}
         </Kpi>
         <Kpi
           icon={<ShieldCheck size={20} />}
@@ -162,7 +162,7 @@ export function OverviewPage({ state, loadError, go }: Props) {
           value={<>{wired}<small className="ml-1.5 text-[14px] font-semibold text-muted">/ {state.slots.length}</small></>}
           badge={!watched.length ? undefined : abnormal ? <Badge variant="danger">{abnormal} 个异常</Badge> : <Badge variant="success">检测正常</Badge>}
         >
-          {!state.slots.length ? "还没有槽位" : wired === state.slots.length ? "都有网络" : `${state.slots.length - wired} 个没有网络`}
+          {!state.slots.length ? "暂无槽位" : wired === state.slots.length ? "全部有网络" : `${state.slots.length - wired} 个无网络`}
           {` · 网关 ${running} / ${state.gateways.length} 运行`}
         </Kpi>
         <Kpi
@@ -173,13 +173,13 @@ export function OverviewPage({ state, loadError, go }: Props) {
           badge={flagged ? <Badge variant="warning">{flagged} 个有标记</Badge> : undefined}
         >
           {`中转 ${transits} 个 · `}
-          {!state.subs.length ? "还没有订阅" : subTested ? `订阅节点测通 ${subUsable} / ${subNodes}` : `订阅节点 ${subNodes} 个`}
+          {!state.subs.length ? "暂无订阅" : subTested ? `订阅节点可用 ${subUsable} / ${subNodes}` : `订阅节点 ${subNodes} 个`}
         </Kpi>
       </div>
 
       <div className="dashboard-main-grid">
         <Card className="dashboard-panel span-2">
-          <PanelHead title="流量趋势" hint={`各槽位合计的下行 / 上行（${history ? (history.step >= 3600 ? `每 ${history.step / 3600} 小时一档` : `每 ${history.step / 60} 分钟一档`) : "读取中"}）`}>
+          <PanelHead title="流量趋势" hint={`各槽位合计的下行 / 上行（${history ? (history.step >= 3600 ? `每 ${history.step / 3600} 小时一个数据点` : `每 ${history.step / 60} 分钟一个数据点`) : "加载中"}）`}>
             <div className="panel-totals">
               <div className="panel-total">
                 <span><i style={{ background: "var(--chart-1)" }} />{rangeText}下行</span>
@@ -191,13 +191,13 @@ export function OverviewPage({ state, loadError, go }: Props) {
               </div>
             </div>
           </PanelHead>
-          {history === null ? <ChartEmpty height={260}>读取中…</ChartEmpty> : totalDown + totalUp > 0 ? <TrafficChart points={history.traffic} step={history.step} /> : <ChartEmpty height={260}>{noHistory}</ChartEmpty>}
+          {history === null ? <ChartEmpty height={260}>加载中…</ChartEmpty> : totalDown + totalUp > 0 ? <TrafficChart points={history.traffic} step={history.step} /> : <ChartEmpty height={260}>{noHistory}</ChartEmpty>}
           <Legend items={trafficLegend} />
         </Card>
 
         <Card className="dashboard-panel">
           <PanelHead title="连接峰值" hint="同时连接数的最大值" />
-          {history === null ? <ChartEmpty height={260}>读取中…</ChartEmpty> : peakConns > 0 ? <ConnsChart points={history.traffic} step={history.step} /> : <ChartEmpty height={260}>这段时间里没有连接的记录。</ChartEmpty>}
+          {history === null ? <ChartEmpty height={260}>加载中…</ChartEmpty> : peakConns > 0 ? <ConnsChart points={history.traffic} step={history.step} /> : <ChartEmpty height={260}>该时段内无连接记录。</ChartEmpty>}
           <Legend items={[{ color: "var(--chart-3)", label: "连接数" }]} />
         </Card>
 
@@ -212,21 +212,21 @@ export function OverviewPage({ state, loadError, go }: Props) {
           ) : (
             <div className="empty-box plain">
               <Sparkles size={16} />
-              <p>还没有槽位。槽位是一个隔离的工作环境，流量只从它自己的落地出去。</p>
-              <Button size="sm" onClick={() => go("slots")}>去添加</Button>
+              <p>暂无槽位。槽位是隔离的工作环境，流量只经其落地出口发出。</p>
+              <Button size="sm" onClick={() => go("slots")}>添加槽位</Button>
             </div>
           )}
         </Card>
 
         <Card className="dashboard-panel">
-          <PanelHead title="需要留意" hint="异常与待处理的事项" />
+          <PanelHead title="需要关注" hint="异常与待处理事项" />
           {!attention.length ? (
-            <div className="callout callout-success"><ShieldCheck size={15} /><span>没有需要处理的事。</span></div>
+            <div className="callout callout-success"><ShieldCheck size={15} /><span>暂无待处理事项。</span></div>
           ) : (
             <div className="dashboard-snapshot-list">
               {attention.map((n) => (
                 <button key={n.key} type="button" className="snapshot-row items-start" onClick={() => go(n.page, n.target)}>
-                  <Badge variant={n.tone}>{n.tone === "danger" ? "异常" : "留意"}</Badge>
+                  <Badge variant={n.tone}>{n.tone === "danger" ? "异常" : "注意"}</Badge>
                   <span className="min-w-0 flex-1 break-words leading-5">{n.text}</span>
                 </button>
               ))}
@@ -240,21 +240,21 @@ export function OverviewPage({ state, loadError, go }: Props) {
               <Legend items={watchLegend} />
             </PanelHead>
             {history === null ? (
-              <ChartEmpty height={120}>读取中…</ChartEmpty>
+              <ChartEmpty height={120}>加载中…</ChartEmpty>
             ) : watchSlots.length ? (
               <WatchTimeline slots={watchSlots} watch={history.watch} from={history.from} to={history.to} />
             ) : (
-              <ChartEmpty height={120}>这段时间里没有检测记录。持续检测在这个网页或 cc-cluster watch 开着的时候运行。</ChartEmpty>
+              <ChartEmpty height={120}>该时段内无检测记录。持续检测仅在网页界面或 cc-cluster watch 运行期间进行。</ChartEmpty>
             )}
           </Card>
         )}
 
         <Card className={`dashboard-panel${state.slots.length ? "" : " span-2"}`}>
-          <PanelHead title="最近的操作" hint="最近八条">
+          <PanelHead title="最近操作" hint="最近 8 条">
             <Button variant="outline" size="sm" onClick={() => go("system")}>全部记录</Button>
           </PanelHead>
-          {ops === null && <p className="muted">读取中…</p>}
-          {ops?.length === 0 && <div className="empty-box plain"><p>还没有操作记录。</p></div>}
+          {ops === null && <p className="muted">加载中…</p>}
+          {ops?.length === 0 && <div className="empty-box plain"><p>暂无操作记录。</p></div>}
           {!!ops?.length && (
             <div className="dashboard-snapshot-list">
               {ops.slice(0, 8).map((op, i) => (
@@ -314,8 +314,8 @@ function SlotLine({ s, state, live, onClick }: { s: Slot; state: State; live?: S
         <p className="flex items-center gap-2">
           <span className="truncate">{s.id}</span>
           {s.note && <span className="truncate text-[12px] font-normal text-muted">{s.note}</span>}
-          {s.watch?.status === "changed" && <Badge variant="danger" title={s.watch.detail}>出口变了</Badge>}
-          {s.watch?.status === "unreachable" && <Badge variant="warning" title={s.watch.detail}>连不上</Badge>}
+          {s.watch?.status === "changed" && <Badge variant="danger" title={s.watch.detail}>出口已变更</Badge>}
+          {s.watch?.status === "unreachable" && <Badge variant="warning" title={s.watch.detail}>无法连接</Badge>}
           {s.state === "hold" && <Badge variant="warning" title={s.hold_reason}>已断网</Badge>}
         </p>
         <p>
@@ -369,11 +369,11 @@ function SubsPanels({ state, delays, error, history, rangeText, goSubs }: { stat
   if (!state.subs.length) {
     return (
       <Card className="dashboard-panel span-2">
-        <PanelHead title="订阅节点" hint="延迟分布与测通个数的变化" />
+        <PanelHead title="订阅节点" hint="延迟分布与可用节点数的变化" />
         <div className="empty-box plain">
           <Sparkles size={16} />
-          <p>还没有订阅。添加之后，这里显示它的节点延迟落在哪些区间。</p>
-          <Button size="sm" onClick={goSubs}>去添加</Button>
+          <p>暂无订阅。添加后，此处显示节点的延迟分布。</p>
+          <Button size="sm" onClick={goSubs}>添加订阅</Button>
         </div>
       </Card>
     );
@@ -382,7 +382,7 @@ function SubsPanels({ state, delays, error, history, rangeText, goSubs }: { stat
   return (
     <>
       <Card className="dashboard-panel">
-        <PanelHead title="节点延迟分布" hint={chosen ? `订阅 ${chosen} 最近一次测延迟的结果` : "全部订阅最近一次测延迟的结果"}>
+        <PanelHead title="节点延迟分布" hint={chosen ? `订阅 ${chosen} 最近一次延迟测试的结果` : "全部订阅最近一次延迟测试的结果"}>
           {state.subs.length > 1 && (
             <Select aria-label="订阅" value={chosen} onChange={(e) => setSub(e.target.value)} className="field-sm w-auto">
               <option value="">全部订阅</option>
@@ -391,34 +391,34 @@ function SubsPanels({ state, delays, error, history, rangeText, goSubs }: { stat
           )}
         </PanelHead>
         {error && <ErrorBox text={error} />}
-        {!error && delays === null && <ChartEmpty height={226}>读取中…</ChartEmpty>}
+        {!error && delays === null && <ChartEmpty height={226}>加载中…</ChartEmpty>}
         {!error && delays !== null && !ok.length && (
           <div className="empty-box plain" style={{ minHeight: 226 }}>
-            <p>{nodes.length ? `${nodes.length} 个节点里${dead ? `有 ${dead} 个不通，其余` : ""}还没测过延迟。` : "订阅里没有节点。"}</p>
-            <Button size="sm" variant="outline" onClick={goSubs}>去订阅页测</Button>
+            <p>{nodes.length ? `${nodes.length} 个节点中${dead ? `有 ${dead} 个不可用，其余` : ""}尚未测试延迟。` : "订阅中没有节点。"}</p>
+            <Button size="sm" variant="outline" onClick={goSubs}>前往订阅页测试</Button>
           </div>
         )}
         {!error && !!ok.length && (
           <>
             <DelayBars buckets={buckets} total={ok.length} />
             <div className="dashboard-summary-inline">
-              <span>测通 <b>{ok.length}</b> 个</span>
+              <span>可用 <b>{ok.length}</b> 个</span>
               <span>中位数 <b>{median}</b> 毫秒</span>
-              {dead > 0 && <span>不通 <b>{dead}</b> 个</span>}
-              {untested > 0 && <span>没测 <b>{untested}</b> 个</span>}
+              {dead > 0 && <span>不可用 <b>{dead}</b> 个</span>}
+              {untested > 0 && <span>未测试 <b>{untested}</b> 个</span>}
             </div>
           </>
         )}
       </Card>
 
       <Card className={`dashboard-panel${state.slots.length ? " span-2" : ""}`}>
-        <PanelHead title="测通个数的变化" hint={trendSub ? `订阅 ${trendSub} 每次测延迟之后测通了几个（${rangeText}）` : "选一个订阅"}>
+        <PanelHead title="可用节点数的变化" hint={trendSub ? `订阅 ${trendSub} 每次延迟测试后的可用节点数（${rangeText}）` : "请选择订阅"}>
           {trend.length > 0 && <Legend items={subLegend} />}
         </PanelHead>
         {trend.length && history ? (
           <SubUsableChart points={trend} from={history.from} to={history.to} height={226} />
         ) : (
-          <ChartEmpty height={226}>这段时间里没有测过。每在订阅页测一次延迟，这里多一个点。</ChartEmpty>
+          <ChartEmpty height={226}>该时段内未进行延迟测试。每次在订阅页测试延迟后，此处增加一个数据点。</ChartEmpty>
         )}
       </Card>
     </>

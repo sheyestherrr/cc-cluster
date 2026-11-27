@@ -58,7 +58,7 @@ interface Actions {
 
 function menuItems(s: Slot, a: Actions): (MenuEntry | "sep")[] {
   return [
-    { label: "进入的命令…", icon: Terminal, onSelect: () => a.enter(s) },
+    { label: "进入命令…", icon: Terminal, onSelect: () => a.enter(s) },
     { label: "重新探测并接线", icon: RefreshCw, onSelect: () => a.up(s), disabled: s.state === "hold" },
     { label: "重建 worker 并接线", icon: RotateCw, onSelect: () => a.up(s, true), disabled: s.state === "hold" },
     s.state === "hold" ? { label: "解除手动断网", icon: ShieldCheck, onSelect: () => a.release(s) } : { label: "手动断网", icon: Ban, onSelect: () => a.hold(s) },
@@ -116,7 +116,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
   const actions: Actions = {
     up: (s, recreate = false) => run(s, recreate ? "重建中" : "启动中", () => api.slotUp(s.id, recreate), (r) => `${s.id} 已接线，出口 ${(r as { data: { exit: string } }).data.exit}`),
     stop: (s) => run(s, "停止中", () => api.slotStop(s.id), `已停止 ${s.id}`),
-    hold: (s) => run(s, "断网中", () => api.slotHold(s.id, "在网页上手动断网"), `已断开 ${s.id} 的网络`),
+    hold: (s) => run(s, "断网中", () => api.slotHold(s.id, "通过网页界面手动断网"), `已断开 ${s.id} 的网络`),
     release: (s) => run(s, "解除中", () => api.slotRelease(s.id), `已解除 ${s.id} 的手动断网，启动后恢复网络`),
     enter: setEntering,
     note: (s) => setNoting({ kind: "slots", what: "槽位", id: s.id, note: s.note }),
@@ -135,7 +135,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
   const alerts = (
     <>
       {loadError && <ErrorBox text={loadError} />}
-      {state?.docker_error && <ErrorBox text={`连不上 Docker，下面只显示配置，状态未知：${state.docker_error}`} />}
+      {state?.docker_error && <ErrorBox text={`无法连接 Docker，以下仅显示配置，状态未知：${state.docker_error}`} />}
       {failure && <ErrorBox text={failure.text} log={failure.log} onClose={() => setFailure(null)} />}
     </>
   );
@@ -149,7 +149,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
           onClose={() => setAdding(false)}
           onCreated={async (id, warnings) => {
             setAdding(false);
-            toast(warnings.length ? `已登记槽位 ${id}。\n${warnings.join("\n")}` : `已登记槽位 ${id}，点“启动”接线。`);
+            toast(warnings.length ? `已创建槽位 ${id}。\n${warnings.join("\n")}` : `已创建槽位 ${id}，点击“启动”接线。`);
             await refresh();
           }}
         />
@@ -169,12 +169,12 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
         open={!!entering}
         onClose={() => setEntering(null)}
         title={`进入 ${entering?.id ?? ""}`}
-        description="网页不提供终端。在这台机器的终端里运行下面的命令；在项目目录里运行时，目录不在挂载范围内会询问是否挂载。"
+        description="网页界面不提供终端。请在本机终端执行以下命令；在项目目录中执行时，若该目录未挂载，会询问是否挂载。"
         className="mid"
         footer={
           <>
             <Button variant="outline" onClick={() => setEntering(null)}>关闭</Button>
-            <Button onClick={() => entering && navigator.clipboard.writeText(entering.enter_command).then(() => toast("命令已复制。"), () => toast("复制失败，请手动选中复制。", "error"))}>
+            <Button onClick={() => entering && navigator.clipboard.writeText(entering.enter_command).then(() => toast("已复制"), () => toast("复制失败，请手动复制", "error"))}>
               <Copy />
               复制命令
             </Button>
@@ -182,7 +182,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
         }
       >
         <code className="code-line">{entering?.enter_command}</code>
-        <p className="field-hint mt-2">把 enter 换成 claude 可以直接启动 Claude Code（首次会提示在槽内安装）。</p>
+        <p className="field-hint mt-2">将 enter 替换为 claude 可直接启动 Claude Code（首次使用时会提示在槽内安装）。</p>
         {!!entering?.mounts.length && (
           <div className="mt-4">
             <div className="field-label mb-1.5">已挂载的目录</div>
@@ -197,7 +197,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
         open={!!deleting}
         onClose={() => setDeleting(null)}
         title={`删除槽位 ${deleting?.id ?? ""}？`}
-        description="会删除它的 worker 容器并断开接线。默认保留它的 HOME 与身份，以后用同一个名字重新登记时沿用。"
+        description="将删除 worker 容器并断开接线。默认保留 HOME 与身份，以同一名称重新创建槽位时沿用。"
         footer={
           <>
             <Button variant="outline" onClick={() => setDeleting(null)}>取消</Button>
@@ -215,7 +215,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
           </>
         }
       >
-        <SwitchItem label="连同 HOME 与身份一起删除" hint="槽内的登录状态和文件都会丢失，无法恢复。" checked={purge} onChange={setPurge} />
+        <SwitchItem label="同时删除 HOME 与身份" hint="槽内的登录状态与文件将丢失，无法恢复。" checked={purge} onChange={setPurge} />
       </Dialog>
     </>
   );
@@ -240,7 +240,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
               <RefreshCw />
               刷新
             </Button>
-            <Button onClick={() => setAdding(true)} disabled={!canAdd} title={canAdd ? undefined : "先在“节点与网关”里添加一个订阅，或者一个落地节点和一个网关"}>
+            <Button onClick={() => setAdding(true)} disabled={!canAdd} title={canAdd ? undefined : "请先在“节点与网关”中添加订阅，或添加落地节点和网关"}>
               <Plus />
               新建槽位
             </Button>
@@ -250,14 +250,14 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
       {alerts}
 
       <Card className="platform-cards-container">
-        {slots === null && !loadError && <p className="muted">正在读取槽位…</p>}
+        {slots === null && !loadError && <p className="muted">正在加载槽位…</p>}
 
         {slots && slots.length === 0 && (
           <div className="empty-box plain flex-col !gap-3 !py-12">
             <Sparkles size={20} />
-            <p className="text-[15px] font-semibold text-fg">还没有槽位</p>
-            <p className="max-w-[460px] text-center text-[13px]">{canAdd ? "新建一个：选好出口（自己的落地，或订阅里的一个节点），再指定要挂进去的项目目录。" : "先去“节点与网关”添加一个订阅，或者一个落地节点和一个网关。"}</p>
-            <Button onClick={canAdd ? () => setAdding(true) : goNetwork}>{canAdd ? "新建槽位" : "去节点与网关"}</Button>
+            <p className="text-[15px] font-semibold text-fg">暂无槽位</p>
+            <p className="max-w-[460px] text-center text-[13px]">{canAdd ? "新建槽位时选择出口（自己的落地，或订阅中的节点），并指定要挂载的项目目录。" : "请先在“节点与网关”中添加订阅，或添加落地节点和网关。"}</p>
+            <Button onClick={canAdd ? () => setAdding(true) : goNetwork}>{canAdd ? "新建槽位" : "前往节点与网关"}</Button>
           </div>
         )}
 
@@ -276,15 +276,15 @@ function StateBadges({ s }: { s: Slot }) {
   return (
     <>
       {s.state === "hold" && <Badge variant="danger" title={s.hold_reason}>已断网</Badge>}
-      {s.watch?.status === "changed" && <Badge variant="danger" title={s.watch.detail}>出口变了</Badge>}
-      {s.watch?.status === "unreachable" && <Badge variant="warning" title={s.watch.detail}>连不上</Badge>}
+      {s.watch?.status === "changed" && <Badge variant="danger" title={s.watch.detail}>出口已变更</Badge>}
+      {s.watch?.status === "unreachable" && <Badge variant="warning" title={s.watch.detail}>无法连接</Badge>}
       {s.tmux_bridge && (
-        <Badge variant="warning" title={`宿主桥接已开启：槽内经它执行的命令在宿主上运行，使用宿主的权限和宿主网络，不受该槽的网络约束，断网也拦不住。${s.tmux_alive ? "宿主 tmux 正在运行。" : "宿主 tmux 没有在运行。"}`}>
+        <Badge variant="warning" title={`宿主桥接已开启：槽内经它执行的命令在宿主上运行，使用宿主的权限与网络，不受该槽位的网络限制，断网对其无效。${s.tmux_alive ? "宿主 tmux 正在运行。" : "宿主 tmux 未运行。"}`}>
           宿主桥接
         </Badge>
       )}
-      {s.state === "pending" && <Badge variant="warning" title="期望配置在上次接线之后变过，重新启动后生效">待应用</Badge>}
-      {s.state === "offline" && <Badge variant="warning" title="容器在运行但没有接线，槽内没有网络">未接线</Badge>}
+      {s.state === "pending" && <Badge variant="warning" title="配置在上次接线后有改动，重新启动后生效">待应用</Badge>}
+      {s.state === "offline" && <Badge variant="warning" title="容器正在运行但未接线，槽内无网络">未接线</Badge>}
     </>
   );
 }
@@ -330,8 +330,8 @@ function SlotTile({ s, state, live, busy, a, onOpen }: { s: Slot; state: State; 
       </div>
 
       <div className="platform-tile-foot">
-        <span className="min-w-0 flex-1 truncate" title={wired && s.applied_at ? `最近一次从槽内复测通过：${relativeTime(s.applied_at)}` : undefined}>
-          {s.exit_ip ? <><span className="mono font-semibold text-fg">{s.exit_ip}</span>{s.exit_where ? ` · ${s.exit_where}` : ""}</> : "还没有探测到出口"}
+        <span className="min-w-0 flex-1 truncate" title={wired && s.applied_at ? `最近一次槽内复测通过：${relativeTime(s.applied_at)}` : undefined}>
+          {s.exit_ip ? <><span className="mono font-semibold text-fg">{s.exit_ip}</span>{s.exit_where ? ` · ${s.exit_where}` : ""}</> : "尚未探测到出口"}
         </span>
         <MainAction s={s} a={a} busy={busy} />
       </div>
@@ -384,7 +384,7 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
   const fakes = [s.fake_dmi ? "机型信息" : "", s.fake_proc ? "CPU 与内存" : ""].filter(Boolean).join("、");
   const inheritsTZ = !!s.tz && s.tz === landing?.tz;
   const arrow = <ArrowRight size={16} className="chain-arrow" aria-hidden />;
-  const gatewayText = !gateway ? "已不存在" : gatewayUp ? "运行中" : gateway.container === "running" ? "核心未就绪" : "没有在运行";
+  const gatewayText = !gateway ? "已不存在" : gatewayUp ? "运行中" : gateway.container === "running" ? "核心未就绪" : "未运行";
 
   return (
     <Page className="platform-page platform-detail-page">
@@ -411,7 +411,7 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
                 <span className={`status-dot mr-1.5 inline-block align-middle ${dotTone(s)}`} />
                 {stateText[s.state]}
                 {wired && s.exit_where && ` · ${s.exit_where}`}
-                {wired && s.applied_at && ` · ${relativeTime(s.applied_at)}从槽内复测通过`}
+                {wired && s.applied_at && ` · ${relativeTime(s.applied_at)}槽内复测通过`}
                 {s.state === "hold" && s.hold_reason && ` · ${s.hold_reason}`}
               </p>
             </div>
@@ -422,7 +422,7 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
               {s.watch?.status === "ok" && <Badge variant="success">检测正常</Badge>}
               <StateBadges s={s} />
             </div>
-            <span>{live ? `↓ ${rateText(live.down_bps)} · ↑ ${rateText(live.up_bps)} · ${live.conns} 条连接` : "没有实时流量"}</span>
+            <span>{live ? `↓ ${rateText(live.down_bps)} · ↑ ${rateText(live.up_bps)} · ${live.conns} 条连接` : "无实时流量"}</span>
           </div>
         </div>
         <div className="platform-detail-header-footer">
@@ -452,14 +452,14 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
               currentIP={wired ? s.exit_ip : undefined}
               busy={busy === "检测中"}
               onRefresh={() => a.report(s)}
-              disabledWhy={gatewayUp ? undefined : "查询要经链路发出：网关没有在运行，先启动这个槽位"}
+              disabledWhy={gatewayUp ? undefined : "查询需经链路发出：网关未运行，请先启动该槽位"}
             />
 
             <Card className="panel">
               <div className="panel-head">
                 <div>
                   <h3>链路</h3>
-                  <p>流量从槽位出发，依次经过的每一站</p>
+                  <p>流量从槽位到出口依次经过的节点</p>
                 </div>
               </div>
               <div className="chain">
@@ -476,9 +476,9 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
                   <span>网关</span>
                   <strong className="flex flex-wrap items-center gap-1.5">
                     {gatewayText}
-                    {gateway && !gateway.transit && <Tag title="不经中转，直接连出口节点">不经中转</Tag>}
-                    {landing?.direct && <Tag tone="warn" title="直接用订阅里的节点当出口：多人共用的地址；节点已固定，不会自动更换">直出</Tag>}
-                    {gateway && gatewayUp && !gateway.config_current && <Tag tone="warn" title="节点或槽位的设置变过，重新启动槽位后生效">配置待更新</Tag>}
+                    {gateway && !gateway.transit && <Tag title="不经中转，直接连接出口节点">不经中转</Tag>}
+                    {landing?.direct && <Tag tone="warn" title="直接使用订阅中的节点作为出口：出口地址为多人共用；节点已固定，不会自动更换">直出</Tag>}
+                    {gateway && gatewayUp && !gateway.config_current && <Tag tone="warn" title="节点或槽位的设置有改动，重新启动槽位后生效">配置待更新</Tag>}
                   </strong>
                 </div>
                 {landing?.expect_exit_ip && <div className="kv"><span>预期出口</span><strong className="mono">{landing.expect_exit_ip}</strong></div>}
@@ -487,10 +487,10 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
                 <ShieldCheck size={15} />
                 <span>
                   <b>持续检测：</b>
-                  {!s.watch && (wired ? "还没轮到；网页开着时每隔几分钟检测一次连通性与出口。" : "只检测已就绪的槽位。")}
-                  {s.watch?.status === "ok" && `正常，${relativeTime(s.watch.at)}检测，出口没有变。`}
-                  {s.watch?.status === "unreachable" && `连不上，自${relativeTime(s.watch.since)}起；槽位此时没有网络，出口恢复后会自己恢复。`}
-                  {s.watch?.status === "changed" && `出口变了：${s.watch.detail}，已自动断网。`}
+                  {!s.watch && (wired ? "尚未检测。网页界面运行期间，每隔几分钟检测一次连通性与出口。" : "仅检测已接线的槽位。")}
+                  {s.watch?.status === "ok" && `正常，${relativeTime(s.watch.at)}检测，出口未变。`}
+                  {s.watch?.status === "unreachable" && `无法连接，自${relativeTime(s.watch.since)}起。槽位当前无网络，出口恢复后自动恢复。`}
+                  {s.watch?.status === "changed" && `出口已变更：${s.watch.detail}，已自动断网。`}
                 </span>
               </div>
             </Card>
@@ -503,7 +503,7 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
           <div className="platform-detail-tabpanel">
             <div className="platform-drawer-section-head">
               <h4>槽内环境</h4>
-              <p>槽里的程序看到的身份与硬件信息。</p>
+              <p>槽内程序可见的身份与硬件信息。</p>
             </div>
             <div className="kv-grid">
               <div className="kv"><span>用户</span><strong className="mono">{s.user}</strong></div>
@@ -512,18 +512,18 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
               <div className="kv">
                 <span>时区</span>
                 <strong className="flex flex-wrap items-center gap-1.5">
-                  <span className="mono">{s.tz || "UTC（没有设置）"}</span>
-                  {inheritsTZ && landing?.tz_fallback && <Tag tone="warn" title="带时区的探测地址都没有应答，暂用兜底值；下次启动会再探测，也可以给落地指定时区">兜底值</Tag>}
-                  {inheritsTZ && landing?.tz_auto && !landing.tz_fallback && <Tag title="按出口探测到的所在地自动设置，记在落地上">随出口</Tag>}
+                  <span className="mono">{s.tz || "UTC（未设置）"}</span>
+                  {inheritsTZ && landing?.tz_fallback && <Tag tone="warn" title="带时区信息的探测地址均无响应，暂用默认值；下次启动时重新探测，也可为落地指定时区">默认值</Tag>}
+                  {inheritsTZ && landing?.tz_auto && !landing.tz_fallback && <Tag title="按探测到的出口所在地自动设置，保存在落地上">随出口</Tag>}
                 </strong>
               </div>
               <div className="kv"><span>资源上限</span><strong>{limits || "不限制"}</strong></div>
-              <div className="kv"><span>硬件信息</span><strong>{fakes ? `按该槽的设置显示：${fakes}` : "机型信息被遮蔽，CPU 与内存是宿主的"}</strong></div>
+              <div className="kv"><span>硬件信息</span><strong>{fakes ? `按该槽位的设置显示：${fakes}` : "机型信息已屏蔽，CPU 与内存为宿主的实际值"}</strong></div>
             </div>
             {s.tmux_bridge && (
               <div className="callout callout-warning">
                 <Terminal size={15} />
-                <span>宿主桥接已开启，宿主 tmux {s.tmux_alive ? "正在运行" : "没有在运行"}。经它执行的命令在宿主上运行，不走这个出口。</span>
+                <span>宿主桥接已开启，宿主 tmux {s.tmux_alive ? "正在运行" : "未运行"}。经它执行的命令在宿主上运行，不经该出口。</span>
               </div>
             )}
 
@@ -532,7 +532,7 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
               <p>槽内路径与宿主相同，~ 下有同名的快捷方式。</p>
             </div>
             {s.mounts.length === 0 ? (
-              <div className="empty-box plain"><p>没有挂载项目目录；在项目目录里运行进入命令时会询问是否挂载。</p></div>
+              <div className="empty-box plain"><p>未挂载项目目录。在项目目录中执行进入命令时，会询问是否挂载。</p></div>
             ) : (
               <div className="flex flex-col gap-2">
                 {s.mounts.map((m) => (
@@ -550,29 +550,29 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
           <div className="platform-detail-tabpanel platform-ops-tabpanel">
             <div className="platform-drawer-section-head">
               <h4>运维操作</h4>
-              <p>以下操作会立刻对这个槽位生效，请谨慎执行。</p>
+              <p>以下操作立即对该槽位生效，请谨慎执行。</p>
             </div>
             <div className="platform-ops-list">
-              <Op title="进入槽位" hint="网页不提供终端；给出一条在这台机器的终端里运行的命令。">
-                <Button variant="outline" onClick={() => a.enter(s)}><Terminal />进入的命令</Button>
+              <Op title="进入槽位" hint="网页界面不提供终端，此处给出在本机终端执行的命令。">
+                <Button variant="outline" onClick={() => a.enter(s)}><Terminal />进入命令</Button>
               </Op>
-              <Op title="重新探测并接线" hint="重新探测链路和出口，通过后给槽位接线；配置改过时用它来应用。">
+              <Op title="重新探测并接线" hint="重新探测链路与出口，通过后为槽位接线；配置有改动时用于应用配置。">
                 <Button variant="outline" onClick={() => a.up(s)} disabled={!!busy || s.state === "hold"}><RefreshCw />重新接线</Button>
               </Op>
-              <Op title="重建 worker 并接线" hint="删掉 worker 容器重新创建，HOME 与身份保留；槽里正在运行的程序会中断。">
+              <Op title="重建 worker 并接线" hint="删除并重新创建 worker 容器，HOME 与身份保留；槽内正在运行的程序将中断。">
                 <Button variant="outline" onClick={() => a.up(s, true)} disabled={!!busy || s.state === "hold"}><RotateCw />重建 worker</Button>
               </Op>
               {s.state === "hold" ? (
-                <Op title="解除手动断网" hint="解除之后启动槽位，恢复网络。">
+                <Op title="解除手动断网" hint="解除后启动槽位即可恢复网络。">
                   <Button variant="outline" onClick={() => a.release(s)} disabled={!!busy}><ShieldCheck />解除断网</Button>
                 </Op>
               ) : (
-                <Op title="手动断网" hint="立刻断开这个槽位的网络，容器保留；解除之前不会再接线。">
+                <Op title="手动断网" hint="立即断开该槽位的网络，容器保留；解除前不会重新接线。">
                   <Button variant="outline" onClick={() => a.hold(s)} disabled={!!busy}><Ban />手动断网</Button>
                 </Op>
               )}
-              <Op title="备注" hint="只用于显示，随时可以改，不影响运行中的槽位。">
-                <Button variant="outline" onClick={() => a.note(s)}><Pencil />改备注</Button>
+              <Op title="备注" hint="仅用于显示，可随时修改，不影响运行中的槽位。">
+                <Button variant="outline" onClick={() => a.note(s)}><Pencil />修改备注</Button>
               </Op>
               <Op title="删除槽位" hint="删除 worker 容器并断开接线；默认保留 HOME 与身份。">
                 <Button variant="destructive" onClick={() => a.remove(s)} disabled={!!busy}><Trash2 />删除槽位</Button>
@@ -662,12 +662,12 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
       open={open}
       onClose={onClose}
       title="新建槽位"
-      description="登记后点“启动”：会先探测链路和出口，通过后才给槽位接线。"
+      description="创建后点击“启动”：先探测链路与出口，通过后才为槽位接线。"
       className="!w-[min(840px,100%)]"
       footer={
         <>
           <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button onClick={save} disabled={saving || !slot.id.trim() || !ready}>{saving ? "登记中…" : "确认登记"}</Button>
+          <Button onClick={save} disabled={saving || !slot.id.trim() || !ready}>{saving ? "创建中…" : "创建"}</Button>
         </>
       }
     >
@@ -690,18 +690,18 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
                   if (d && !dsub && state.subs[0]) void loadDirect(state.subs[0].id);
                 }}
               >
-                <option value="landing">用自己的落地（固定的出口地址）</option>
-                <option value="direct">直出：直接用订阅里的一个节点当出口</option>
+                <option value="landing">使用自己的落地（固定的出口地址）</option>
+                <option value="direct">直出：直接使用订阅中的节点作为出口</option>
               </Select>
             </Field>
             {!direct && (
               <>
-                <Field label="网关" hint={gateway?.transit ? "流量经中转到落地，从落地出去；落地连不上时槽位没网，不会改从中转出去。" : undefined}>
+                <Field label="网关" hint={gateway?.transit ? "流量经中转到达落地，由落地出站；落地无法连接时槽位无网络，不会改由中转出站。" : undefined}>
                   <Select aria-label="网关" value={slot.gateway} onChange={(e) => setSlot({ ...slot, gateway: e.target.value })}>
                     {state.gateways.map((g) => <option key={g.id} value={g.id}>{g.id}（{g.transit ? `中转 ${g.transit}` : "不经中转"}，已有 {g.slots.length} 个槽位）</option>)}
                   </Select>
                 </Field>
-                <Field label="落地" warn={sharing > 0 ? `这个落地已经绑定了 ${sharing} 个槽位，它们的出口地址相同；同一个落地最多同时给 ${state.landing_limit} 个槽位接线。` : undefined}>
+                <Field label="落地" warn={sharing > 0 ? `该落地已绑定 ${sharing} 个槽位，它们的出口地址相同；同一落地最多同时为 ${state.landing_limit} 个槽位接线。` : undefined}>
                   <Select aria-label="落地" value={slot.landing} onChange={(e) => setSlot({ ...slot, landing: e.target.value })}>
                     {landings.map((n) => <option key={n.id} value={n.id}>{n.id}（{n.type}，{n.server}:{n.port}）</option>)}
                   </Select>
@@ -712,48 +712,48 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
               <>
                 <Field label="订阅">
                   <Select aria-label="订阅" value={dsub} onChange={(e) => void loadDirect(e.target.value)}>
-                    {state.subs.length === 0 && <option value="">还没有订阅，先在“订阅管理”里添加</option>}
+                    {state.subs.length === 0 && <option value="">暂无订阅，请先在“订阅管理”中添加</option>}
                     {state.subs.map((s) => <option key={s.id} value={s.id}>{s.id}（{s.count} 个节点）</option>)}
                   </Select>
                 </Field>
                 <Field label="节点">
-                  <Select aria-label="当出口的节点" value={dname} disabled={!dnodes} onChange={(e) => setDname(e.target.value)}>
-                    {!dnodes && <option value="">读取中…</option>}
-                    {dnodes?.map((d) => <option key={d.name} value={d.name}>{d.delay_ms > 0 ? `${d.delay_ms} ms` : "未测"} · {d.name}</option>)}
+                  <Select aria-label="作为出口的节点" value={dname} disabled={!dnodes} onChange={(e) => setDname(e.target.value)}>
+                    {!dnodes && <option value="">加载中…</option>}
+                    {dnodes?.map((d) => <option key={d.name} value={d.name}>{d.delay_ms > 0 ? `${d.delay_ms} ms` : "未测试"} · {d.name}</option>)}
                   </Select>
                 </Field>
                 <div className="callout callout-warning field-span-2">
-                  <span>出口就是这个节点，是多人共用的地址。节点会被固定：它不通时槽位没网，不会自动换成别的节点（那样可能跳到别的国家），要换请手动改。列表按上次测的延迟排序，不通的没有列出；没测过就先到订阅页测一次。</span>
+                  <span>出口即该节点，出口地址为多人共用。节点固定后，其不可用时槽位无网络，不会自动更换节点（否则出口可能切换到其他国家），需手动更换。列表按最近一次测试的延迟排序，不含不可用的节点；尚未测试时，请先在订阅页测试延迟。</span>
                 </div>
               </>
             )}
           </FormGrid>
         </FormSection>
 
-        <FormSection title="项目目录" hint="每行一个这台机器上的绝对路径，槽内路径相同，~ 下有同名的快捷方式。不能挂整个主目录。">
+        <FormSection title="项目目录" hint="每行一个本机的绝对路径，槽内路径相同，~ 下有同名的快捷方式。不能挂载整个主目录。">
           <Textarea aria-label="挂载的目录" rows={3} spellCheck={false} placeholder="/data/projects" value={mounts} onChange={(e) => setMounts(e.target.value)} />
         </FormSection>
 
-        <FormSection title="资源与身份（可不填）">
+        <FormSection title="资源与身份（可选）">
           <FormGrid>
             <Field label="CPU 核数">
               <Input aria-label="CPU 核数" type="number" min={0} step={0.5} placeholder="不限" value={slot.cpus || ""} onChange={(e) => setSlot({ ...slot, cpus: Number(e.target.value) || 0 })} />
             </Field>
             <Field label="内存上限">
-              <Input aria-label="内存上限" placeholder="例如 8g，不填不限" value={slot.memory} onChange={(e) => setSlot({ ...slot, memory: e.target.value })} />
+              <Input aria-label="内存上限" placeholder="例如 8g，留空不限" value={slot.memory} onChange={(e) => setSlot({ ...slot, memory: e.target.value })} />
             </Field>
             <Field label="用户名">
               <Input aria-label="用户名" placeholder="user" value={slot.user} onChange={(e) => setSlot({ ...slot, user: e.target.value })} />
             </Field>
             <Field label="主机名">
-              <Input aria-label="主机名" placeholder="不填则按“用户名-机型”生成" value={slot.hostname} onChange={(e) => setSlot({ ...slot, hostname: e.target.value })} />
+              <Input aria-label="主机名" placeholder="留空则按“用户名-机型”生成" value={slot.hostname} onChange={(e) => setSlot({ ...slot, hostname: e.target.value })} />
             </Field>
-            <Field label="时区" wide hint="不填则沿用落地的时区（首次启动时按出口所在地设置）。">
+            <Field label="时区" wide hint="留空则沿用落地的时区（首次启动时按出口所在地设置）。">
               <Input aria-label="时区" placeholder="例如 America/Los_Angeles" value={slot.tz} onChange={(e) => setSlot({ ...slot, tz: e.target.value })} />
             </Field>
-            <SwitchItem label="覆盖机型信息" hint={slot.fake_dmi ? "用这个槽位自己的机型信息覆盖 DMI" : "默认把 DMI 遮成空的"} checked={slot.fake_dmi} onChange={(fake_dmi) => setSlot({ ...slot, fake_dmi })} />
-            <SwitchItem label="按限额显示 CPU 与内存" hint={slot.fake_proc ? "/proc/cpuinfo 与 meminfo 按上面的限额显示（需要填 CPU 或内存）" : "默认显示宿主机的 CPU 与内存"} checked={slot.fake_proc} onChange={(fake_proc) => setSlot({ ...slot, fake_proc })} />
-            <SwitchItem wide label="宿主 tmux 桥接" hint={slot.tmux_bridge ? "槽内的 Claude 可以操作宿主上该槽专用的 tmux；其中的命令使用宿主的权限和宿主网络，不受该槽的网络约束" : "默认关闭：槽内碰不到宿主"} checked={slot.tmux_bridge} onChange={(tmux_bridge) => setSlot({ ...slot, tmux_bridge })} />
+            <SwitchItem label="覆盖机型信息" hint={slot.fake_dmi ? "使用该槽位自己的机型信息覆盖 DMI" : "默认屏蔽 DMI 信息"} checked={slot.fake_dmi} onChange={(fake_dmi) => setSlot({ ...slot, fake_dmi })} />
+            <SwitchItem label="按限额显示 CPU 与内存" hint={slot.fake_proc ? "/proc/cpuinfo 与 meminfo 按上述限额显示（需填写 CPU 或内存）" : "默认显示宿主的 CPU 与内存"} checked={slot.fake_proc} onChange={(fake_proc) => setSlot({ ...slot, fake_proc })} />
+            <SwitchItem wide label="宿主 tmux 桥接" hint={slot.tmux_bridge ? "槽内的 Claude 可操作宿主上该槽位专用的 tmux；其中的命令使用宿主的权限与网络，不受该槽位的网络限制" : "默认关闭：槽内无法访问宿主"} checked={slot.tmux_bridge} onChange={(tmux_bridge) => setSlot({ ...slot, tmux_bridge })} />
           </FormGrid>
         </FormSection>
 

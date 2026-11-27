@@ -56,7 +56,7 @@ export function SystemPage({ state, refresh }: Props) {
       await api.setImages(images.gateway.trim(), images.worker.trim());
       await Promise.all([refresh(), loadOps()]);
       setImages(null);
-      toast("镜像已更换，重建容器后生效");
+      toast("镜像设置已更新，重建容器后生效");
     } catch (e) {
       setError(errorText(e));
       setImages(null);
@@ -134,12 +134,12 @@ export function SystemPage({ state, refresh }: Props) {
               {checking ? "检查中…" : "运行检查"}
             </Button>
           </PanelHead>
-          {!checks && <div className="empty-box plain"><p>{checking ? "检查中…" : "还没有检查过，点右上角的“运行检查”。"}</p></div>}
+          {!checks && <div className="empty-box plain"><p>{checking ? "检查中…" : "尚未检查。点击右上角的“运行检查”开始。"}</p></div>}
           {checks && (
             <>
               <div className={`callout ${failed ? "callout-error" : "callout-success"}`}>
                 {failed ? <XCircle size={15} /> : <CheckCircle2 size={15} />}
-                <span>{failed ? `${failed} 项没有通过，共 ${checks.length} 项。` : `${checks.length} 项全部通过。`}</span>
+                <span>{failed ? `${failed} 项未通过，共 ${checks.length} 项。` : `${checks.length} 项全部通过。`}</span>
               </div>
               <div className="flex flex-col gap-2">
                 {checks.map((c) => (
@@ -161,8 +161,8 @@ export function SystemPage({ state, refresh }: Props) {
         <PanelHead title="操作记录" hint="最近 40 条">
           <Button variant="outline" size="sm" onClick={loadOps}><RefreshCw />刷新</Button>
         </PanelHead>
-        {ops === null && <div className="empty-box plain"><p>读取中…</p></div>}
-        {ops?.length === 0 && <div className="empty-box plain"><p>还没有操作记录。</p></div>}
+        {ops === null && <div className="empty-box plain"><p>加载中…</p></div>}
+        {ops?.length === 0 && <div className="empty-box plain"><p>暂无操作记录。</p></div>}
         {!!ops?.length && (
           <div className="data-table-wrap !mt-0">
             <table className="data-table compact">
@@ -195,7 +195,7 @@ export function SystemPage({ state, refresh }: Props) {
         open={!!images}
         onClose={() => setImages(null)}
         title="更换镜像"
-        description="升级之后用。只改设置：运行中的容器仍用原来的镜像，网关停止后再启动、槽位重建 worker 之后换成新的。镜像要先在这台机器上拉取好。"
+        description="仅修改镜像设置。运行中的容器仍使用原镜像，将网关停止后重新启动、槽位重建 worker 后生效。镜像需已拉取到本机。"
         className="mid"
         footer={
           <>
@@ -208,7 +208,7 @@ export function SystemPage({ state, refresh }: Props) {
           <Field label="网关镜像" wide>
             <Input aria-label="网关镜像" spellCheck={false} value={images?.gateway ?? ""} onChange={(e) => images && setImages({ ...images, gateway: e.target.value })} />
           </Field>
-          <Field label="worker 镜像" wide hint="新建槽位默认用它；单独指定过镜像的槽位不变。">
+          <Field label="worker 镜像" wide hint="新建槽位的默认镜像；已单独指定镜像的槽位不变。">
             <Input aria-label="worker 镜像" spellCheck={false} value={images?.worker ?? ""} onChange={(e) => images && setImages({ ...images, worker: e.target.value })} />
           </Field>
         </FormGrid>
@@ -217,8 +217,8 @@ export function SystemPage({ state, refresh }: Props) {
       <Card className="panel">
         <PanelHead title="致谢" hint="用到的开源项目" />
         <div className="text-[13px] leading-6 text-fg-2">
-          <p>网页界面的版面、配色与样式取自 Resin（MIT 许可），分享链接的解析也改写自它。</p>
-          <p>构建配置和几个基础组件的行为沿用自 Claude-Hydra（MIT 许可）。</p>
+          <p>网页界面的版面、配色与样式取自 Resin（MIT 许可），分享链接的解析改写自该项目。</p>
+          <p>构建配置与部分基础组件的行为沿用自 Claude-Hydra（MIT 许可）。</p>
           <p>网关核心是 Mihomo；默认 worker 镜像的软件包选择参考了 Claude Code 官方的开发容器。</p>
         </div>
       </Card>

@@ -98,9 +98,9 @@ export default function App() {
       <div className="flex min-h-screen items-center justify-center p-6">
         <div className="card max-w-[520px] p-7">
           <h2 className="text-[20px]">需要访问链接</h2>
-          <p className="mt-3 text-[14px] leading-7 text-fg-2">在运行 cc-cluster 的那台机器的终端里执行：</p>
+          <p className="mt-3 text-[14px] leading-7 text-fg-2">请在运行 cc-cluster 的机器上执行：</p>
           <pre className="mono mt-2 rounded-xl border border-line bg-white/70 px-3.5 py-2.5 text-[14px]">cc-cluster web</pre>
-          <p className="mt-3 text-[14px] leading-7 text-fg-2">用它打印出来的带 <span className="mono">#token=</span> 的地址打开一次。之后这个浏览器会记住，直接输地址就能进。</p>
+          <p className="mt-3 text-[14px] leading-7 text-fg-2">然后在浏览器中打开输出的带 <span className="mono">#token=</span> 的地址。此后该浏览器可直接访问，无需再带令牌。</p>
         </div>
       </div>
     );

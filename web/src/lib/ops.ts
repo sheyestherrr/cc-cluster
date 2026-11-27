@@ -23,7 +23,7 @@ const names: Record<string, string> = {
   "sub.set": "修改订阅来源",
   "sub.every": "设置自动刷新",
   "sub.refresh": "刷新订阅",
-  "sub.test": "测延迟",
+  "sub.test": "测试延迟",
   "sub.rm": "删除订阅",
   "tmux.start": "启动宿主 tmux",
   "tmux.kill": "关闭宿主 tmux",

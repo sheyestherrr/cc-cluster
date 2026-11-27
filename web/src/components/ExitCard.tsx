@@ -70,10 +70,10 @@ export function ExitCard({ report: r, currentIP, busy, onRefresh, disabledWhy, c
     <div className="panel-head">
       <div>
         <h3>出口评估</h3>
-        <p>第三方接口对这个出口地址的看法{r ? `，${relativeTime(r.checked_at)}检测` : ""}</p>
+        <p>第三方接口对该出口地址的评估{r ? `，${relativeTime(r.checked_at)}检测` : ""}</p>
       </div>
       {onRefresh && (
-        <Button variant="outline" size="sm" onClick={onRefresh} disabled={busy || !!disabledWhy} title={disabledWhy ?? "经这个落地的链路重新查询；对方看到的来源就是这个出口"}>
+        <Button variant="outline" size="sm" onClick={onRefresh} disabled={busy || !!disabledWhy} title={disabledWhy ?? "经该落地的链路重新查询，查询请求的来源即该出口"}>
           {busy ? <Loader2 className="spin" /> : <RefreshCw />}
           {busy ? "检测中" : "重新检测"}
         </Button>
@@ -86,7 +86,7 @@ export function ExitCard({ report: r, currentIP, busy, onRefresh, disabledWhy, c
       <Card className={cn("panel", className)}>
         {head}
         <div className="empty-box plain flex-1">
-          <p className="text-center">还没有这个出口的评估。<br />启动使用它的槽位时会自动查询一次，之后一天内不重复查。</p>
+          <p className="text-center">暂无该出口的评估。<br />启动使用该落地的槽位时自动查询，24 小时内不重复查询。</p>
         </div>
       </Card>
     );
@@ -116,38 +116,38 @@ export function ExitCard({ report: r, currentIP, busy, onRefresh, disabledWhy, c
         </div>
         {network && <div className="mt-0.5 truncate text-[12.5px] text-muted" title={network}>{network}</div>}
       </div>
-      {stale && <div className="callout callout-warning">这份评估是针对 {r.ip} 的；槽位最近一次复测的出口是 {currentIP}，重新检测后更新。</div>}
+      {stale && <div className="callout callout-warning">该评估针对 {r.ip}，槽位最近一次检测到的出口为 {currentIP}。重新检测后更新。</div>}
 
       <div className="grid grid-cols-3 gap-2.5">
-        <Score label="信任分" value={r.trust_score === undefined ? "—" : String(r.trust_score)} pct={r.trust_score} tone={trustTone} hint="ip.net.coffee 给出的 0 到 100 的综合分，越高越好" />
-        <Score label="欺诈分" value={r.fraud_score === undefined ? "—" : String(r.fraud_score)} pct={r.fraud_score} tone={fraudTone} hint="IP2Location 给出的 0 到 100 的欺诈分，越低越好" />
+        <Score label="信任分" value={r.trust_score === undefined ? "—" : String(r.trust_score)} pct={r.trust_score} tone={trustTone} hint="ip.net.coffee 的综合评分（0–100），越高越好" />
+        <Score label="欺诈分" value={r.fraud_score === undefined ? "—" : String(r.fraud_score)} pct={r.fraud_score} tone={fraudTone} hint="IP2Location 的欺诈评分（0–100），越低越好" />
         <Score
           label="滥用程度"
           value={abuse ? abuse[1] : r.abuser_score ? r.abuser_score : "—"}
           tone={abuse?.[2]}
           pct={abuse ? { ok: 12, warn: 55, danger: 92 }[abuse[2]] : undefined}
-          hint={r.abuser_score ? `这个地址所在网络的滥用比例：${r.abuser_score}` : "接口没有给出"}
+          hint={r.abuser_score ? `该地址所在网络的滥用比例：${r.abuser_score}` : "接口未提供"}
         />
       </div>
 
       <div>
         <div className="flex flex-wrap items-center gap-1.5">
-          {r.flags.length === 0 && <Tag tone="ok">没有不利标记</Tag>}
+          {r.flags.length === 0 && <Tag tone="ok">无不利标记</Tag>}
           {FLAG_NAMES.filter((n) => hit.has(n)).map((n) => {
             const f = hit.get(n)!;
             return (
-              <Tag key={n} tone={f.by.length === f.of ? "danger" : "warn"} title={`${f.by.join("、")} 把它标成了${n}；对这一项给出判断的共 ${f.of} 家`}>
+              <Tag key={n} tone={f.by.length === f.of ? "danger" : "warn"} title={`${f.by.join("、")} 标记为${n}；共 ${f.of} 个数据源给出判断`}>
                 {n} {f.by.length}/{f.of}
               </Tag>
             );
           })}
         </div>
         {r.flags.length > 0 && (
-          <p className="field-hint mt-2">数字是命中的家数 / 给出判断的家数，各家数据经常不一致。{clean.length > 0 && `没有命中：${clean.join("、")}。`}</p>
+          <p className="field-hint mt-2">数字为标记该项的数据源数 / 给出判断的数据源数，各数据源的结果可能不一致。{clean.length > 0 && `未标记：${clean.join("、")}。`}</p>
         )}
         {(r.user_count !== undefined || r.static_ip_score !== undefined) && (
-          <p className="field-hint" title="MaxMind 的估计：这个地址背后大约有多少用户，以及它有多固定（分数越高越固定）">
-            MaxMind 估计{r.user_count !== undefined && `约 ${r.user_count} 个用户在用这个地址`}{r.user_count !== undefined && r.static_ip_score !== undefined && "，"}{r.static_ip_score !== undefined && `固定程度 ${r.static_ip_score}`}。
+          <p className="field-hint" title="MaxMind 的估计：使用该地址的用户数，以及地址的固定程度（分数越高越固定）">
+            MaxMind 估计：{r.user_count !== undefined && `约 ${r.user_count} 个用户使用该地址`}{r.user_count !== undefined && r.static_ip_score !== undefined && "，"}{r.static_ip_score !== undefined && `固定程度 ${r.static_ip_score}`}。
           </p>
         )}
       </div>

@@ -54,13 +54,13 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new ApiError("连不上 cc-cluster：网页界面可能已经停止，在终端里执行 cc-cluster web 重新启动。");
+    throw new ApiError("无法连接 cc-cluster。网页界面可能已停止，请在终端执行 cc-cluster web 重新启动。");
   }
   let payload: { data?: T; error?: string; log?: string[] };
   try {
     payload = await resp.json();
   } catch {
-    throw new ApiError(`接口返回了无法识别的内容（HTTP ${resp.status}）`, [], resp.status);
+    throw new ApiError(`无法解析服务端的响应（HTTP ${resp.status}）`, [], resp.status);
   }
   if (!resp.ok || payload.error) throw new ApiError(payload.error ?? `HTTP ${resp.status}`, payload.log ?? [], resp.status);
   return { data: payload.data as T, log: payload.log ?? [] };

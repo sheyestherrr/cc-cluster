@@ -37,13 +37,13 @@ export function SlotTraffic({ s, live, history }: { s: Slot; live?: SlotLive; hi
   const hasHistory = !!total && total.up + total.down > 0;
   const peak = history?.traffic.reduce((m, p) => Math.max(m, p.slots?.[s.id]?.conns ?? 0), 0) ?? 0;
   const now = Date.now();
-  const none = wired ? "还没有记录。流量每五分钟记一档，在这个网页或 cc-cluster watch 开着的时候记录。" : "这个槽位没有接线，没有流量。";
+  const none = wired ? "暂无记录。流量每 5 分钟记录一次，仅在网页界面或 cc-cluster watch 运行期间记录。" : "槽位未接线，无流量。";
 
   return (
     <div className="flex flex-col gap-3.5">
       <div className="grid gap-3 min-[900px]:grid-cols-3">
-        <Kpi icon={<ArrowDownToLine size={20} />} tone="waves" label="此刻下行" value={live ? rateText(live.down_bps) : "—"} sub={`近 24 小时 ${bytesText(total?.down)}`} />
-        <Kpi icon={<ArrowUpFromLine size={20} />} tone="shield" label="此刻上行" value={live ? rateText(live.up_bps) : "—"} sub={`近 24 小时 ${bytesText(total?.up)}`} />
+        <Kpi icon={<ArrowDownToLine size={20} />} tone="waves" label="实时下行" value={live ? rateText(live.down_bps) : "—"} sub={`近 24 小时 ${bytesText(total?.down)}`} />
+        <Kpi icon={<ArrowUpFromLine size={20} />} tone="shield" label="实时上行" value={live ? rateText(live.up_bps) : "—"} sub={`近 24 小时 ${bytesText(total?.up)}`} />
         <Kpi icon={<Cable size={20} />} tone="lease" label="当前连接" value={live ? `${live.conns} 条` : "—"} sub={`近 24 小时峰值 ${peak} 条`} />
       </div>
 
@@ -51,7 +51,7 @@ export function SlotTraffic({ s, live, history }: { s: Slot; live?: SlotLive; hi
         <div className="flex min-w-0 flex-col gap-2.5 min-[1100px]:col-span-2">
           <div className="dashboard-panel-header">
             <h3>流量趋势</h3>
-            <p>最近 24 小时，每五分钟一档</p>
+            <p>最近 24 小时，每 5 分钟一个数据点</p>
           </div>
           {hasHistory && history ? <TrafficChart points={history.traffic} step={history.step} slot={s.id} height={240} /> : <ChartEmpty height={240}>{none}</ChartEmpty>}
           <Legend items={trafficLegend} />
@@ -59,9 +59,9 @@ export function SlotTraffic({ s, live, history }: { s: Slot; live?: SlotLive; hi
         <div className="flex min-w-0 flex-col gap-2.5">
           <div className="dashboard-panel-header">
             <h3>连接峰值</h3>
-            <p>每一档里同时连接数的最大值</p>
+            <p>每个时段内同时连接数的最大值</p>
           </div>
-          {peak > 0 && history ? <ConnsChart points={history.traffic} step={history.step} slot={s.id} height={240} /> : <ChartEmpty height={240}>没有连接的记录。</ChartEmpty>}
+          {peak > 0 && history ? <ConnsChart points={history.traffic} step={history.step} slot={s.id} height={240} /> : <ChartEmpty height={240}>暂无连接记录。</ChartEmpty>}
           <Legend items={[{ color: "var(--chart-3)", label: "连接数" }]} />
         </div>
       </div>
@@ -73,7 +73,7 @@ export function SlotTraffic({ s, live, history }: { s: Slot; live?: SlotLive; hi
           onChange={setTab}
           items={[
             ["now", `当前连接${conns ? ` ${conns.length}` : ""}`],
-            ["hosts", `连过的目标${log?.hosts.length ? ` ${log.hosts.length}` : ""}`],
+            ["hosts", `访问过的目标${log?.hosts.length ? ` ${log.hosts.length}` : ""}`],
             ["ended", `最近结束${log?.total ? ` ${log.total}` : ""}`],
           ]}
         />
@@ -83,18 +83,18 @@ export function SlotTraffic({ s, live, history }: { s: Slot; live?: SlotLive; hi
         {tab === "now" && (
           <ConnTable
             head={["目标", "已持续", "经由", "下行", "上行"]}
-            empty={!wired ? "没有接线，没有连接。" : conns === null ? "读取中…" : conns.length === 0 ? "现在没有连接。" : ""}
+            empty={!wired ? "未接线，无连接。" : conns === null ? "加载中…" : conns.length === 0 ? "当前无连接。" : ""}
             rows={(conns ?? []).slice(0, 80).map((c) => ({
               key: c.id,
               cells: [<span className="mono cell-main">{target(c.host, c.port)}{c.net === "udp" && <span className="badge badge-muted ml-2">UDP</span>}</span>, spanText(now - Date.parse(c.start)), c.chain || "—", bytesText(c.down), bytesText(c.up)],
             }))}
-            more={conns && conns.length > 80 ? `还有 ${conns.length - 80} 条没有列出。` : ""}
+            more={conns && conns.length > 80 ? `另有 ${conns.length - 80} 条未列出。` : ""}
           />
         )}
         {tab === "hosts" && (
           <ConnTable
             head={["目标", "连接数", "最近一次", "下行", "上行"]}
-            empty={log === null ? "读取中…" : log.hosts.length === 0 ? "近 24 小时里没有记录到结束的连接。" : ""}
+            empty={log === null ? "加载中…" : log.hosts.length === 0 ? "最近 24 小时内无已结束的连接记录。" : ""}
             rows={(log?.hosts ?? []).slice(0, 60).map((h) => ({
               key: h.host,
               cells: [<span className="mono cell-main">{h.host}</span>, `${h.count} 条`, relativeTime(h.last), bytesText(h.down), bytesText(h.up)],
@@ -104,19 +104,19 @@ export function SlotTraffic({ s, live, history }: { s: Slot; live?: SlotLive; hi
         {tab === "ended" && (
           <ConnTable
             head={["目标", "结束于", "持续", "下行", "上行"]}
-            empty={log === null ? "读取中…" : log.records.length === 0 ? "近 24 小时里没有记录到结束的连接。" : ""}
+            empty={log === null ? "加载中…" : log.records.length === 0 ? "最近 24 小时内无已结束的连接记录。" : ""}
             rows={(log?.records ?? []).slice(0, 80).map((r, i) => ({
               key: `${r.end}-${i}`,
               cells: [<span className="mono cell-main">{target(r.host, r.port)}</span>, relativeTime(r.end), spanText(Date.parse(r.end) - Date.parse(r.start)), bytesText(r.down), bytesText(r.up)],
             }))}
-            more={log && log.total > log.records.length ? `只列出最近的 ${log.records.length} 条，共 ${log.total} 条。` : ""}
+            more={log && log.total > log.records.length ? `仅列出最近 ${log.records.length} 条，共 ${log.total} 条。` : ""}
           />
         )}
       </div>
 
       <div className="callout callout-info">
         <Info size={15} />
-        <span>这里只有连接这一层：目标的域名与端口、流量和时长，看不到 HTTPS 的网址路径和内容。连接靠十秒一次的快照记录，比这更短的可能不在其中；记录保留 30 天。</span>
+        <span>仅记录连接层面的信息：目标域名与端口、流量和时长，不包含 HTTPS 的 URL 路径与内容。连接每 10 秒采样一次，持续时间更短的连接可能未被记录。记录保留 30 天。</span>
       </div>
     </div>
   );

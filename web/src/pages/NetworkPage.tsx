@@ -126,13 +126,13 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
     up: () => run(`gateway:${g.id}`, "启动中", () => api.gatewayUp(g.id), `网关 ${g.id} 已就绪`),
     down: (force: boolean) => run(`gateway:${g.id}`, "停止中", () => api.gatewayDown(g.id, force), `已停止网关 ${g.id}`),
     note: () => setNoting({ kind: "gateways", what: "网关", id: g.id, note: g.note }),
-    remove: () => setRemoving({ kind: "gateway", id: g.id, note: g.slots.length ? `它上面还有槽位（${g.slots.join("、")}），需要先删除这些槽位。` : "会删除它的容器和配置。" }),
+    remove: () => setRemoving({ kind: "gateway", id: g.id, note: g.slots.length ? `仍有槽位使用该网关（${g.slots.join("、")}），请先删除这些槽位。` : "将删除网关容器及其配置。" }),
   });
   const nodeActions = (n: NodeInfo) => ({
     resolve: () => run(`node:${n.id}`, "解析中", () => api.resolveNode(n.id), (r) => `${n.id} 的首跳地址：${(r as { data: { connect_ipv4: string } }).data.connect_ipv4}`),
     report: () => run(`node:${n.id}`, "检测中", () => api.nodeReport(n.id), `已更新 ${n.id} 的出口评估`),
     note: () => setNoting({ kind: "nodes", what: "节点", id: n.id, note: n.note }),
-    remove: () => setRemoving({ kind: "node", id: n.id, note: n.used_by.length ? `它正被 ${n.used_by.join("、")} 使用，需要先解除。` : "此节点没有被使用。" }),
+    remove: () => setRemoving({ kind: "node", id: n.id, note: n.used_by.length ? `该节点正被 ${n.used_by.join("、")} 使用，请先解除使用。` : "该节点未被使用。" }),
   });
 
   const alerts = (
@@ -144,8 +144,8 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
 
   const dialogs = (
     <>
-      {state && <AddGatewayDialog open={dialog === "gateway"} state={state} onClose={() => setDialog(null)} onCreated={(id) => created(`已登记网关 ${id}；启动绑定它的槽位时会自动拉起。`)} />}
-      <AddNodeDialog open={dialog === "node"} onClose={() => setDialog(null)} onCreated={(id) => created(`已登记节点 ${id}。`)} />
+      {state && <AddGatewayDialog open={dialog === "gateway"} state={state} onClose={() => setDialog(null)} onCreated={(id) => created(`已创建网关 ${id}，启动绑定它的槽位时自动启动。`)} />}
+      <AddNodeDialog open={dialog === "node"} onClose={() => setDialog(null)} onCreated={(id) => created(`已添加节点 ${id}。`)} />
       <NoteDialog
         target={noting}
         onClose={() => setNoting(null)}
@@ -200,7 +200,7 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
         subtitle="管理网关、中转与落地节点。"
         actions={
           <>
-            <Button variant="outline" onClick={goSubs} title="到“订阅”页，从订阅的节点里挑"><Rss />从订阅里选</Button>
+            <Button variant="outline" onClick={goSubs} title="前往“订阅”页，从订阅的节点中选择"><Rss />从订阅中选择</Button>
             <Button variant="outline" onClick={() => setDialog("node")}><Plus />添加节点</Button>
             <Button onClick={() => setDialog("gateway")} disabled={!state}><Plus />新建网关</Button>
           </>
@@ -208,14 +208,14 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
       />
       {alerts}
 
-      {!state && !loadError && <Card className="platform-cards-container"><p className="muted">正在读取…</p></Card>}
+      {!state && !loadError && <Card className="platform-cards-container"><p className="muted">加载中…</p></Card>}
 
       {empty && (
         <Card className="platform-cards-container">
           <div className="empty-box plain flex-col !gap-3 !py-12">
             <Globe2 size={20} />
-            <p className="text-[15px] font-semibold text-fg">还没有节点</p>
-            <p className="max-w-[480px] text-center text-[13px]">先添加一个落地节点（槽位的出口）；需要中转时到“订阅”页添加订阅，从里面按延迟挑一个。</p>
+            <p className="text-[15px] font-semibold text-fg">暂无节点</p>
+            <p className="max-w-[480px] text-center text-[13px]">请先添加落地节点（槽位的出口）；需要中转时，在“订阅”页添加订阅，并按延迟选择节点。</p>
             <Button onClick={() => setDialog("node")}>添加节点</Button>
           </div>
         </Card>
@@ -225,7 +225,7 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
         <Card className="platform-cards-container">
           <div className="platform-drawer-section-head mb-3">
             <h4>网关</h4>
-            <p>把槽位的流量送到各自的落地。</p>
+            <p>将槽位的流量转发到各自的落地。</p>
           </div>
           <div className="tile-grid">
             {state.gateways.map((g) => <GatewayTile key={g.id} g={g} busy={busy[`gateway:${g.id}`]} a={gatewayActions(g)} onOpen={() => setOpen({ kind: "gateway", id: g.id })} />)}
@@ -237,7 +237,7 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
         <Card className="platform-cards-container">
           <div className="platform-drawer-section-head mb-3">
             <h4>节点</h4>
-            <p>落地是槽位的出口，中转是共用的第一跳。</p>
+            <p>落地是槽位的出口，中转是多个槽位共用的第一跳。</p>
           </div>
           <div className="tile-grid">
             {state.nodes.map((n) => <NodeTile key={n.id} n={n} busy={busy[`node:${n.id}`]} a={nodeActions(n)} onOpen={() => setOpen({ kind: "node", id: n.id })} />)}
@@ -256,7 +256,7 @@ type NodeActions = { resolve: () => void; report: () => void; note: () => void; 
 function gatewayMenu(g: Gateway, a: GatewayActions): (MenuEntry | "sep")[] {
   return [
     { label: "重新应用配置", icon: RefreshCw, onSelect: a.up },
-    { label: "强制停止（槽位会断网）", icon: LogOut, onSelect: () => a.down(true), disabled: g.container !== "running" },
+    { label: "强制停止（槽位将断网）", icon: LogOut, onSelect: () => a.down(true), disabled: g.container !== "running" },
     { label: "备注…", icon: Pencil, onSelect: a.note },
     "sep",
     { label: "删除…", icon: Trash2, danger: true, onSelect: a.remove },
@@ -277,8 +277,8 @@ function GatewayBadges({ g }: { g: Gateway }) {
   return (
     <>
       {running && !g.core_ready && <Badge variant="warning">核心未就绪</Badge>}
-      {running && g.core_ready && !g.config_current && <Badge variant="warning" title="节点或槽位的设置变过，重新启动网关或槽位后生效">配置待更新</Badge>}
-      {g.active_transit && g.active_transit !== g.transit && <Badge variant="warning" title="主用的中转现在不通，核心已改用候选的；出口不变，主用的恢复后会切回">在用 {g.active_transit}</Badge>}
+      {running && g.core_ready && !g.config_current && <Badge variant="warning" title="节点或槽位的设置有改动，重新启动网关或槽位后生效">配置待更新</Badge>}
+      {g.active_transit && g.active_transit !== g.transit && <Badge variant="warning" title="主用中转当前不可用，核心已切换到备用中转；出口不变，主用恢复后自动切回">当前使用 {g.active_transit}</Badge>}
     </>
   );
 }
@@ -302,12 +302,12 @@ function GatewayTile({ g, busy, a, onOpen }: { g: Gateway; busy?: string; a: Gat
       </div>
       <div className="platform-tile-facts">
         {g.transit ? <Fact k="中转">{g.transit}</Fact> : <Fact>不经中转</Fact>}
-        {!!g.transit_backups?.length && <Fact k="候选">{g.transit_backups.length} 个</Fact>}
+        {!!g.transit_backups?.length && <Fact k="备用">{g.transit_backups.length} 个</Fact>}
         <Fact k="地址池">{g.pool}</Fact>
         <GatewayBadges g={g} />
       </div>
       <div className="platform-tile-foot">
-        <span className="min-w-0 flex-1 truncate">{g.slots.length ? `槽位 ${g.slots.join("、")}` : "没有槽位"}</span>
+        <span className="min-w-0 flex-1 truncate">{g.slots.length ? `槽位 ${g.slots.join("、")}` : "无槽位"}</span>
         <GatewayToggle g={g} a={a} busy={busy} />
       </div>
     </div>
@@ -332,13 +332,13 @@ function NodeTile({ n, busy, a, onOpen }: { n: NodeInfo; busy?: string; a: NodeA
         {n.source && <Badge variant="neutral" title={`取自订阅 ${n.source.sub}`} className="max-w-[180px] truncate">{n.source.name}</Badge>}
         {r?.trust_score !== undefined && <Fact k="信任分">{r.trust_score}</Fact>}
         {r && (r.flags.length ? <Badge variant="warning" title={r.flags.map((f) => f.name).join("、")}>{r.flags.length} 个不利标记</Badge> : <Badge variant="success">无不利标记</Badge>)}
-        {n.tz_fallback && <Badge variant="warning" title="没有探测到出口所在的时区，暂用兜底值">时区兜底</Badge>}
+        {n.tz_fallback && <Badge variant="warning" title="未探测到出口所在的时区，暂用默认值">默认时区</Badge>}
       </div>
       <div className="platform-tile-foot">
         <span className="min-w-0 flex-1 truncate">
-          {r ? <><span className="mono font-semibold text-fg">{r.ip}</span>{where && ` · ${where}`}</> : n.connect_ipv4 ? <>首跳 <span className="mono">{n.connect_ipv4}</span></> : n.role === "landing" ? "还没有出口评估" : "中转"}
+          {r ? <><span className="mono font-semibold text-fg">{r.ip}</span>{where && ` · ${where}`}</> : n.connect_ipv4 ? <>首跳 <span className="mono">{n.connect_ipv4}</span></> : n.role === "landing" ? "暂无出口评估" : "中转"}
         </span>
-        {busy ? <span className="flex items-center gap-1.5"><Loader2 size={14} className="spin" />{busy}</span> : <span className="max-w-[45%] truncate" title={n.used_by.join("、")}>{n.used_by.length ? `${n.used_by.join("、")} 在用` : "未使用"}</span>}
+        {busy ? <span className="flex items-center gap-1.5"><Loader2 size={14} className="spin" />{busy}</span> : <span className="max-w-[45%] truncate" title={n.used_by.join("、")}>{n.used_by.length ? `${n.used_by.join("、")} 使用中` : "未使用"}</span>}
       </div>
     </div>
   );
@@ -382,14 +382,14 @@ function NodeDetail({ n, state, busy, a, alerts, back }: DetailCommon & { n: Nod
             <RegionIcon code={n.region} from={n.region_from} icon={landing ? Globe2 : Waypoints} size="detail" />
             <div className="min-w-0">
               <h3 className="truncate">{n.exit_report ? <span className="mono">{n.exit_report.ip}</span> : n.id}</h3>
-              <p>{roleText[n.role]} · {n.type} · {n.used_by.length ? `${n.used_by.join("、")} 在用` : "未使用"}</p>
+              <p>{roleText[n.role]} · {n.type} · {n.used_by.length ? `${n.used_by.join("、")} 使用中` : "未使用"}</p>
             </div>
           </div>
           <div className="platform-detail-header-meta">
             <div className="flex flex-wrap justify-end gap-1.5">
               <Badge variant={landing ? "info" : "neutral"}>{roleText[n.role]}</Badge>
-              {n.direct && <Badge variant="warning" title="直接用订阅里的节点当出口：多人共用的地址">直出</Badge>}
-              {n.tz_fallback && <Badge variant="warning" title="带时区的探测地址都没有应答，暂用兜底值；下次启动槽位会再探测">时区兜底</Badge>}
+              {n.direct && <Badge variant="warning" title="直接使用订阅中的节点作为出口：出口地址为多人共用">直出</Badge>}
+              {n.tz_fallback && <Badge variant="warning" title="带时区信息的探测地址均无响应，暂用默认值；下次启动槽位时重新探测">默认时区</Badge>}
             </div>
           </div>
         </div>
@@ -410,7 +410,7 @@ function NodeDetail({ n, state, busy, a, alerts, back }: DetailCommon & { n: Nod
             currentIP={wired?.exit_ip}
             busy={busy === "检测中"}
             onRefresh={a.report}
-            disabledWhy={reachable ? undefined : slots.length ? "查询要经链路发出：先启动一个使用这个落地的槽位" : "查询要经链路发出：先登记并启动一个使用这个落地的槽位"}
+            disabledWhy={reachable ? undefined : slots.length ? "查询需经链路发出：请先启动使用该落地的槽位" : "查询需经链路发出：请先创建并启动使用该落地的槽位"}
           />
         )}
 
@@ -427,8 +427,8 @@ function NodeDetail({ n, state, busy, a, alerts, back }: DetailCommon & { n: Nod
             {n.connect_ipv4 && (
               <KV k="首跳地址">
                 <span className="mono">{n.connect_ipv4}</span>
-                {n.fake_ip && <Tag title="本机所在的网络在用 fake-ip 透明代理，系统解析到的是它的映射地址">fake-ip 映射</Tag>}
-                {n.connect_auto && <Tag title="服务器地址是域名，由管理器在本机解析并记下；地址变了可以在菜单里重新解析">自动解析</Tag>}
+                {n.fake_ip && <Tag title="本机所在网络使用 fake-ip 透明代理，系统解析得到的是映射地址">fake-ip 映射</Tag>}
+                {n.connect_auto && <Tag title="服务器地址为域名，由管理器在本机解析并保存；地址变更后可在菜单中重新解析">自动解析</Tag>}
               </KV>
             )}
             {n.source && <KV k="来自订阅">{n.source.sub} · {n.source.name}</KV>}
@@ -437,17 +437,17 @@ function NodeDetail({ n, state, busy, a, alerts, back }: DetailCommon & { n: Nod
           {landing && (
             <>
               <div className="platform-drawer-section-head mt-1">
-                <h4>绑定它的槽位沿用</h4>
+                <h4>绑定该落地的槽位沿用</h4>
                 <p>时区与预期出口。</p>
               </div>
               <div className="kv-grid">
                 <KV k="时区">
-                  <span className="mono">{n.tz || "还没有（首次启动槽位时按出口探测）"}</span>
-                  {n.tz_fallback && <Tag tone="warn" title="带时区的探测地址都没有应答，暂用兜底值；下次启动槽位会再探测">兜底值</Tag>}
-                  {n.tz_auto && !n.tz_fallback && <Tag title="按出口探测到的所在地自动设置">随出口</Tag>}
+                  <span className="mono">{n.tz || "未设置（首次启动槽位时按出口探测）"}</span>
+                  {n.tz_fallback && <Tag tone="warn" title="带时区信息的探测地址均无响应，暂用默认值；下次启动槽位时重新探测">默认值</Tag>}
+                  {n.tz_auto && !n.tz_fallback && <Tag title="按探测到的出口所在地自动设置">随出口</Tag>}
                 </KV>
                 <KV k="预期出口" mono={!!n.expect_exit_ip}>{n.expect_exit_ip || "不检查"}</KV>
-                <KV k="槽位">{slots.length ? slots.map((s) => s.id).join("、") : "没有槽位在用"}</KV>
+                <KV k="槽位">{slots.length ? slots.map((s) => s.id).join("、") : "无槽位使用"}</KV>
               </div>
             </>
           )}
@@ -485,7 +485,7 @@ function GatewayDetail({ g, state, busy, a, alerts, back, refresh }: DetailCommo
             <RegionIcon icon={Router} size="detail" />
             <div className="min-w-0">
               <h3 className="truncate">{g.id}</h3>
-              <p><span className={`status-dot mr-1.5 inline-block align-middle ${gatewayDot(g)}`} />{gatewayStatus(g)} · {g.slots.length ? `${g.slots.length} 个槽位` : "没有槽位"}</p>
+              <p><span className={`status-dot mr-1.5 inline-block align-middle ${gatewayDot(g)}`} />{gatewayStatus(g)} · {g.slots.length ? `${g.slots.length} 个槽位` : "无槽位"}</p>
             </div>
           </div>
           <div className="platform-detail-header-meta">
@@ -514,19 +514,19 @@ function GatewayDetail({ g, state, busy, a, alerts, back, refresh }: DetailCommo
           </div>
           <div className="kv-grid">
             <KV k="中转">
-              {g.transit ? <span className="mono">{g.transit}</span> : "不经中转，各槽位直接连自己的出口节点"}
+              {g.transit ? <span className="mono">{g.transit}</span> : "不经中转，各槽位直接连接自己的出口节点"}
               {transit && <span className="text-[12px] font-normal text-muted">{transit.type} · {transit.server}:{transit.port}</span>}
             </KV>
             {backups.length > 0 && (
-              <KV k="候选">
+              <KV k="备用">
                 <span className="mono">{backups.join("、")}</span>
                 {g.active_transit && g.active_transit !== g.transit
-                  ? <Tag tone="warn" title="主用的中转现在不通，核心已改用候选的；出口不变，主用的恢复后会切回">在用 {g.active_transit}</Tag>
-                  : <span className="text-[12px] font-normal text-muted">主用的不通时自动改用，出口不变</span>}
+                  ? <Tag tone="warn" title="主用中转当前不可用，核心已切换到备用中转；出口不变，主用恢复后自动切回">当前使用 {g.active_transit}</Tag>
+                  : <span className="text-[12px] font-normal text-muted">主用不可用时自动切换，出口不变</span>}
               </KV>
             )}
-            <KV k="配置">{!running ? "网关没有在运行" : g.config_current ? "与当前的节点和槽位设置一致" : "节点或槽位的设置变过，重新启动网关或槽位后生效"}</KV>
-            <KV k="槽位">{g.slots.length ? g.slots.join("、") : "没有槽位"}</KV>
+            <KV k="配置">{!running ? "网关未运行" : g.config_current ? "与当前的节点和槽位设置一致" : "节点或槽位的设置有改动，重新启动网关或槽位后生效"}</KV>
+            <KV k="槽位">{g.slots.length ? g.slots.join("、") : "无槽位"}</KV>
           </div>
         </Card>
 
@@ -540,7 +540,7 @@ function GatewayDetail({ g, state, busy, a, alerts, back, refresh }: DetailCommo
           <div className="kv-grid">
             <KV k="出口网络" mono>{g.egress_network}</KV>
             <KV k="地址池" mono>{g.pool}</KV>
-            <KV k="槽内解析">域名交给落地解析，槽内看到的是 100.64.0.0/10 里的映射地址</KV>
+            <KV k="槽内解析">域名由落地解析，槽内得到的是 100.64.0.0/10 中的映射地址</KV>
           </div>
         </Card>
       </div>
@@ -550,7 +550,7 @@ function GatewayDetail({ g, state, busy, a, alerts, back, refresh }: DetailCommo
   );
 }
 
-/** 更换一个网关的中转：按点选的顺序，第一个是主用的，其余是候选。 */
+/** 更换一个网关的中转：按点选的顺序，第一个是主用的，其余是备用。 */
 function TransitDialog({ open, g, state, onClose, onChanged }: { open: boolean; g: Gateway; state: State; onClose: () => void; onChanged: () => Promise<void> }) {
   const toast = useToast();
   const transits = state.nodes.filter((n) => n.role === "transit");
@@ -571,8 +571,8 @@ function TransitDialog({ open, g, state, onClose, onChanged }: { open: boolean; 
       const r = (await api.setTransits(g.id, picked, skipCheck)).data;
       const failed = Object.keys(r.failed ?? {});
       if (!r.reloaded) toast(`网关 ${g.id} 的中转已更换，下次启动时生效。`);
-      else if (failed.length) toast(`中转已更换，但槽位 ${failed.join("、")} 换完后没有通过核对，排查后重新启动它们。`);
-      else toast(`网关 ${g.id} 的中转已更换并生效，重新核对了 ${r.rechecked.length} 个槽位的出口。`);
+      else if (failed.length) toast(`中转已更换，但槽位 ${failed.join("、")} 更换后未通过出口核对，请排查后重新启动。`);
+      else toast(`网关 ${g.id} 的中转已更换并生效，已重新核对 ${r.rechecked.length} 个槽位的出口。`);
       await onChanged();
       onClose();
     } catch (e) {
@@ -587,12 +587,12 @@ function TransitDialog({ open, g, state, onClose, onChanged }: { open: boolean; 
       open={open}
       onClose={onClose}
       title={`更换 ${g.id} 的中转`}
-      description="排第一的是主用的，其余是候选：主用的不通时核心自动改用下一个，恢复后切回。换中转不改变出口，出口由各槽位的落地决定。网关在运行时立即生效，并重新核对已就绪槽位的出口。"
+      description="排在首位的为主用，其余为备用：主用不可用时核心自动切换到下一个，恢复后切回。更换中转不改变出口，出口由各槽位的落地决定。网关运行时立即生效，并重新核对已接线槽位的出口。"
       className="mid"
       footer={
         <>
           <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button onClick={save} disabled={saving || picked.length === 0}>{saving ? "更换并核对中…" : "更换"}</Button>
+          <Button onClick={save} disabled={saving || picked.length === 0}>{saving ? "更换中…" : "更换"}</Button>
         </>
       }
     >
@@ -602,7 +602,7 @@ function TransitDialog({ open, g, state, onClose, onChanged }: { open: boolean; 
             const at = picked.indexOf(n.id);
             return (
               <div key={n.id} className="snapshot-row">
-                <span className="w-12 shrink-0 text-[12px] font-semibold text-brand">{at === 0 ? "主用" : at > 0 ? `候选 ${at}` : ""}</span>
+                <span className="w-12 shrink-0 text-[12px] font-semibold text-brand">{at === 0 ? "主用" : at > 0 ? `备用 ${at}` : ""}</span>
                 <div className="grow">
                   <p>{n.id}{n.source && <span className="ml-1.5 text-[12px] font-normal text-muted">{n.source.name}</span>}</p>
                   <p className="mono">{n.type} · {n.server}:{n.port}</p>
@@ -610,15 +610,15 @@ function TransitDialog({ open, g, state, onClose, onChanged }: { open: boolean; 
                 {at > 0 && <Button variant="outline" size="sm" disabled={saving} onClick={() => setPicked([n.id, ...picked.filter((x) => x !== n.id)])}>设为主用</Button>}
                 {at >= 0
                   ? <Button variant="outline" size="sm" disabled={saving} onClick={() => setPicked(picked.filter((x) => x !== n.id))}>移除</Button>
-                  : <Button variant="outline" size="sm" disabled={saving} onClick={() => setPicked([...picked, n.id])}>{picked.length ? "加为候选" : "设为主用"}</Button>}
+                  : <Button variant="outline" size="sm" disabled={saving} onClick={() => setPicked([...picked, n.id])}>{picked.length ? "设为备用" : "设为主用"}</Button>}
               </div>
             );
           })}
         </div>
         <p className="field-hint !mt-0">
-          这里只列已登记的中转节点。要从订阅里挑新的：到“订阅”页选一个落地测整条链路，把能接通落地的登记为中转。更换时会接上这个网关各槽位的落地逐个验证，有接不通的就不更换。
+          此处仅列出已添加的中转节点。如需从订阅中选择：在“订阅”页选择一个落地测试整条链路，将可连通该落地的节点添加为中转。更换时逐个验证该网关各槽位的落地能否连通，任一失败则不更换。
         </p>
-        <SwitchItem label="不验证能否接通落地" hint="落地只是暂时连不上时用。" checked={skipCheck} onChange={setSkipCheck} />
+        <SwitchItem label="跳过落地连通性验证" hint="仅在落地暂时无法连接时使用。" checked={skipCheck} onChange={setSkipCheck} />
         {error && <ErrorBox text={error} />}
       </div>
     </Dialog>
@@ -671,12 +671,12 @@ function AddGatewayDialog({ open, state, onClose, onCreated }: { open: boolean; 
       open={open}
       onClose={onClose}
       title="新建网关"
-      description="一个网关对应一个网关容器，可以接多个槽位，各自从自己的落地出去。带中转时流量先经中转再到落地；不带时各槽位直连自己的落地。"
+      description="一个网关对应一个网关容器，可接入多个槽位，各槽位经自己的落地出站。使用中转时流量先经中转再到落地；不使用时各槽位直连自己的落地。"
       className="mid"
       footer={
         <>
           <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button onClick={save} disabled={saving || !gw.id.trim()}>{saving ? "登记中…" : "登记"}</Button>
+          <Button onClick={save} disabled={saving || !gw.id.trim()}>{saving ? "创建中…" : "创建"}</Button>
         </>
       }
     >
@@ -694,7 +694,7 @@ function AddGatewayDialog({ open, state, onClose, onCreated }: { open: boolean; 
               {transits.map((n) => <option key={n.id} value={n.id}>{n.id}（{n.type}，{n.server}:{n.port}）</option>)}
             </Select>
           </Field>
-          <Field label="地址池" wide hint="网关分给各槽位的私网网段，只在网关和槽位之间使用，一般不用改。">
+          <Field label="地址池" wide hint="网关分配给各槽位的私有网段，仅在网关与槽位之间使用，通常无需修改。">
             <Input aria-label="地址池" className="mono" value={gw.pool} onChange={(e) => setGw({ ...gw, pool: e.target.value })} />
           </Field>
         </FormGrid>
@@ -733,12 +733,12 @@ function AddNodeDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
       open={open}
       onClose={onClose}
       title="添加节点"
-      description="这里手工填写 SOCKS5 或 HTTP 代理。其他协议的节点从订阅里选，或者用命令行的 node add --file 给出 Mihomo 片段。"
+      description="此处手动填写 SOCKS5 或 HTTP 代理。其他协议的节点请从订阅中选择，或通过命令行 node add --file 提供 Mihomo 配置片段。"
       className="mid"
       footer={
         <>
           <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button onClick={save} disabled={saving || !node.id.trim() || !node.server?.trim() || !node.port}>{saving ? "登记中…" : "登记"}</Button>
+          <Button onClick={save} disabled={saving || !node.id.trim() || !node.server?.trim() || !node.port}>{saving ? "添加中…" : "添加"}</Button>
         </>
       }
     >
@@ -775,21 +775,21 @@ function AddNodeDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
               <Input aria-label="端口" className="mono" type="number" min={1} max={65535} placeholder="1–65535" value={node.port || ""} onChange={(e) => setNode({ ...node, port: Number(e.target.value) || 0 })} />
             </Field>
             <Field label="用户名">
-              <Input aria-label="用户名" autoComplete="off" placeholder="可不填" value={node.username} onChange={(e) => setNode({ ...node, username: e.target.value })} />
+              <Input aria-label="用户名" autoComplete="off" placeholder="选填" value={node.username} onChange={(e) => setNode({ ...node, username: e.target.value })} />
             </Field>
-            <Field label="口令">
-              <Input aria-label="口令" type="password" autoComplete="new-password" placeholder="可不填" value={node.password} onChange={(e) => setNode({ ...node, password: e.target.value })} />
+            <Field label="密码">
+              <Input aria-label="密码" type="password" autoComplete="new-password" placeholder="选填" value={node.password} onChange={(e) => setNode({ ...node, password: e.target.value })} />
             </Field>
           </FormGrid>
         </FormSection>
 
         {node.role === "landing" && (
-          <FormSection title="出口" hint="都可以不填。">
+          <FormSection title="出口" hint="均为选填。">
             <FormGrid>
-              <Field label="时区" hint="不填则首次启动槽位时按出口所在地设置。">
+              <Field label="时区" hint="留空则首次启动槽位时按出口所在地设置。">
                 <Input aria-label="时区" placeholder="例如 America/Los_Angeles" value={node.tz} onChange={(e) => setNode({ ...node, tz: e.target.value })} />
               </Field>
-              <Field label="预期出口" hint="填了就必须与实测一致，否则不给槽位接线。">
+              <Field label="预期出口" hint="填写后必须与实测出口一致，否则不为槽位接线。">
                 <Input aria-label="预期出口" className="mono" placeholder="出口 IPv4" value={node.expect_exit_ip} onChange={(e) => setNode({ ...node, expect_exit_ip: e.target.value })} />
               </Field>
             </FormGrid>
