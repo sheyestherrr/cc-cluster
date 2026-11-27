@@ -21,6 +21,9 @@ interface Props {
   state: State | null;
   loadError: string | null;
   refresh: () => Promise<void>;
+  /** 打开着详情页的订阅（取自地址栏）；null 时显示卡片网格。 */
+  open: string | null;
+  setOpen: (id: string | null) => void;
 }
 
 type Editing = { mode: "add" } | { mode: "edit"; sub: Sub } | null;
@@ -84,15 +87,15 @@ function SubBadges({ s }: { s: Sub }) {
   );
 }
 
-export function SubsPage({ state, loadError, refresh }: Props) {
+export function SubsPage({ state, loadError, refresh, open, setOpen }: Props) {
   const toast = useToast();
   const { busy: allBusy, run: runAction, setNotice, confirm } = useActions();
   const busy = (id: string): string | undefined => allBusy[`sub:${id}`];
   const run = <T,>(id: string, label: string, action: () => Promise<T>, done?: string | ((r: T) => string)) => runAction(`sub:${id}`, label, action, done);
   const [editing, setEditing] = useState<Editing>(null);
   const [noting, setNoting] = useState<NoteTarget | null>(null);
-  /** 打开着详情页的订阅；null 时显示卡片网格。 */
-  const [open, setOpen] = useState<string | null>(null);
+  const opened = useRef(open);
+  opened.current = open;
 
   const actions = (s: Sub): SubActions => ({
     reload: () => {
@@ -110,7 +113,7 @@ export function SubsPage({ state, loadError, refresh }: Props) {
         title: `删除订阅 ${s.id}？`,
         text: "已从该订阅添加的节点不受影响，但不再随订阅更新。",
         action: "删除",
-        onConfirm: () => void run(s.id, "删除中…", () => api.removeSub(s.id), `已删除订阅 ${s.id}`).then((ok) => ok && setOpen((o) => (o === s.id ? null : o))),
+        onConfirm: () => void run(s.id, "删除中…", () => api.removeSub(s.id), `已删除订阅 ${s.id}`).then((ok) => ok && opened.current === s.id && setOpen(null)),
       }),
     every: (minutes) => run(s.id, "保存中…", () => api.setSubEvery(s.id, minutes), minutes ? `订阅 ${s.id} 已设为${everyText(minutes)}自动刷新` : `订阅 ${s.id} 的自动刷新已关闭`),
   });

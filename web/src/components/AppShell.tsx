@@ -2,8 +2,9 @@
 import { Boxes, LayoutDashboard, Network, Rss, Settings } from "lucide-react";
 import type React from "react";
 import { cn } from "@/lib/utils";
+import { routeHash, type PageId } from "@/lib/route";
 
-export type PageId = "overview" | "slots" | "network" | "subs" | "system";
+export type { PageId };
 
 type Icon = React.ComponentType<{ size?: number }>;
 interface NavItem { id: PageId; label: string; icon: Icon }
@@ -31,7 +32,6 @@ function Logo() {
 
 interface AppShellProps {
   activePage: PageId;
-  onPageChange: (page: PageId) => void;
   /** 正在运行的 cc-cluster 的版本；点它打开“版本与更新”。 */
   version?: string;
   /** 有新版本时是它的版本号。 */
@@ -62,7 +62,7 @@ function VersionChip({ version, newVersion, stale, onClick }: Pick<AppShellProps
   );
 }
 
-export function AppShell({ activePage, onPageChange, version, newVersion, stale, onVersionClick, status, children }: AppShellProps) {
+export function AppShell({ activePage, version, newVersion, stale, onVersionClick, status, children }: AppShellProps) {
   return (
     <div className="app-layout">
       <aside className="sidebar">
@@ -81,11 +81,12 @@ export function AppShell({ activePage, onPageChange, version, newVersion, stale,
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = activePage === item.id;
+              // 链接而不是按钮：可以在新标签页打开，地址栏随之变化。点击当前页面时从详情回到列表。
               return (
-                <button key={item.id} type="button" aria-current={active ? "page" : undefined} className={cn("nav-item", active && "nav-item-active")} onClick={() => onPageChange(item.id)}>
+                <a key={item.id} href={routeHash(item.id)} aria-current={active ? "page" : undefined} className={cn("nav-item", active && "nav-item-active")} onClick={() => window.scrollTo({ top: 0 })}>
                   <Icon size={16} />
                   <span>{item.label}</span>
-                </button>
+                </a>
               );
             })}
           </nav>

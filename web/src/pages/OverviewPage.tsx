@@ -14,13 +14,14 @@ import { Select } from "@/components/ui/input";
 import { api, errorText, type Delay, type History, type Slot, type SlotLive, type State } from "@/lib/api";
 import { usePolled, usePolling } from "@/lib/live";
 import { opDetail, opName } from "@/lib/ops";
+import type { Navigate } from "@/lib/route";
 import { bytesText, rateText, relativeTime } from "@/lib/utils";
 import { stateText } from "@/pages/SlotsPage";
 
 interface Props {
   state: State | null;
   loadError: string | null;
-  go: (page: PageId, target?: string) => void;
+  go: Navigate;
 }
 
 interface Notice {
@@ -28,7 +29,8 @@ interface Notice {
   tone: "danger" | "warning";
   text: string;
   page: PageId;
-  target?: string;
+  /** 点击后打开的对象：槽位与订阅是名称，节点与网关是种类加名称。 */
+  path: string[];
 }
 
 /** 趋势往回看多久（小时）。 */
@@ -38,7 +40,7 @@ const RANGES: [number, string][] = [[24, "最近 24 小时"], [168, "最近 7 �
 function notices(state: State): Notice[] {
   const out: Notice[] = [];
   for (const s of state.slots) {
-    const at = { page: "slots" as const, target: s.id };
+    const at = { page: "slots" as const, path: [s.id] };
     if (s.watch?.status === "changed") out.push({ key: `slot:${s.id}:changed`, tone: "danger", text: `槽位 ${s.id} 的出口已变更，已自动断网：${s.watch.detail ?? ""}`, ...at });
     else if (s.watch?.status === "unreachable") out.push({ key: `slot:${s.id}:unreachable`, tone: "warning", text: `槽位 ${s.id} 自${relativeTime(s.watch.since)}起无法连接出口`, ...at });
     if (s.state === "hold") out.push({ key: `slot:${s.id}:hold`, tone: "warning", text: `槽位 ${s.id} 已手动断网${s.hold_reason ? `：${s.hold_reason}` : ""}`, ...at });
@@ -46,14 +48,14 @@ function notices(state: State): Notice[] {
     else if (s.state === "pending") out.push({ key: `slot:${s.id}:pending`, tone: "warning", text: `槽位 ${s.id} 的配置已修改，尚未应用`, ...at });
   }
   for (const g of state.gateways) {
-    if (g.container === "running" && !g.core_ready) out.push({ key: `gw:${g.id}`, tone: "warning", text: `网关 ${g.id} 正在运行，但核心未就绪`, page: "network" });
+    if (g.container === "running" && !g.core_ready) out.push({ key: `gw:${g.id}`, tone: "warning", text: `网关 ${g.id} 正在运行，但核心未就绪`, page: "network", path: ["gateway", g.id] });
   }
   for (const n of state.nodes) {
     const flags = n.exit_report?.flags ?? [];
-    if (n.role === "landing" && flags.length) out.push({ key: `node:${n.id}`, tone: "warning", text: `落地 ${n.id} 的出口有 ${flags.length} 项不利标记：${flags.map((f) => f.name).join("、")}`, page: "network" });
+    if (n.role === "landing" && flags.length) out.push({ key: `node:${n.id}`, tone: "warning", text: `落地 ${n.id} 的出口有 ${flags.length} 项不利标记：${flags.map((f) => f.name).join("、")}`, page: "network", path: ["node", n.id] });
   }
   for (const s of state.subs) {
-    if (s.last_error) out.push({ key: `sub:${s.id}`, tone: "warning", text: `订阅 ${s.id} ${relativeTime(s.checked_at)}刷新失败：${s.last_error}`, page: "subs" });
+    if (s.last_error) out.push({ key: `sub:${s.id}`, tone: "warning", text: `订阅 ${s.id} ${relativeTime(s.checked_at)}刷新失败：${s.last_error}`, page: "subs", path: [s.id] });
   }
   return out.sort((a, b) => Number(b.tone === "danger") - Number(a.tone === "danger"));
 }
@@ -224,7 +226,7 @@ export function OverviewPage({ state, loadError, go }: Props) {
           ) : (
             <div className="dashboard-snapshot-list">
               {attention.map((n) => (
-                <button key={n.key} type="button" className="snapshot-row items-start" onClick={() => go(n.page, n.target)}>
+                <button key={n.key} type="button" className="snapshot-row items-start" onClick={() => go(n.page, ...n.path)}>
                   <Badge variant={n.tone}>{n.tone === "danger" ? "异常" : "注意"}</Badge>
                   <span className="min-w-0 flex-1 break-words leading-5">{n.text}</span>
                 </button>

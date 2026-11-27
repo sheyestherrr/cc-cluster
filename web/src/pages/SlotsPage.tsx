@@ -2,7 +2,7 @@
 // “卡片网格 + 详情页”的版面和样式取自 Resin（MIT）webui 的 features/platforms/PlatformPage.tsx 与 PlatformDetailPage.tsx，内容是本项目的。
 import { ArrowRight, Ban, Box, Loader2, Pencil, Play, Plus, Power, RefreshCw, RotateCw, ShieldCheck, Sparkles, Terminal, Trash2 } from "lucide-react";
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActionNotice, useActions } from "@/components/Actions";
 import { CopyButton } from "@/components/CopyButton";
 import { ExitCard } from "@/components/ExitCard";
@@ -90,6 +90,8 @@ function MainAction({ s, a, busy, size = "sm" }: { s: Slot; a: Actions; busy?: s
 export function SlotsPage({ state, loadError, refresh, goNetwork, goSubs, open, setOpen }: Props) {
   const toast = useToast();
   const { busy: allBusy, run: runAction, setNotice, confirm } = useActions();
+  const opened = useRef(open);
+  opened.current = open;
   const busy = (id: string): string | undefined => allBusy[`slot:${id}`];
   const run = <T,>(s: Slot, label: string, action: () => Promise<T>, done?: string | ((r: T) => string)) => runAction(`slot:${s.id}`, label, action, done);
   const [adding, setAdding] = useState(false);
@@ -198,7 +200,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, goSubs, open, 
                 const s = deleting!;
                 setDeleting(null);
                 // 删除成功后才离开详情页；失败时留在原处，原因显示在页面上。
-                void run(s, "删除中…", () => api.removeSlot(s.id, purge), `已删除 ${s.id}`).then((ok) => ok && open === s.id && setOpen(null));
+                void run(s, "删除中…", () => api.removeSlot(s.id, purge), `已删除 ${s.id}`).then((ok) => ok && opened.current === s.id && setOpen(null));
               }}
             >
               删除

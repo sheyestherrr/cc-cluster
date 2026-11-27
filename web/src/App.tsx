@@ -1,9 +1,10 @@
 // 应用的入口：定时读取集群的现状，按当前页面渲染。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActionsProvider } from "@/components/Actions";
-import { AppShell, pageTitles, type PageId } from "@/components/AppShell";
+import { AppShell, pageTitles } from "@/components/AppShell";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { api, errorText, isUnauthorized, type State, type UpdateInfo } from "@/lib/api";
+import { useRoute } from "@/lib/route";
 import { NetworkPage } from "@/pages/NetworkPage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { SlotsPage } from "@/pages/SlotsPage";
@@ -17,9 +18,9 @@ const UPDATE_POLL_MS = 30 * 60_000;
 const APP_NAME = "cc-cluster";
 
 export default function App() {
-  const [page, setPage] = useState<PageId>("overview");
-  /** 槽位页里打开着详情的那个槽位。 */
-  const [slot, setSlot] = useState<string | null>(null);
+  // 当前页面与打开的对象取自地址栏：刷新后回到原处，前进后退可用。
+  const [route, go] = useRoute();
+  const page = route.page;
   const [state, setState] = useState<State | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
@@ -46,20 +47,16 @@ export default function App() {
     };
   }, [refresh]);
 
-  // 标签页标题：当前页面在前；同时打开多个集群的页面时，靠容器名前缀区分。
+  // 标签页标题：打开的对象在前，其次是页面；同时打开多个集群的页面时，靠容器名前缀区分。
   const cluster = state?.cluster.name;
+  const target = route.path[route.path.length - 1];
   useEffect(() => {
-    document.title = [pageTitles[page], cluster, APP_NAME].filter(Boolean).join(" · ");
-  }, [page, cluster]);
+    document.title = [target, pageTitles[page], cluster, APP_NAME].filter(Boolean).join(" · ");
+  }, [target, page, cluster]);
 
-  // 换页时回到页面顶部；从侧栏点当前这一页，也从详情页回到卡片网格（节点与订阅页靠重新挂载）。
-  const [visit, setVisit] = useState(0);
-  const go = useCallback((next: PageId, target?: string) => {
-    setPage(next);
-    setVisit((n) => n + 1);
-    if (next === "slots") setSlot(target ?? null);
-    window.scrollTo({ top: 0 });
-  }, []);
+  // 各页打开着详情的对象；null 时显示列表。
+  const one = route.path[0] ?? null;
+  const networkOpen = (route.path[0] === "gateway" || route.path[0] === "node") && route.path[1] ? { kind: route.path[0], id: route.path[1] } as const : null;
 
   // 版本与更新：读到现状（令牌没问题）之后问一次，之后隔一阵再问。查不成不打扰，弹窗里才显示原因。
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
@@ -111,7 +108,6 @@ export default function App() {
     <ActionsProvider refresh={refresh}>
     <AppShell
       activePage={page}
-      onPageChange={go}
       version={version}
       newVersion={update?.newer ? update.latest?.version : undefined}
       stale={stale}
@@ -119,9 +115,9 @@ export default function App() {
       status={state ? { ready, total: state.slots.length } : null}
     >
       {page === "overview" && <OverviewPage state={state} loadError={loadError} go={go} />}
-      {page === "slots" && <SlotsPage state={state} loadError={loadError} refresh={refresh} goNetwork={() => go("network")} goSubs={() => go("subs")} open={slot} setOpen={setSlot} />}
-      {page === "network" && <NetworkPage key={visit} state={state} loadError={loadError} refresh={refresh} goSubs={() => go("subs")} />}
-      {page === "subs" && <SubsPage key={visit} state={state} loadError={loadError} refresh={refresh} />}
+      {page === "slots" && <SlotsPage state={state} loadError={loadError} refresh={refresh} goNetwork={() => go("network")} goSubs={() => go("subs")} open={one} setOpen={(id) => (id ? go("slots", id) : go("slots"))} />}
+      {page === "network" && <NetworkPage state={state} loadError={loadError} refresh={refresh} goSubs={() => go("subs")} open={networkOpen} setOpen={(o) => (o ? go("network", o.kind, o.id) : go("network"))} />}
+      {page === "subs" && <SubsPage state={state} loadError={loadError} refresh={refresh} open={one} setOpen={(id) => (id ? go("subs", id) : go("subs"))} />}
       {page === "system" && <SystemPage state={state} loadError={loadError} refresh={refresh} />}
       <UpdateDialog open={updateOpen} onClose={() => setUpdateOpen(false)} version={version} info={update} checking={checking} error={updateError} onCheck={() => void checkUpdate(true)} />
     </AppShell>

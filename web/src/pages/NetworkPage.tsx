@@ -2,7 +2,7 @@
 // “卡片网格 + 详情页”的版面和样式取自 Resin（MIT）webui 的 features/platforms/PlatformPage.tsx 与 PlatformDetailPage.tsx，内容是本项目的。
 import { Globe2, Loader2, Pencil, Play, Plus, Power, RefreshCw, Rss, Router, Trash2, Waypoints } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ActionNotice, useActions } from "@/components/Actions";
 import { ExitCard } from "@/components/ExitCard";
 import { RegionIcon } from "@/components/Flag";
@@ -23,9 +23,12 @@ interface Props {
   refresh: () => Promise<void>;
   /** 去“订阅管理”页：从订阅里挑节点在那边做。 */
   goSubs: () => void;
+  /** 打开着详情页的对象（取自地址栏）；null 时显示卡片网格。 */
+  open: Selection | null;
+  setOpen: (o: Selection | null) => void;
 }
 
-type Selection = { kind: "gateway" | "node"; id: string };
+type Selection = { readonly kind: "gateway" | "node"; readonly id: string };
 
 const roleText: Record<Role, string> = { transit: "中转", landing: "落地" };
 
@@ -68,17 +71,17 @@ function KV({ k, children, mono }: { k: string; children: React.ReactNode; mono?
   );
 }
 
-export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
+export function NetworkPage({ state, loadError, refresh, goSubs, open, setOpen }: Props) {
   const toast = useToast();
   const { busy, run, confirm } = useActions();
   const [dialog, setDialog] = useState<"gateway" | "node" | null>(null);
   const [noting, setNoting] = useState<NoteTarget | null>(null);
-  /** 打开着详情页的对象；null 时显示卡片网格。 */
-  const [open, setOpen] = useState<Selection | null>(null);
+  const opened = useRef(open);
+  opened.current = open;
 
   // 删除成功后才离开详情页；失败时留在原处，原因显示在页面上。
   const remove = (kind: Selection["kind"], id: string, action: () => Promise<unknown>) =>
-    void run(`${kind}:${id}`, "删除中…", action, `已删除 ${id}`).then((ok) => ok && setOpen((o) => (o?.kind === kind && o.id === id ? null : o)));
+    void run(`${kind}:${id}`, "删除中…", action, `已删除 ${id}`).then((ok) => ok && opened.current?.kind === kind && opened.current.id === id && setOpen(null));
 
   const created = async (text: string) => {
     setDialog(null);
