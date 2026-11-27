@@ -67,18 +67,22 @@ interface Props {
 
 export function ExitCard({ report: r, currentIP, busy, onRefresh, disabledWhy, className }: Props) {
   const head = (
+    <>
     <div className="panel-head">
       <div>
         <h3>出口评估</h3>
         <p>第三方接口对该出口地址的评估{r ? `，${relativeTime(r.checked_at)}检测` : ""}</p>
       </div>
       {onRefresh && (
-        <Button variant="outline" size="sm" onClick={onRefresh} disabled={busy || !!disabledWhy} title={disabledWhy ?? "经该落地的链路重新查询，查询请求的来源即该出口"}>
+        <Button variant="outline" size="sm" onClick={onRefresh} disabled={busy || !!disabledWhy} title={disabledWhy ? undefined : "经该落地的链路重新查询，查询请求的来源即该出口"}>
           {busy ? <Loader2 className="spin" /> : <RefreshCw />}
           {busy ? "检测中…" : "重新检测"}
         </Button>
       )}
     </div>
+    {/* 按钮不可用的原因写在页面上：禁用按钮的悬停提示在键盘与触屏上用不到。 */}
+    {onRefresh && disabledWhy && <p className="field-hint">{disabledWhy}</p>}
+    </>
   );
 
   if (!r) {

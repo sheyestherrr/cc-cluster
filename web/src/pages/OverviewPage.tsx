@@ -351,10 +351,11 @@ const BUCKETS = [
 
 function SubsPanels({ state, delays, error, history, rangeText, goSubs }: { state: State; delays: Record<string, Delay[]> | null; error: string; history: History | null; rangeText: string; goSubs: () => void }) {
   const [sub, setSub] = useState("");
-  const chosen = state.subs.some((s) => s.id === sub) ? sub : "";
+  // 两张卡片显示同一个订阅：延迟分布与可用节点数的变化口径一致。未选择时取第一个。
+  const chosen = state.subs.some((s) => s.id === sub) ? sub : state.subs[0]?.id ?? "";
   // 提示项（剩余流量、到期时间之类）不是线路，不算在内。
   const nodes = useMemo(
-    () => Object.entries(delays ?? {}).filter(([id]) => !chosen || id === chosen).flatMap(([, list]) => list).filter((d) => !d.info),
+    () => (delays?.[chosen] ?? []).filter((d) => !d.info),
     [delays, chosen],
   );
   const ok = useMemo(() => nodes.filter((d) => d.delay_ms > 0).map((d) => d.delay_ms).sort((a, b) => a - b), [nodes]);
@@ -362,9 +363,7 @@ function SubsPanels({ state, delays, error, history, rangeText, goSubs }: { stat
   const untested = nodes.filter((d) => d.delay_ms === 0).length;
   const buckets = useMemo(() => BUCKETS.map((b, i) => ({ label: b.label, count: ok.filter((d) => d < b.below && d >= (i ? BUCKETS[i - 1].below : 0)).length })), [ok]);
   const median = ok[Math.floor((ok.length - 1) / 2)];
-  // 测通个数的变化按订阅看：只有一个订阅时就是它。
-  const trendSub = chosen || (state.subs.length === 1 ? state.subs[0].id : state.subs[0]?.id ?? "");
-  const trend = trendSub ? (history?.subs[trendSub] ?? []) : [];
+  const trend = history?.subs[chosen] ?? [];
 
   if (!state.subs.length) {
     return (
@@ -382,10 +381,9 @@ function SubsPanels({ state, delays, error, history, rangeText, goSubs }: { stat
   return (
     <>
       <Card className="dashboard-panel">
-        <PanelHead title="节点延迟分布" hint={chosen ? `订阅 ${chosen} 最近一次延迟测试的结果` : "全部订阅最近一次延迟测试的结果"}>
+        <PanelHead title="节点延迟分布" hint={`订阅 ${chosen} 最近一次延迟测试的结果`}>
           {state.subs.length > 1 && (
             <Select aria-label="订阅" value={chosen} onChange={(e) => setSub(e.target.value)} className="field-sm w-auto">
-              <option value="">全部订阅</option>
               {state.subs.map((s) => <option key={s.id} value={s.id}>{s.id}</option>)}
             </Select>
           )}
@@ -412,7 +410,7 @@ function SubsPanels({ state, delays, error, history, rangeText, goSubs }: { stat
       </Card>
 
       <Card className={`dashboard-panel${state.slots.length ? " span-2" : ""}`}>
-        <PanelHead title="可用节点数的变化" hint={trendSub ? `订阅 ${trendSub} 每次延迟测试后的可用节点数（${rangeText}）` : "请选择订阅"}>
+        <PanelHead title="可用节点数的变化" hint={`订阅 ${chosen} 每次延迟测试后的可用节点数（${rangeText}）`}>
           {trend.length > 0 && <Legend items={subLegend} />}
         </PanelHead>
         {trend.length && history ? (

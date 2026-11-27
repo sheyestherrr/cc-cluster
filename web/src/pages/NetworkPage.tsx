@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { ActionNotice, useActions } from "@/components/Actions";
 import { ExitCard } from "@/components/ExitCard";
 import { RegionIcon } from "@/components/Flag";
-import { Field, FormGrid, FormSection, NameInput, SwitchItem } from "@/components/Form";
+import { FORMAT, Field, FormGrid, FormSection, NameInput, SwitchItem } from "@/components/Form";
 import { Menu, type MenuEntry } from "@/components/Menu";
 import { NOTE_PLACEHOLDER, NoteDialog, type NoteTarget } from "@/components/NoteDialog";
 import { ErrorBox, Fact, Page, PageHeader, Tag, TileTitle, tileProps } from "@/components/PageHeader";
@@ -359,7 +359,7 @@ function NodeDetail({ n, state, busy, a, alerts, back }: DetailCommon & { n: Nod
             currentIP={wired?.exit_ip}
             busy={busy === "检测中…"}
             onRefresh={a.report}
-            disabledWhy={reachable ? undefined : slots.length ? "查询需经链路发出：请先启动使用该落地的槽位" : "查询需经链路发出：请先创建并启动使用该落地的槽位"}
+            disabledWhy={reachable ? undefined : `无法重新检测：查询经该落地的链路发出，当前没有使用它的槽位在运行。请先${slots.length ? "" : "创建并"}启动使用该落地的槽位。`}
           />
         )}
 
@@ -650,7 +650,7 @@ function AddGatewayDialog({ open, state, onClose, onCreated }: { open: boolean; 
             </Select>
           </Field>
           <Field label="地址池" wide hint="网关分配给各槽位的私有网段，仅在网关与槽位之间使用，通常无需修改。">
-            <Input aria-label="地址池" className="mono" value={gw.pool} onChange={(e) => setGw({ ...gw, pool: e.target.value })} />
+            <Input aria-label="地址池" className="mono" {...FORMAT.cidr} value={gw.pool} onChange={(e) => setGw({ ...gw, pool: e.target.value })} />
           </Field>
         </FormGrid>
         {error && <ErrorBox text={error} />}
@@ -726,11 +726,11 @@ function AddNodeDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
                 <option value="http">HTTP</option>
               </Select>
             </Field>
-            <Field label="服务器">
-              <Input aria-label="服务器地址" className="mono" placeholder="地址" value={node.server} onChange={(e) => setNode({ ...node, server: e.target.value })} />
+            <Field label="服务器" required>
+              <Input aria-label="服务器地址" required className="mono" placeholder="地址" value={node.server} onChange={(e) => setNode({ ...node, server: e.target.value })} />
             </Field>
-            <Field label="端口">
-              <Input aria-label="端口" className="mono" type="number" min={1} max={65535} placeholder="1–65535" value={node.port || ""} onChange={(e) => setNode({ ...node, port: Number(e.target.value) || 0 })} />
+            <Field label="端口" required>
+              <Input aria-label="端口" required className="mono" type="number" min={1} max={65535} placeholder="1–65535" value={node.port || ""} onChange={(e) => setNode({ ...node, port: Number(e.target.value) || 0 })} />
             </Field>
             <Field label="用户名">
               <Input aria-label="用户名" autoComplete="off" placeholder="选填" value={node.username} onChange={(e) => setNode({ ...node, username: e.target.value })} />
@@ -745,10 +745,10 @@ function AddNodeDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
           <FormSection title="出口" hint="均为选填。">
             <FormGrid>
               <Field label="时区" hint="留空则首次启动槽位时按出口所在地设置。">
-                <Input aria-label="时区" placeholder="例如 America/Los_Angeles" value={node.tz} onChange={(e) => setNode({ ...node, tz: e.target.value })} />
+                <Input aria-label="时区" {...FORMAT.tz} placeholder="例如 America/Los_Angeles" value={node.tz} onChange={(e) => setNode({ ...node, tz: e.target.value })} />
               </Field>
               <Field label="预期出口" hint="填写后必须与实测出口一致，否则不为槽位接线。">
-                <Input aria-label="预期出口" className="mono" placeholder="出口 IPv4" value={node.expect_exit_ip} onChange={(e) => setNode({ ...node, expect_exit_ip: e.target.value })} />
+                <Input aria-label="预期出口" className="mono" {...FORMAT.ipv4} placeholder="出口 IPv4" value={node.expect_exit_ip} onChange={(e) => setNode({ ...node, expect_exit_ip: e.target.value })} />
               </Field>
             </FormGrid>
           </FormSection>

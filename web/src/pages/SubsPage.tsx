@@ -5,7 +5,7 @@ import type React from "react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ActionNotice, useActions, type Notice } from "@/components/Actions";
 import { Flag, RegionIcon, regionName } from "@/components/Flag";
-import { Field, FormGrid, NameInput } from "@/components/Form";
+import { FORMAT, Field, FormGrid, NameInput } from "@/components/Form";
 import { Menu, type MenuEntry } from "@/components/Menu";
 import { NOTE_PLACEHOLDER, NoteDialog, type NoteTarget } from "@/components/NoteDialog";
 import { ErrorBox, Page, PageHeader, Tabs, Tag, TileTitle, tabPanelProps, tileProps } from "@/components/PageHeader";
@@ -356,15 +356,19 @@ function SubDetail({ s, state, busy, a, alerts, refresh, onBack }: { s: Sub; sta
         <div className="platform-detail-header-footer">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
             <div className="min-w-0 flex-1 text-[13px] text-muted">
-              已添加的节点：<span className="font-semibold text-fg">{used.length ? used.map((n) => `${n.id}（${n.source!.name}）`).join("、") : "暂无"}</span>
+              已添加的节点：<span className="font-semibold text-fg">{used.length ? used.map((n) => `${n.id}（${n.region ? plainName(n.source!.name) : n.source!.name}）`).join("、") : "暂无"}</span>
             </div>
             {!s.local && (
-              <label className="flex shrink-0 items-center gap-2 text-[13px] text-muted" title="仅在 cc-cluster web 或 cc-cluster watch 运行期间执行。已添加的节点随订阅更新，重新启动网关或槽位后生效。">
+              <label className="flex shrink-0 items-center gap-2 text-[13px] text-muted">
                 自动刷新
                 <Select aria-label="自动刷新" className="field-sm !w-auto" value={s.every_min ?? 0} disabled={!!busy} onChange={(e) => a.every(Number(e.target.value))}>
                   {everyOptions.map(([m, label]) => <option key={m} value={m}>{label}</option>)}
                 </Select>
               </label>
+            )}
+            {/* 生效条件写在页面上：开着自动刷新却没有刷新时，原因多半在这里。 */}
+            {!s.local && !!s.every_min && (
+              <p className="field-hint basis-full text-right">自动刷新仅在 cc-cluster web 或 cc-cluster watch 运行期间执行；已添加的节点随订阅更新，重新启动网关或槽位后生效。</p>
             )}
           </div>
         </div>
@@ -563,7 +567,7 @@ function RegisterDialog({ sub, node, onClose, onDone }: { sub: string; node: Del
           </Field>
           {form.role === "landing" && (
             <Field label="时区" wide hint="留空则首次启动槽位时按出口所在地设置。">
-              <Input aria-label="时区" placeholder="例如 America/Los_Angeles" value={form.tz} onChange={(e) => setForm({ ...form, tz: e.target.value })} />
+              <Input aria-label="时区" {...FORMAT.tz} placeholder="例如 America/Los_Angeles" value={form.tz} onChange={(e) => setForm({ ...form, tz: e.target.value })} />
             </Field>
           )}
         </FormGrid>

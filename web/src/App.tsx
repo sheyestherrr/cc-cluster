@@ -26,12 +26,18 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
 
+  // 定时、窗口聚焦与操作结束都会触发读取，可能同时进行：只采用最后发出的那一次的结果，较早发出而较晚返回的不覆盖新状态。
+  const latest = useRef(0);
   const refresh = useCallback(async () => {
+    const seq = ++latest.current;
     try {
-      setState(await api.state());
+      const next = await api.state();
+      if (seq !== latest.current) return;
+      setState(next);
       setLoadError(null);
       setLocked(false);
     } catch (e) {
+      if (seq !== latest.current) return;
       setLoadError(errorText(e));
       setLocked(isUnauthorized(e));
     }

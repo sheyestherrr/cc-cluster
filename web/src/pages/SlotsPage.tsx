@@ -7,7 +7,7 @@ import { ActionNotice, useActions } from "@/components/Actions";
 import { CopyButton } from "@/components/CopyButton";
 import { ExitCard } from "@/components/ExitCard";
 import { RegionIcon } from "@/components/Flag";
-import { Field, FormGrid, FormSection, NameInput, SwitchItem } from "@/components/Form";
+import { FORMAT, Field, FormGrid, FormSection, NameInput, SwitchItem } from "@/components/Form";
 import { Menu, type MenuEntry } from "@/components/Menu";
 import { NOTE_PLACEHOLDER, NoteDialog, type NoteTarget } from "@/components/NoteDialog";
 import { ErrorBox, Fact, Page, PageHeader, Tabs, Tag, TileTitle, tabPanelProps, tileProps } from "@/components/PageHeader";
@@ -17,7 +17,7 @@ import { Badge, Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
-import { ID_HINT, NOTE_MAX, api, errorText, type Delay, type History, type Slot, type SlotInput, type SlotLive, type SlotState, type State } from "@/lib/api";
+import { ID_HINT, NOTE_MAX, api, errorText, type Delay, type Slot, type SlotInput, type SlotLive, type SlotState, type State } from "@/lib/api";
 import { usePolling } from "@/lib/live";
 import { routeHash } from "@/lib/route";
 import { dotTone, isRunning, isWired } from "@/lib/slot-state";
@@ -99,9 +99,8 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, goSubs, open, 
   const [deleting, setDeleting] = useState<Slot | null>(null);
   const [noting, setNoting] = useState<NoteTarget | null>(null);
   const [purge, setPurge] = useState(false);
-  // 各槽位此刻的流量和最近 24 小时的趋势。
+  // 各槽位此刻的流量。
   const traffic = usePolling(api.traffic, 5000);
-  const history = usePolling(() => api.history(24), 60_000);
 
   const actions: Actions = {
     up: (s, recreate = false) => {
@@ -216,7 +215,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, goSubs, open, 
   if (current && state) {
     return (
       <>
-        <SlotDetail s={current} state={state} live={traffic?.slots[current.id]} history={history} busy={busy(current.id)} a={actions} alerts={alerts} onBack={() => setOpen(null)} />
+        <SlotDetail s={current} state={state} live={traffic?.slots[current.id]} busy={busy(current.id)} a={actions} alerts={alerts} onBack={() => setOpen(null)} />
         {dialogs}
       </>
     );
@@ -228,13 +227,15 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, goSubs, open, 
         title="槽位"
         subtitle="管理槽位，查看状态与出口。"
         actions={
-          <Button onClick={() => setAdding(true)} disabled={!canAdd} title={canAdd ? undefined : NEED_EXIT}>
+          <Button onClick={() => setAdding(true)} disabled={!canAdd}>
             <Plus />
             新建槽位
           </Button>
         }
       />
       {alerts}
+      {/* 已有槽位但落地、网关、订阅都已删除时，“新建槽位”不可用：原因写在页面上，不只放在按钮的悬停提示里。 */}
+      {!canAdd && !!slots?.length && <ErrorBox tone="warning" text={`无法新建槽位：${NEED_EXIT}。`} />}
 
       <Card className="platform-cards-container">
         {slots === null && !loadError && <p className="muted">正在加载槽位…</p>}
@@ -326,8 +327,6 @@ interface DetailProps {
   state: State;
   /** 此刻的流量；没接线或还没采样到时没有。 */
   live?: SlotLive;
-  /** 最近 24 小时的趋势。 */
-  history: History | null;
   busy?: string;
   a: Actions;
   alerts: React.ReactNode;
@@ -345,8 +344,10 @@ function Hop({ label, name, sub, icon }: { label: string; name: string; sub?: st
   );
 }
 
-function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: DetailProps) {
+function SlotDetail({ s, state, live, busy, a, alerts, onBack }: DetailProps) {
   const [tab, setTab] = useState<DetailTab>("overview");
+  // 最近 24 小时的趋势：只有详情页用得到，列表页不请求。
+  const history = usePolling(() => api.history(24), 60_000);
   const panel = useId();
   const wired = isWired(s);
   const landing = state.nodes.find((n) => n.id === s.landing);
@@ -427,7 +428,7 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
               currentIP={wired ? s.exit_ip : undefined}
               busy={busy === "检测中…"}
               onRefresh={() => a.report(s)}
-              disabledWhy={gatewayUp ? undefined : "查询需经链路发出：网关未运行，请先启动该槽位"}
+              disabledWhy={gatewayUp ? undefined : "无法重新检测：查询经该槽位的链路发出，网关未运行。请先启动该槽位。"}
             />
 
             <Card className="panel">
@@ -725,7 +726,7 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
               <Input aria-label="CPU 核数" type="number" min={0} step={0.5} placeholder="不限" value={slot.cpus || ""} onChange={(e) => setSlot({ ...slot, cpus: Number(e.target.value) || 0 })} />
             </Field>
             <Field label="内存上限">
-              <Input aria-label="内存上限" placeholder="例如 8g，留空不限" value={slot.memory} onChange={(e) => setSlot({ ...slot, memory: e.target.value })} />
+              <Input aria-label="内存上限" {...FORMAT.memory} placeholder="例如 8g，留空不限" value={slot.memory} onChange={(e) => setSlot({ ...slot, memory: e.target.value })} />
             </Field>
             <Field label="用户名">
               <Input aria-label="用户名" placeholder="user" value={slot.user} onChange={(e) => setSlot({ ...slot, user: e.target.value })} />
@@ -734,7 +735,7 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
               <Input aria-label="主机名" placeholder="留空则按“用户名-机型”生成" value={slot.hostname} onChange={(e) => setSlot({ ...slot, hostname: e.target.value })} />
             </Field>
             <Field label="时区" wide hint="留空则沿用落地的时区（首次启动时按出口所在地设置）。">
-              <Input aria-label="时区" placeholder="例如 America/Los_Angeles" value={slot.tz} onChange={(e) => setSlot({ ...slot, tz: e.target.value })} />
+              <Input aria-label="时区" {...FORMAT.tz} placeholder="例如 America/Los_Angeles" value={slot.tz} onChange={(e) => setSlot({ ...slot, tz: e.target.value })} />
             </Field>
             <SwitchItem label="覆盖机型信息" hint={slot.fake_dmi ? "使用该槽位自己的机型信息覆盖 DMI" : "默认屏蔽 DMI 信息"} checked={slot.fake_dmi} onChange={(fake_dmi) => setSlot({ ...slot, fake_dmi })} />
             <SwitchItem label="按限额显示 CPU 与内存" hint={slot.fake_proc ? "/proc/cpuinfo 与 meminfo 按上述限额显示（需填写 CPU 或内存）" : "默认显示宿主的 CPU 与内存"} checked={slot.fake_proc} onChange={(fake_proc) => setSlot({ ...slot, fake_proc })} />

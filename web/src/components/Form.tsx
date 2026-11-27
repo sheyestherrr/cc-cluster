@@ -33,6 +33,17 @@ export function NameInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <Input required pattern={ID_PATTERN} maxLength={31} spellCheck={false} autoCapitalize="off" autoComplete="off" title={ID_HINT} {...props} />;
 }
 
+/**
+ * 几种取值的写法，与服务端的校验一致，展开到输入框上：离开输入框后不符合时标出，提交时由浏览器指出原因（title 是它显示的说明）。
+ * 取值范围（地址池须为私有网段、内存不小于下限等）仍由服务端判断。
+ */
+export const FORMAT = {
+  tz: { pattern: "[A-Za-z0-9_+\\-]+(/[A-Za-z0-9_+\\-]+){0,2}", title: "时区名称，例如 Asia/Tokyo" },
+  memory: { pattern: "[0-9]+(\\.[0-9]+)?[kKmMgG]?", title: "数字加单位 k、m 或 g，例如 8g" },
+  cidr: { pattern: "[0-9]{1,3}(\\.[0-9]{1,3}){3}/[0-9]{1,2}", title: "IPv4 网段，例如 10.213.250.0/24" },
+  ipv4: { pattern: "[0-9]{1,3}(\\.[0-9]{1,3}){3}", title: "IPv4 地址，例如 198.51.100.20" },
+} as const;
+
 export function SwitchItem({ label, hint, checked, onChange, wide, disabled }: { label: string; hint?: React.ReactNode; checked: boolean; onChange: (v: boolean) => void; wide?: boolean; disabled?: boolean }) {
   return (
     <div className={cn("subscription-switch-item", wide && "field-span-2")}>
