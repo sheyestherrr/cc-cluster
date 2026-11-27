@@ -80,9 +80,11 @@ export function countTicks(max: number): number[] {
 // ---- 画布、图例、提示框 ----
 
 /** 带框的画布，下面一行是时间范围的两端。 */
-function Plot({ height, footer, children, className }: { height?: number; footer?: [string, string]; children: React.ReactNode; className?: string }) {
+/** 图的外框。summary 是图的文字概述，只给读屏软件：图形本身读不出数值。 */
+function Plot({ height, footer, summary, children, className }: { height?: number; footer?: [string, string]; summary: string; children: React.ReactNode; className?: string }) {
   return (
     <div className="trend-chart">
+      <p className="sr-only">{summary}</p>
       <div className={cn("trend-svg", className)} style={height ? { height } : undefined}>{children}</div>
       {footer && (
         <div className="trend-footer">
@@ -179,9 +181,10 @@ export function TrafficChart({ points, step, slot, height = 260 }: { points: His
   const long = to - from > 2 * 24 * 3600_000;
   const stamp = long ? mdhm : hm;
   const yTicks = byteTicks(rows.reduce((m, r) => Math.max(m, r.down, r.up), 0));
+  const summary = `流量趋势，${mdhm(from)} 至 ${mdhm(to)}：下行合计 ${bytesText(rows.reduce((n, r) => n + r.down, 0))}，上行合计 ${bytesText(rows.reduce((n, r) => n + r.up, 0))}。`;
 
   return (
-    <Plot height={height} footer={[mdhm(from), mdhm(to)]}>
+    <Plot height={height} footer={[mdhm(from), mdhm(to)]} summary={summary}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={rows} margin={MARGIN}>
           <defs>
@@ -235,9 +238,10 @@ export function ConnsChart({ points, step, slot, height = 260 }: { points: Histo
   const to = rows[rows.length - 1].t + step * 1000;
   const { ticks, format } = timeTicks(from, to);
   const long = to - from > 2 * 24 * 3600_000;
-  const yTicks = countTicks(rows.reduce((m, r) => Math.max(m, r.conns), 0));
+  const peak = rows.reduce((m, r) => Math.max(m, r.conns), 0);
+  const yTicks = countTicks(peak);
   return (
-    <Plot height={height} footer={[mdhm(from), mdhm(to)]}>
+    <Plot height={height} footer={[mdhm(from), mdhm(to)]} summary={`连接数趋势，${mdhm(from)} 至 ${mdhm(to)}：峰值 ${peak} 条。`}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={rows} margin={MARGIN}>
           <defs>
@@ -279,6 +283,7 @@ export function DelayBars({ buckets, total, height = 226 }: { buckets: Bucket[];
   const id = useId().replace(/:/g, "");
   return (
     <div className="histogram-chart" style={{ height }}>
+      <p className="sr-only">延迟分布（毫秒）：{buckets.map((b) => `${b.label} ${b.count} 个`).join("，")}。</p>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={buckets} margin={{ top: 14, right: 12, bottom: 4, left: 4 }}>
           <defs>
@@ -337,8 +342,10 @@ export function SubUsableChart({ points, from, to, height = 180 }: { points: Sub
   const a = Date.parse(from);
   const b = Date.parse(to);
   const { ticks, format } = timeTicks(a, b);
+  const last = rows[rows.length - 1];
+  const summary = `可用节点数的变化，${mdhm(a)} 至 ${mdhm(b)}：共 ${rows.length} 次测试${last ? `，最近一次 ${last.total} 个节点中 ${last.usable} 个可用` : ""}。`;
   return (
-    <Plot height={height} footer={[mdhm(a), mdhm(b)]}>
+    <Plot height={height} footer={[mdhm(a), mdhm(b)]} summary={summary}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={rows} margin={MARGIN}>
           <defs>
@@ -450,7 +457,7 @@ export function WatchTimeline({ slots, watch, from, to }: { slots: string[]; wat
   const nameWidth = Math.min(200, Math.max(72, slots.reduce((m, id) => Math.max(m, id.length), 0) * 7.5 + 18));
 
   return (
-    <Plot height={rows.length * 38 + 44} footer={[mdhm(a), mdhm(b)]}>
+    <Plot height={rows.length * 38 + 44} footer={[mdhm(a), mdhm(b)]} summary={`持续检测的时间线，${mdhm(a)} 至 ${mdhm(b)}：槽位 ${slots.join("、")}。各时段的检测结果见各槽位的详情页。`}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={rows} layout="vertical" margin={{ top: 10, right: 14, bottom: 4, left: 8 }} barCategoryGap={0}>
           <CartesianGrid stroke={GRID} strokeDasharray="2 4" horizontal={false} />

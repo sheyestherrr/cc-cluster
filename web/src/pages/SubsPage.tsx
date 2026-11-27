@@ -501,7 +501,7 @@ function tally(values: string[]): [string, number][] {
 function delayLabel(d: Delay) {
   if (d.delay_ms > 0) return <span className="font-semibold text-ok">{d.delay_ms} ms</span>;
   if (d.delay_ms < 0) return <span className="text-danger">不可用</span>;
-  return <span className="text-faint">未测试</span>;
+  return <span className="text-muted">未测试</span>;
 }
 
 /** 把订阅里的一个节点登记为中转或落地。 */

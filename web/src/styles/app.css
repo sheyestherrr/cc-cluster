@@ -59,8 +59,10 @@ button:not(:disabled),
   outline-offset: 2px;
 }
 
+/* 占位文字给出的是填写示例，需要读得清：--faint 在白底上的对比度约 2.3:1，这里用 --muted（约 5:1）。 */
 ::placeholder {
-  color: rgb(var(--faint));
+  color: rgb(var(--muted));
+  opacity: 1;
 }
 
 .mono {
