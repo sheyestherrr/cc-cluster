@@ -1,5 +1,6 @@
 // 应用的入口：定时读取集群的现状，按当前页面渲染。
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ActionsProvider } from "@/components/Actions";
 import { AppShell, pageTitles, type PageId } from "@/components/AppShell";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { api, errorText, isUnauthorized, type State, type UpdateInfo } from "@/lib/api";
@@ -107,6 +108,7 @@ export default function App() {
   }
 
   return (
+    <ActionsProvider refresh={refresh}>
     <AppShell
       activePage={page}
       onPageChange={go}
@@ -117,11 +119,12 @@ export default function App() {
       status={state ? { ready, total: state.slots.length } : null}
     >
       {page === "overview" && <OverviewPage state={state} loadError={loadError} go={go} />}
-      {page === "slots" && <SlotsPage state={state} loadError={loadError} refresh={refresh} goNetwork={() => go("network")} open={slot} setOpen={setSlot} />}
+      {page === "slots" && <SlotsPage state={state} loadError={loadError} refresh={refresh} goNetwork={() => go("network")} goSubs={() => go("subs")} open={slot} setOpen={setSlot} />}
       {page === "network" && <NetworkPage key={visit} state={state} loadError={loadError} refresh={refresh} goSubs={() => go("subs")} />}
       {page === "subs" && <SubsPage key={visit} state={state} loadError={loadError} refresh={refresh} />}
-      {page === "system" && <SystemPage state={state} refresh={refresh} />}
+      {page === "system" && <SystemPage state={state} loadError={loadError} refresh={refresh} />}
       <UpdateDialog open={updateOpen} onClose={() => setUpdateOpen(false)} version={version} info={update} checking={checking} error={updateError} onCheck={() => void checkUpdate(true)} />
     </AppShell>
+    </ActionsProvider>
   );
 }

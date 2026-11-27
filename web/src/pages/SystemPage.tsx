@@ -15,6 +15,7 @@ import { clockTime, cn, imageName } from "@/lib/utils";
 
 interface Props {
   state: State | null;
+  loadError: string | null;
   refresh: () => Promise<void>;
 }
 
@@ -40,7 +41,7 @@ function PanelHead({ title, hint, children }: { title: string; hint: string; chi
   );
 }
 
-export function SystemPage({ state, refresh }: Props) {
+export function SystemPage({ state, loadError, refresh }: Props) {
   const [checks, setChecks] = useState<Check[] | null>(null);
   const [checking, setChecking] = useState(false);
   const [ops, setOps] = useState<Op[] | null>(null);
@@ -105,6 +106,7 @@ export function SystemPage({ state, refresh }: Props) {
   return (
     <Page>
       <PageHeader title="系统" subtitle="集群信息、环境检查与操作记录。" />
+      {loadError && <ErrorBox text={loadError} />}
       {error && <ErrorBox text={error} onClose={() => setError("")} />}
 
       <div className="grid items-stretch gap-3.5 min-[1400px]:grid-cols-2">

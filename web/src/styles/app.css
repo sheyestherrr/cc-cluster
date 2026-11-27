@@ -878,6 +878,27 @@ dialog.modal-card::backdrop {
   align-items: flex-start;
 }
 
+.toast-close {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin: -2px -4px -2px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+}
+
+.toast-close:hover,
+.toast-close:focus-visible {
+  opacity: 1;
+  background: rgba(15, 29, 53, 0.08);
+}
+
 .empty-box.plain {
   margin-top: 0;
 }

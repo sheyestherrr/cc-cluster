@@ -104,10 +104,10 @@ export function Tag({ children, tone, title }: { children: React.ReactNode; tone
   );
 }
 
-/** 一次失败的操作：说明在上，出错之前的进度在下。 */
-export function ErrorBox({ text, log, onClose }: { text: string; log?: string[]; onClose?: () => void }) {
+/** 留在页面上的一条说明：失败的操作（说明在上，出错之前的进度在下），或需要留意的事项（tone="warning"）。 */
+export function ErrorBox({ text, log, onClose, tone = "error" }: { text: string; log?: string[]; onClose?: () => void; tone?: "error" | "warning" }) {
   return (
-    <div className="callout callout-error" role="alert">
+    <div className={cn("callout", tone === "warning" ? "callout-warning" : "callout-error")} role={tone === "warning" ? "status" : "alert"}>
       <AlertTriangle size={15} />
       <div className="min-w-0 flex-1">
         <span className="whitespace-pre-wrap break-words">{text}</span>

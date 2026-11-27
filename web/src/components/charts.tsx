@@ -82,14 +82,19 @@ function Plot({ height, footer, children, className }: { height?: number; footer
   );
 }
 
-/** 没有数据时占住图的位置的一句话。 */
-export function ChartEmpty({ height = 180, children }: { height?: number; children: React.ReactNode }) {
+/** 没有数据时占住图的位置的一句话。warn 为真时带警告图标：只用于读取失败，暂无数据不是异常。 */
+export function ChartEmpty({ height = 180, warn, children }: { height?: number; warn?: boolean; children: React.ReactNode }) {
   return (
     <div className="empty-box dashboard-empty" style={{ minHeight: height }}>
-      <AlertTriangle size={14} className="shrink-0" />
+      {warn && <AlertTriangle size={14} className="shrink-0" />}
       <p className="max-w-[520px] text-[13px]">{children}</p>
     </div>
   );
+}
+
+/** 数据尚未取到时的占位：读取失败时说明原因，否则是“加载中…”。高度由外层决定。 */
+export function ChartPending({ error, what }: { error: string; what: string }) {
+  return <ChartEmpty height={0} warn={!!error}>{error ? `无法读取${what}：${error}` : "加载中…"}</ChartEmpty>;
 }
 
 export function Legend({ items }: { items: { color: string; label: string }[] }) {

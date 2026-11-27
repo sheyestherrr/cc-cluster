@@ -5,14 +5,14 @@ import { Activity, Box, Gauge, Layers, ShieldCheck, Sparkles, Waves } from "luci
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { PageId } from "@/components/AppShell";
-import { ChartEmpty, ConnsChart, DelayBars, Legend, SubUsableChart, TrafficChart, WatchTimeline, subLegend, trafficLegend, watchLegend } from "@/components/charts";
+import { ChartEmpty, ChartPending, ConnsChart, DelayBars, Legend, SubUsableChart, TrafficChart, WatchTimeline, subLegend, trafficLegend, watchLegend } from "@/components/charts";
 import { RegionIcon } from "@/components/Flag";
 import { ErrorBox, Page, PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Badge, Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/input";
-import { api, errorText, type Delay, type History, type Op, type Slot, type SlotLive, type State } from "@/lib/api";
-import { usePolling } from "@/lib/live";
+import { api, errorText, type Delay, type History, type Slot, type SlotLive, type State } from "@/lib/api";
+import { usePolled, usePolling } from "@/lib/live";
 import { opDetail, opName } from "@/lib/ops";
 import { bytesText, rateText, relativeTime } from "@/lib/utils";
 import { stateText } from "@/pages/SlotsPage";
@@ -59,16 +59,15 @@ function notices(state: State): Notice[] {
 }
 
 export function OverviewPage({ state, loadError, go }: Props) {
-  const [ops, setOps] = useState<Op[] | null>(null);
   const [delays, setDelays] = useState<Record<string, Delay[]> | null>(null);
   const [delayError, setDelayError] = useState("");
   const [hours, setHours] = useState(24);
   const traffic = usePolling(api.traffic, 5000);
-  const history = usePolling(() => api.history(hours), 60_000, [hours]);
-
-  useEffect(() => {
-    api.ops().then(setOps, () => setOps([]));
-  }, []);
+  const { data: history, error: historyError } = usePolled(() => api.history(hours), 60_000, [hours]);
+  /** 历史数据尚未取到时占位的文字：读取失败与加载中要分得清。 */
+  const historyPending = <ChartPending error={historyError} what="历史数据" />;
+  // 操作记录随页面定时更新：在别的页面做过的操作，回到总览时能看到。
+  const { data: ops, error: opsError } = usePolled(api.ops, 30_000);
 
   // 订阅刷新过或测过延迟之后，重新读各订阅的节点。
   const loaded = !!state;
@@ -179,7 +178,7 @@ export function OverviewPage({ state, loadError, go }: Props) {
 
       <div className="dashboard-main-grid">
         <Card className="dashboard-panel span-2">
-          <PanelHead title="流量趋势" hint={`各槽位合计的下行 / 上行（${history ? (history.step >= 3600 ? `每 ${history.step / 3600} 小时一个数据点` : `每 ${history.step / 60} 分钟一个数据点`) : "加载中…"}）`}>
+          <PanelHead title="流量趋势" hint={`各槽位合计的下行 / 上行（${history ? (history.step >= 3600 ? `每 ${history.step / 3600} 小时一个数据点` : `每 ${history.step / 60} 分钟一个数据点`) : historyError ? "读取失败" : "加载中…"}）`}>
             <div className="panel-totals">
               <div className="panel-total">
                 <span><i style={{ background: "var(--chart-1)" }} />{rangeText}下行</span>
@@ -191,13 +190,13 @@ export function OverviewPage({ state, loadError, go }: Props) {
               </div>
             </div>
           </PanelHead>
-          {history === null ? <ChartEmpty height={260}>加载中…</ChartEmpty> : totalDown + totalUp > 0 ? <TrafficChart points={history.traffic} step={history.step} /> : <ChartEmpty height={260}>{noHistory}</ChartEmpty>}
+          {history === null ? <div style={{ minHeight: 260 }} className="grid">{historyPending}</div> : totalDown + totalUp > 0 ? <TrafficChart points={history.traffic} step={history.step} /> : <ChartEmpty height={260}>{noHistory}</ChartEmpty>}
           <Legend items={trafficLegend} />
         </Card>
 
         <Card className="dashboard-panel">
           <PanelHead title="连接峰值" hint="同时连接数的最大值" />
-          {history === null ? <ChartEmpty height={260}>加载中…</ChartEmpty> : peakConns > 0 ? <ConnsChart points={history.traffic} step={history.step} /> : <ChartEmpty height={260}>该时段内无连接记录。</ChartEmpty>}
+          {history === null ? <div style={{ minHeight: 260 }} className="grid">{historyPending}</div> : peakConns > 0 ? <ConnsChart points={history.traffic} step={history.step} /> : <ChartEmpty height={260}>该时段内无连接记录。</ChartEmpty>}
           <Legend items={[{ color: "var(--chart-3)", label: "连接数" }]} />
         </Card>
 
@@ -240,7 +239,7 @@ export function OverviewPage({ state, loadError, go }: Props) {
               <Legend items={watchLegend} />
             </PanelHead>
             {history === null ? (
-              <ChartEmpty height={120}>加载中…</ChartEmpty>
+              <div style={{ minHeight: 120 }} className="grid">{historyPending}</div>
             ) : watchSlots.length ? (
               <WatchTimeline slots={watchSlots} watch={history.watch} from={history.from} to={history.to} />
             ) : (
@@ -253,7 +252,7 @@ export function OverviewPage({ state, loadError, go }: Props) {
           <PanelHead title="最近操作" hint="最近 8 条">
             <Button variant="outline" size="sm" onClick={() => go("system")}>全部记录</Button>
           </PanelHead>
-          {ops === null && <p className="muted">加载中…</p>}
+          {ops === null && (opsError ? <ChartPending error={opsError} what="操作记录" /> : <p className="muted">加载中…</p>)}
           {ops?.length === 0 && <div className="empty-box plain"><p>暂无操作记录。</p></div>}
           {!!ops?.length && (
             <div className="dashboard-snapshot-list">

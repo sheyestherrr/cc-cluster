@@ -1,8 +1,9 @@
 // 节点与网关：一格一张卡片，点开是这个对象的详情页（落地带出口评估）。
 // “卡片网格 + 详情页”的版面和样式取自 Resin（MIT）webui 的 features/platforms/PlatformPage.tsx 与 PlatformDetailPage.tsx，内容是本项目的。
-import { Globe2, Loader2, LogOut, Pencil, Play, Plus, Power, RefreshCw, Rss, Router, Trash2, Waypoints } from "lucide-react";
+import { Globe2, Loader2, Pencil, Play, Plus, Power, RefreshCw, Rss, Router, Trash2, Waypoints } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
+import { ActionNotice, useActions } from "@/components/Actions";
 import { ExitCard } from "@/components/ExitCard";
 import { RegionIcon } from "@/components/Flag";
 import { Field, FormGrid, FormSection, SwitchItem } from "@/components/Form";
@@ -14,7 +15,7 @@ import { Badge, Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
-import { ApiError, ID_HINT, NOTE_MAX, api, errorText, type Gateway, type NodeInfo, type NodeInput, type Role, type State } from "@/lib/api";
+import { ID_HINT, NOTE_MAX, api, errorText, type Gateway, type NodeInfo, type NodeInput, type Role, type State } from "@/lib/api";
 
 interface Props {
   state: State | null;
@@ -24,8 +25,6 @@ interface Props {
   goSubs: () => void;
 }
 
-type Failure = { text: string; log: string[] } | null;
-type Removing = { kind: "gateway" | "node"; id: string; note: string } | null;
 type Selection = { kind: "gateway" | "node"; id: string };
 
 const roleText: Record<Role, string> = { transit: "中转", landing: "落地" };
@@ -71,37 +70,15 @@ function KV({ k, children, mono }: { k: string; children: React.ReactNode; mono?
 
 export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
   const toast = useToast();
-  const [busy, setBusy] = useState<Record<string, string>>({});
-  const [failure, setFailure] = useState<Failure>(null);
+  const { busy, run, confirm } = useActions();
   const [dialog, setDialog] = useState<"gateway" | "node" | null>(null);
-  const [removing, setRemoving] = useState<Removing>(null);
   const [noting, setNoting] = useState<NoteTarget | null>(null);
   /** 打开着详情页的对象；null 时显示卡片网格。 */
   const [open, setOpen] = useState<Selection | null>(null);
 
-  const run = async (key: string, label: string, action: () => Promise<unknown>, done?: string | ((r: unknown) => string)) => {
-    setBusy((b) => ({ ...b, [key]: label }));
-    setFailure(null);
-    try {
-      const r = await action();
-      if (done) toast(typeof done === "string" ? done : done(r));
-    } catch (e) {
-      setFailure({ text: errorText(e), log: e instanceof ApiError ? e.log : [] });
-    } finally {
-      setBusy((b) => {
-        const { [key]: _, ...rest } = b;
-        return rest;
-      });
-      refresh();
-    }
-  };
-
-  const remove = (r: NonNullable<Removing>) => {
-    setRemoving(null);
-    if (open?.kind === r.kind && open.id === r.id) setOpen(null);
-    const action = r.kind === "gateway" ? () => api.removeGateway(r.id) : () => api.removeNode(r.id);
-    run(`${r.kind}:${r.id}`, "删除中…", action, `已删除 ${r.id}`);
-  };
+  // 删除成功后才离开详情页；失败时留在原处，原因显示在页面上。
+  const remove = (kind: Selection["kind"], id: string, action: () => Promise<unknown>) =>
+    void run(`${kind}:${id}`, "删除中…", action, `已删除 ${id}`).then((ok) => ok && setOpen((o) => (o?.kind === kind && o.id === id ? null : o)));
 
   const created = async (text: string) => {
     setDialog(null);
@@ -109,23 +86,50 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
     await refresh();
   };
 
-  const gatewayActions = (g: Gateway) => ({
+  const gatewayActions = (g: Gateway): GatewayActions => ({
     up: () => run(`gateway:${g.id}`, "启动中…", () => api.gatewayUp(g.id), `网关 ${g.id} 已就绪`),
-    down: (force: boolean) => run(`gateway:${g.id}`, "停止中…", () => api.gatewayDown(g.id, force), `已停止网关 ${g.id}`),
+    // 有槽位在运行时停止网关会使它们断网：先确认，确认后强制停止。
+    down: () => {
+      const running = (state?.slots ?? []).filter((s) => s.gateway === g.id && (s.state === "ready" || s.state === "pending" || s.state === "offline")).map((s) => s.id);
+      const down = () => run(`gateway:${g.id}`, "停止中…", () => api.gatewayDown(g.id, running.length > 0), `已停止网关 ${g.id}`);
+      if (!running.length) return void down();
+      confirm({ title: `停止网关 ${g.id}？`, text: `槽位 ${running.join("、")} 正在运行，停止网关后这些槽位将断网。`, action: "停止", onConfirm: down });
+    },
     note: () => setNoting({ kind: "gateways", what: "网关", id: g.id, note: g.note }),
-    remove: () => setRemoving({ kind: "gateway", id: g.id, note: g.slots.length ? `仍有槽位使用该网关（${g.slots.join("、")}），请先删除这些槽位。` : "将删除网关容器及其配置。" }),
+    // 接口只删除配置，容器还在时会拒绝：这里先停止并删除容器。
+    remove: () => {
+      const hasContainer = g.container !== "absent" && g.container !== "unknown";
+      confirm({
+        title: `删除网关 ${g.id}？`,
+        text: g.slots.length ? `槽位 ${g.slots.join("、")} 仍在使用该网关，请先删除这些槽位。` : hasContainer ? "将停止并删除网关容器及其配置。" : "将删除该网关的配置。",
+        action: "删除",
+        blocked: g.slots.length > 0,
+        onConfirm: () =>
+          remove("gateway", g.id, async () => {
+            if (hasContainer) await api.gatewayDown(g.id, false);
+            return api.removeGateway(g.id);
+          }),
+      });
+    },
   });
-  const nodeActions = (n: NodeInfo) => ({
-    resolve: () => run(`node:${n.id}`, "解析中…", () => api.resolveNode(n.id), (r) => `${n.id} 的首跳地址：${(r as { data: { connect_ipv4: string } }).data.connect_ipv4}`),
+  const nodeActions = (n: NodeInfo): NodeActions => ({
+    resolve: () => run(`node:${n.id}`, "解析中…", () => api.resolveNode(n.id), (r) => `${n.id} 的首跳地址：${r.data.connect_ipv4}`),
     report: () => run(`node:${n.id}`, "检测中…", () => api.nodeReport(n.id), `已更新 ${n.id} 的出口评估`),
     note: () => setNoting({ kind: "nodes", what: "节点", id: n.id, note: n.note }),
-    remove: () => setRemoving({ kind: "node", id: n.id, note: n.used_by.length ? `该节点正被 ${n.used_by.join("、")} 使用，请先解除使用。` : "该节点未被使用。" }),
+    remove: () =>
+      confirm({
+        title: `删除节点 ${n.id}？`,
+        text: n.used_by.length ? `该节点正被 ${n.used_by.join("、")} 使用，请先解除使用。` : "将删除该节点的配置。",
+        action: "删除",
+        blocked: n.used_by.length > 0,
+        onConfirm: () => remove("node", n.id, () => api.removeNode(n.id)),
+      }),
   });
 
   const alerts = (
     <>
       {loadError && <ErrorBox text={loadError} />}
-      {failure && <ErrorBox text={failure.text} log={failure.log} onClose={() => setFailure(null)} />}
+      <ActionNotice />
     </>
   );
 
@@ -141,18 +145,6 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
           toast(text);
           void refresh();
         }}
-      />
-      <Dialog
-        open={!!removing}
-        onClose={() => setRemoving(null)}
-        title={`删除 ${removing?.id ?? ""}？`}
-        description={removing?.note}
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setRemoving(null)}>取消</Button>
-            <Button variant="destructive" onClick={() => removing && remove(removing)}>删除</Button>
-          </>
-        }
       />
     </>
   );
@@ -237,13 +229,12 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
   );
 }
 
-type GatewayActions = { up: () => void; down: (force: boolean) => void; note: () => void; remove: () => void };
+type GatewayActions = { up: () => void; down: () => void; note: () => void; remove: () => void };
 type NodeActions = { resolve: () => void; report: () => void; note: () => void; remove: () => void };
 
-function gatewayMenu(g: Gateway, a: GatewayActions): (MenuEntry | "sep")[] {
+function gatewayMenu(_g: Gateway, a: GatewayActions): (MenuEntry | "sep")[] {
   return [
     { label: "重新应用配置", icon: RefreshCw, onSelect: a.up },
-    { label: "强制停止（槽位将断网）", icon: LogOut, onSelect: () => a.down(true), disabled: g.container !== "running" },
     { label: "备注…", icon: Pencil, onSelect: a.note },
     "sep",
     { label: "删除…", icon: Trash2, danger: true, onSelect: a.remove },
@@ -272,7 +263,7 @@ function GatewayBadges({ g }: { g: Gateway }) {
 
 function GatewayToggle({ g, a, busy, size = "sm" }: { g: Gateway; a: GatewayActions; busy?: string; size?: "sm" | "default" }) {
   if (busy) return <Button variant="outline" size={size} disabled><Loader2 className="spin" />{busy}</Button>;
-  if (g.container === "running") return <Button variant="outline" size={size} onClick={() => a.down(false)}><Power />停止</Button>;
+  if (g.container === "running") return <Button variant="outline" size={size} onClick={a.down}><Power />停止</Button>;
   return <Button variant={size === "sm" ? "success" : "default"} size={size} onClick={a.up} disabled={g.container === "unknown"}><Play />启动</Button>;
 }
 
@@ -542,6 +533,7 @@ function GatewayDetail({ g, state, busy, a, alerts, back, refresh }: DetailCommo
 /** 更换一个网关的中转：按点选的顺序，第一个是主用的，其余是备用。 */
 function TransitDialog({ open, g, state, onClose, onChanged }: { open: boolean; g: Gateway; state: State; onClose: () => void; onChanged: () => Promise<void> }) {
   const toast = useToast();
+  const { setNotice } = useActions();
   const transits = state.nodes.filter((n) => n.role === "transit");
   const [picked, setPicked] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -559,11 +551,12 @@ function TransitDialog({ open, g, state, onClose, onChanged }: { open: boolean; 
     try {
       const r = (await api.setTransits(g.id, picked, skipCheck)).data;
       const failed = Object.keys(r.failed ?? {});
-      if (!r.reloaded) toast(`网关 ${g.id} 的中转已更换，下次启动时生效。`);
-      else if (failed.length) toast(`中转已更换，但槽位 ${failed.join("、")} 更换后未通过出口核对，请排查后重新启动。`);
-      else toast(`网关 ${g.id} 的中转已更换并生效，已重新核对 ${r.rechecked.length} 个槽位的出口。`);
       await onChanged();
       onClose();
+      if (!r.reloaded) toast(`网关 ${g.id} 的中转已更换，下次启动时生效。`);
+      // 未通过核对需要后续处理：留在页面上，不放进短暂的提示条。
+      else if (failed.length) setNotice({ tone: "warning", text: `网关 ${g.id} 的中转已更换，但槽位 ${failed.join("、")} 更换后未通过出口核对，请排查后重新启动这些槽位。` });
+      else toast(`网关 ${g.id} 的中转已更换并生效，已重新核对 ${r.rechecked.length} 个槽位的出口。`);
     } catch (e) {
       setError(errorText(e));
     } finally {

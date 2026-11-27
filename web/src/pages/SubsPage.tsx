@@ -2,7 +2,8 @@
 // 版面与样式取自 Resin（MIT）webui 的订阅页与节点池页（卡片、筛选栏、数据表），内容是本项目的。
 import { FileText, Gauge, Loader2, Pencil, Plus, RefreshCw, Rss, Trash2 } from "lucide-react";
 import type React from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActionNotice, useActions, type Notice } from "@/components/Actions";
 import { Flag, RegionIcon, regionName } from "@/components/Flag";
 import { Field, FormGrid } from "@/components/Form";
 import { Menu, type MenuEntry } from "@/components/Menu";
@@ -13,7 +14,7 @@ import { Badge, Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
-import { ApiError, ID_HINT, NOTE_MAX, api, errorText, type Delay, type RefreshResult, type Role, type State, type Sub } from "@/lib/api";
+import { ID_HINT, NOTE_MAX, api, errorText, type Delay, type RefreshResult, type Role, type State, type Sub } from "@/lib/api";
 import { relativeTime } from "@/lib/utils";
 
 interface Props {
@@ -22,7 +23,6 @@ interface Props {
   refresh: () => Promise<void>;
 }
 
-type Failure = { text: string; log: string[] } | null;
 type Editing = { mode: "add" } | { mode: "edit"; sub: Sub } | null;
 
 const roleText: Record<Role, string> = { transit: "中转", landing: "落地" };
@@ -41,13 +41,18 @@ function skippedText(n?: number): string {
   return n ? `，另有 ${n} 行无法识别` : "";
 }
 
-/** 刷新或修改来源之后给用户的一句话。 */
+/** 刷新或修改来源之后的提示。 */
 function refreshText(id: string, d: RefreshResult): string {
   const parts = [`订阅 ${id} 共 ${d.Total} 个节点${skippedText(d.Skipped)}`];
   if (d.Updated?.length) parts.push(`已更新节点 ${d.Updated.join("、")}（重新启动网关或槽位后生效）`);
   if (d.Renamed?.length) parts.push(`${d.Renamed.join("、")} 在订阅中已改名，已同步更新`);
-  if (d.Missing?.length) parts.push(`订阅中已无 ${d.Missing.join("、")} 对应的节点，这些节点保持不变`);
   return parts.join("；");
+}
+
+/** 刷新后订阅中已找不到的节点：需要使用者处理，留在页面上，不放进短暂的提示条。 */
+function missingNotice(id: string, d: RefreshResult): Notice | null {
+  if (!d.Missing?.length) return null;
+  return { tone: "warning", text: `订阅 ${id} 中已无 ${d.Missing.join("、")} 对应的节点。这些节点保持不变，不再随订阅更新；如已失效，请在“节点与网关”页更换或删除。` };
 }
 
 interface SubActions {
@@ -81,36 +86,32 @@ function SubBadges({ s }: { s: Sub }) {
 
 export function SubsPage({ state, loadError, refresh }: Props) {
   const toast = useToast();
-  const [busy, setBusy] = useState<Record<string, string>>({});
-  const [failure, setFailure] = useState<Failure>(null);
+  const { busy: allBusy, run: runAction, setNotice, confirm } = useActions();
+  const busy = (id: string): string | undefined => allBusy[`sub:${id}`];
+  const run = <T,>(id: string, label: string, action: () => Promise<T>, done?: string | ((r: T) => string)) => runAction(`sub:${id}`, label, action, done);
   const [editing, setEditing] = useState<Editing>(null);
-  const [removing, setRemoving] = useState<Sub | null>(null);
   const [noting, setNoting] = useState<NoteTarget | null>(null);
   /** 打开着详情页的订阅；null 时显示卡片网格。 */
   const [open, setOpen] = useState<string | null>(null);
 
-  const run = async (id: string, label: string, action: () => Promise<unknown>, done?: string | ((r: unknown) => string)) => {
-    setBusy((b) => ({ ...b, [id]: label }));
-    setFailure(null);
-    try {
-      const r = await action();
-      if (done) toast(typeof done === "string" ? done : done(r));
-    } catch (e) {
-      setFailure({ text: errorText(e), log: e instanceof ApiError ? e.log : [] });
-    } finally {
-      setBusy((b) => {
-        const { [id]: _, ...rest } = b;
-        return rest;
-      });
-      refresh();
-    }
-  };
-
   const actions = (s: Sub): SubActions => ({
-    reload: () => run(s.id, s.local ? "解析中…" : "刷新中…", () => api.refreshSub(s.id), (r) => refreshText(s.id, (r as Awaited<ReturnType<typeof api.refreshSub>>).data)),
+    reload: () => {
+      let missing: Notice | null = null;
+      void run(s.id, s.local ? "解析中…" : "刷新中…", () => api.refreshSub(s.id), (r) => {
+        missing = missingNotice(s.id, r.data);
+        return refreshText(s.id, r.data);
+      }).then(() => missing && setNotice(missing));
+    },
     edit: () => setEditing({ mode: "edit", sub: s }),
     note: () => setNoting({ kind: "subs", what: "订阅", id: s.id, note: s.note }),
-    remove: () => setRemoving(s),
+    // 删除成功后才离开详情页；失败时留在原处，原因显示在页面上。
+    remove: () =>
+      confirm({
+        title: `删除订阅 ${s.id}？`,
+        text: "已从该订阅添加的节点不受影响，但不再随订阅更新。",
+        action: "删除",
+        onConfirm: () => void run(s.id, "删除中…", () => api.removeSub(s.id), `已删除订阅 ${s.id}`).then((ok) => ok && setOpen((o) => (o === s.id ? null : o))),
+      }),
     every: (minutes) => run(s.id, "保存中…", () => api.setSubEvery(s.id, minutes), minutes ? `订阅 ${s.id} 已设为${everyText(minutes)}自动刷新` : `订阅 ${s.id} 的自动刷新已关闭`),
   });
 
@@ -120,7 +121,7 @@ export function SubsPage({ state, loadError, refresh }: Props) {
   const alerts = (
     <>
       {loadError && <ErrorBox text={loadError} />}
-      {failure && <ErrorBox text={failure.text} log={failure.log} onClose={() => setFailure(null)} />}
+      <ActionNotice />
     </>
   );
 
@@ -129,11 +130,12 @@ export function SubsPage({ state, loadError, refresh }: Props) {
       <SourceDialog
         editing={editing}
         onClose={() => setEditing(null)}
-        onDone={async (id, text) => {
+        onDone={async (id, text, notice) => {
           setEditing(null);
           setOpen(id);
-          toast(text);
           await refresh();
+          toast(text);
+          if (notice) setNotice(notice);
         }}
       />
       <NoteDialog
@@ -145,35 +147,13 @@ export function SubsPage({ state, loadError, refresh }: Props) {
           void refresh();
         }}
       />
-      <Dialog
-        open={!!removing}
-        onClose={() => setRemoving(null)}
-        title={`删除订阅 ${removing?.id ?? ""}？`}
-        description="已从该订阅添加的节点不受影响，但不再随订阅更新。"
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setRemoving(null)}>取消</Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                const s = removing!;
-                setRemoving(null);
-                if (open === s.id) setOpen(null);
-                run(s.id, "删除中…", () => api.removeSub(s.id), `已删除订阅 ${s.id}`);
-              }}
-            >
-              删除
-            </Button>
-          </>
-        }
-      />
     </>
   );
 
   if (state && current) {
     return (
       <>
-        <SubDetail key={current.id} s={current} state={state} busy={busy[current.id]} a={actions(current)} alerts={alerts} refresh={refresh} onBack={() => setOpen(null)} />
+        <SubDetail key={current.id} s={current} state={state} busy={busy(current.id)} a={actions(current)} alerts={alerts} refresh={refresh} onBack={() => setOpen(null)} />
         {dialogs}
       </>
     );
@@ -202,7 +182,7 @@ export function SubsPage({ state, loadError, refresh }: Props) {
 
         {!!subs.length && (
           <div className="tile-grid">
-            {subs.map((s) => <SubTile key={s.id} s={s} busy={busy[s.id]} a={actions(s)} onOpen={() => setOpen(s.id)} />)}
+            {subs.map((s) => <SubTile key={s.id} s={s} busy={busy(s.id)} a={actions(s)} onOpen={() => setOpen(s.id)} />)}
           </div>
         )}
       </Card>
@@ -258,6 +238,8 @@ function SubDetail({ s, state, busy, a, alerts, refresh, onBack }: { s: Sub; sta
   const [error, setError] = useState("");
   const [via, setVia] = useState("");
   const [testedVia, setTestedVia] = useState<string | null>(null);
+  const shownVia = useRef(testedVia);
+  shownVia.current = testedVia;
   const [testing, setTesting] = useState(false);
   const [picked, setPicked] = useState<Delay | null>(null);
 
@@ -269,21 +251,32 @@ function SubDetail({ s, state, busy, a, alerts, refresh, onBack }: { s: Sub; sta
   const [hideInfo, setHideInfo] = useState(true);
   const [showAll, setShowAll] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (keep: boolean) => {
     try {
-      setNodes(await api.subNodes(s.id));
-      setTestedVia(null);
+      const fresh = await api.subNodes(s.id);
+      if (keep && shownVia.current) {
+        // 正在显示经落地测试的结果（未保存）：只同步“已添加为”一列，延迟保持不变。
+        const added = new Map(fresh.map((d) => [`${d.name}\n${d.server}`, d.nodes]));
+        setNodes((cur) => cur?.map((d) => ({ ...d, nodes: added.get(`${d.name}\n${d.server}`) })) ?? fresh);
+      } else {
+        setNodes(fresh);
+        if (!keep) setTestedVia(null);
+      }
       setError("");
     } catch (e) {
       setError(errorText(e));
     }
   }, [s.id]);
 
-  // 订阅刷新过、测过延迟，或者登记的节点有变化时，重新读一遍。
+  // 订阅刷新过（节点表变了）时整表重读；只是测过延迟或添加的节点有变化时，保留正在显示的测试结果。
   const registered = state.nodes.length;
+  const seen = useRef("");
   useEffect(() => {
-    void load();
-  }, [load, s.fetched_at, s.tested_at, registered]);
+    const version = `${s.id}\n${s.fetched_at}`;
+    const keep = seen.current === version;
+    seen.current = version;
+    void load(keep);
+  }, [load, s.id, s.fetched_at, s.tested_at, registered]);
 
   const test = async () => {
     setTesting(true);
@@ -589,7 +582,7 @@ hysteria2://…  socks5://用户:密码@地址:端口  http://地址:端口
 也可粘贴 base64 订阅的内容，或完整的 Clash 配置（含 proxies 列表）。`;
 
 /** 添加订阅，或修改一个订阅的来源。现有的地址和内容不显示：换地址就填新的，本地订阅可以往后追加或整体替换。 */
-function SourceDialog({ editing, onClose, onDone }: { editing: Editing; onClose: () => void; onDone: (id: string, text: string) => void }) {
+function SourceDialog({ editing, onClose, onDone }: { editing: Editing; onClose: () => void; onDone: (id: string, text: string, notice?: Notice | null) => void }) {
   const sub = editing?.mode === "edit" ? editing.sub : null;
   const [id, setId] = useState("");
   const [note, setNote] = useState("");
@@ -623,7 +616,7 @@ function SourceDialog({ editing, onClose, onDone }: { editing: Editing; onClose:
       const source = kind === "url" ? { url: url.trim() } : { content };
       if (sub) {
         const r = await api.setSubSource(sub.id, kind === "content" && canAppend && append ? { content, append: true } : source);
-        onDone(sub.id, refreshText(sub.id, r.data));
+        onDone(sub.id, refreshText(sub.id, r.data), missingNotice(sub.id, r.data));
       } else {
         const r = await api.addSub(id.trim(), source, note.trim());
         onDone(r.data.id, `已添加订阅 ${r.data.id}：${r.data.count} 个节点${skippedText(r.data.skipped)}。`);

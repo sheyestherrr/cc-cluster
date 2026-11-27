@@ -2,7 +2,8 @@
 // “卡片网格 + 详情页”的版面和样式取自 Resin（MIT）webui 的 features/platforms/PlatformPage.tsx 与 PlatformDetailPage.tsx，内容是本项目的。
 import { ArrowRight, Ban, Box, Loader2, Pencil, Play, Plus, Power, RefreshCw, RotateCw, ShieldCheck, Sparkles, Terminal, Trash2 } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { ActionNotice, useActions } from "@/components/Actions";
 import { CopyButton } from "@/components/CopyButton";
 import { ExitCard } from "@/components/ExitCard";
 import { RegionIcon } from "@/components/Flag";
@@ -16,7 +17,7 @@ import { Badge, Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
-import { ApiError, ID_HINT, NOTE_MAX, api, errorText, type Delay, type History, type Slot, type SlotInput, type SlotLive, type SlotState, type State } from "@/lib/api";
+import { ID_HINT, NOTE_MAX, api, errorText, type Delay, type History, type Slot, type SlotInput, type SlotLive, type SlotState, type State } from "@/lib/api";
 import { usePolling } from "@/lib/live";
 import { formatBytes, rateText, relativeTime } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ interface Props {
   loadError: string | null;
   refresh: () => Promise<void>;
   goNetwork: () => void;
+  goSubs: () => void;
   /** 打开着详情页的槽位；null 时显示卡片网格。 */
   open: string | null;
   setOpen: (id: string | null) => void;
@@ -40,7 +42,8 @@ export const stateText: Record<SlotState, string> = {
   unknown: "状态未知",
 };
 
-type Failure = { text: string; log: string[] } | null;
+/** 还不能新建槽位时的说明：槽位需要一个出口。 */
+const NEED_EXIT = "请先在“节点与网关”页添加落地节点与网关，或在“订阅管理”页添加订阅";
 
 const isWired = (s: Slot) => s.state === "ready" || s.state === "pending";
 const isRunning = (s: Slot) => isWired(s) || s.state === "offline";
@@ -84,10 +87,11 @@ function MainAction({ s, a, busy, size = "sm" }: { s: Slot; a: Actions; busy?: s
   return <Button variant={size === "sm" ? "success" : "default"} size={size} onClick={() => a.up(s)} disabled={s.state === "unknown"}><Play />启动</Button>;
 }
 
-export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen }: Props) {
+export function SlotsPage({ state, loadError, refresh, goNetwork, goSubs, open, setOpen }: Props) {
   const toast = useToast();
-  const [busy, setBusy] = useState<Record<string, string>>({});
-  const [failure, setFailure] = useState<Failure>(null);
+  const { busy: allBusy, run: runAction, setNotice, confirm } = useActions();
+  const busy = (id: string): string | undefined => allBusy[`slot:${id}`];
+  const run = <T,>(s: Slot, label: string, action: () => Promise<T>, done?: string | ((r: T) => string)) => runAction(`slot:${s.id}`, label, action, done);
   const [adding, setAdding] = useState(false);
   const [entering, setEntering] = useState<Slot | null>(null);
   const [deleting, setDeleting] = useState<Slot | null>(null);
@@ -97,26 +101,13 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
   const traffic = usePolling(api.traffic, 5000);
   const history = usePolling(() => api.history(24), 60_000);
 
-  const run = async (s: Slot, label: string, action: () => Promise<unknown>, done?: string | ((r: unknown) => string)) => {
-    setBusy((b) => ({ ...b, [s.id]: label }));
-    setFailure(null);
-    try {
-      const r = await action();
-      if (done) toast(typeof done === "string" ? done : done(r));
-    } catch (e) {
-      setFailure({ text: errorText(e), log: e instanceof ApiError ? e.log : [] });
-    } finally {
-      setBusy((b) => {
-        const { [s.id]: _, ...rest } = b;
-        return rest;
-      });
-      refresh();
-    }
-  };
-
   const actions: Actions = {
-    up: (s, recreate = false) => run(s, recreate ? "重建中…" : "启动中…", () => api.slotUp(s.id, recreate), (r) => `${s.id} 已接线，出口 ${(r as { data: { exit: string } }).data.exit}`),
-    stop: (s) => run(s, "停止中…", () => api.slotStop(s.id), `已停止 ${s.id}`),
+    up: (s, recreate = false) => {
+      const up = () => run(s, recreate ? "重建中…" : "启动中…", () => api.slotUp(s.id, recreate), (r) => `${s.id} 已接线，出口 ${r.data.exit}`);
+      if (!recreate) return void up();
+      confirm({ title: `重建槽位 ${s.id} 的 worker？`, text: "将删除并重新创建 worker 容器，槽内正在运行的程序会中断。HOME 与身份保留。", action: "重建", onConfirm: up });
+    },
+    stop: (s) => confirm({ title: `停止槽位 ${s.id}？`, text: "将停止 worker 容器并断开接线，槽内正在运行的程序会中断。", action: "停止", onConfirm: () => run(s, "停止中…", () => api.slotStop(s.id), `已停止 ${s.id}`) }),
     hold: (s) => run(s, "断网中…", () => api.slotHold(s.id, "通过网页界面手动断网"), `已断开 ${s.id} 的网络`),
     release: (s) => run(s, "解除中…", () => api.slotRelease(s.id), `已解除 ${s.id} 的手动断网，启动后恢复网络`),
     enter: setEntering,
@@ -137,7 +128,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
     <>
       {loadError && <ErrorBox text={loadError} />}
       {state?.docker_error && <ErrorBox text={`无法连接 Docker，以下仅显示配置，状态未知：${state.docker_error}`} />}
-      {failure && <ErrorBox text={failure.text} log={failure.log} onClose={() => setFailure(null)} />}
+      <ActionNotice />
     </>
   );
 
@@ -150,8 +141,10 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
           onClose={() => setAdding(false)}
           onCreated={async (id, warnings) => {
             setAdding(false);
-            toast(warnings.length ? `已创建槽位 ${id}。\n${warnings.join("\n")}` : `已创建槽位 ${id}，点击“启动”接线。`);
             await refresh();
+            toast(`已创建槽位 ${id}，点击“启动”接线。`);
+            // 创建时的提醒需要读完并处理，留在页面上，不放进短暂的提示条。
+            if (warnings.length) setNotice({ tone: "warning", text: warnings.join("\n") });
           }}
         />
       )}
@@ -204,8 +197,8 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
               onClick={() => {
                 const s = deleting!;
                 setDeleting(null);
-                if (open === s.id) setOpen(null);
-                run(s, "删除中…", () => api.removeSlot(s.id, purge), `已删除 ${s.id}`);
+                // 删除成功后才离开详情页；失败时留在原处，原因显示在页面上。
+                void run(s, "删除中…", () => api.removeSlot(s.id, purge), `已删除 ${s.id}`).then((ok) => ok && open === s.id && setOpen(null));
               }}
             >
               删除
@@ -221,7 +214,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
   if (current && state) {
     return (
       <>
-        <SlotDetail s={current} state={state} live={traffic?.slots[current.id]} history={history} busy={busy[current.id]} a={actions} alerts={alerts} onBack={() => setOpen(null)} />
+        <SlotDetail s={current} state={state} live={traffic?.slots[current.id]} history={history} busy={busy(current.id)} a={actions} alerts={alerts} onBack={() => setOpen(null)} />
         {dialogs}
       </>
     );
@@ -233,16 +226,10 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
         title="槽位"
         subtitle="管理槽位，查看状态与出口。"
         actions={
-          <>
-            <Button variant="outline" onClick={() => refresh()}>
-              <RefreshCw />
-              刷新
-            </Button>
-            <Button onClick={() => setAdding(true)} disabled={!canAdd} title={canAdd ? undefined : "请先在“节点与网关”中添加订阅，或添加落地节点和网关"}>
-              <Plus />
-              新建槽位
-            </Button>
-          </>
+          <Button onClick={() => setAdding(true)} disabled={!canAdd} title={canAdd ? undefined : NEED_EXIT}>
+            <Plus />
+            新建槽位
+          </Button>
         }
       />
       {alerts}
@@ -254,14 +241,21 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
           <div className="empty-box plain flex-col !gap-3 !py-12">
             <Sparkles size={20} />
             <p className="text-[15px] font-semibold text-fg">暂无槽位</p>
-            <p className="max-w-[460px] text-center text-[13px]">{canAdd ? "新建槽位时选择出口（自己的落地，或订阅中的节点），并指定要挂载的项目目录。" : "请先在“节点与网关”中添加订阅，或添加落地节点和网关。"}</p>
-            <Button onClick={canAdd ? () => setAdding(true) : goNetwork}>{canAdd ? "新建槽位" : "前往节点与网关"}</Button>
+            <p className="max-w-[460px] text-center text-[13px]">{canAdd ? "新建槽位时选择出口（自己的落地，或订阅中的节点），并指定要挂载的项目目录。" : `${NEED_EXIT}。`}</p>
+            {canAdd ? (
+              <Button onClick={() => setAdding(true)}>新建槽位</Button>
+            ) : (
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button onClick={goNetwork}>前往“节点与网关”</Button>
+                <Button variant="outline" onClick={goSubs}>前往“订阅管理”</Button>
+              </div>
+            )}
           </div>
         )}
 
         {slots && slots.length > 0 && (
           <div className="tile-grid">
-            {slots.map((s) => <SlotTile key={s.id} s={s} state={state!} live={traffic?.slots[s.id]} busy={busy[s.id]} a={actions} onOpen={() => setOpen(s.id)} />)}
+            {slots.map((s) => <SlotTile key={s.id} s={s} state={state!} live={traffic?.slots[s.id]} busy={busy(s.id)} a={actions} onOpen={() => setOpen(s.id)} />)}
           </div>
         )}
       </Card>
@@ -603,20 +597,28 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
   const [dsub, setDsub] = useState("");
   const [dname, setDname] = useState("");
   const [dnodes, setDnodes] = useState<Delay[] | null>(null);
+  const [dfailed, setDfailed] = useState("");
 
-  const loadDirect = async (sub: string) => {
-    setDsub(sub);
+  // 直出时读取所选订阅的可用节点。订阅换得快时，较早发出的请求后到，其结果丢弃。
+  useEffect(() => {
     setDname("");
     setDnodes(null);
-    if (!sub) return;
-    try {
-      const all = (await api.subNodes(sub)).filter((d) => !d.info && d.delay_ms >= 0);
-      setDnodes(all);
-      setDname(all[0]?.name ?? "");
-    } catch (e) {
-      setError(errorText(e));
-    }
-  };
+    setDfailed("");
+    if (!open || !direct || !dsub) return;
+    let stale = false;
+    api.subNodes(dsub).then(
+      (all) => {
+        if (stale) return;
+        const usable = all.filter((d) => !d.info && d.delay_ms >= 0);
+        setDnodes(usable);
+        setDname(usable[0]?.name ?? "");
+      },
+      (e) => !stale && setDfailed(errorText(e)),
+    );
+    return () => {
+      stale = true;
+    };
+  }, [open, direct, dsub]);
 
   // 每次打开时重置表单，并预选第一个网关和落地。
   if (open !== wasOpen) {
@@ -625,9 +627,8 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
       setSlot({ ...emptySlot(), gateway: state.gateways[0]?.id ?? "", landing: landings[0]?.id ?? "" });
       setMounts("");
       setError("");
-      const noLanding = landings.length === 0 && state.subs.length > 0;
-      setDirect(noLanding);
-      void loadDirect(noLanding ? state.subs[0].id : "");
+      setDirect(landings.length === 0 && state.subs.length > 0);
+      setDsub(state.subs[0]?.id ?? "");
     }
   }
 
@@ -678,11 +679,7 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
               <Select
                 aria-label="出口的来源"
                 value={direct ? "direct" : "landing"}
-                onChange={(e) => {
-                  const d = e.target.value === "direct";
-                  setDirect(d);
-                  if (d && !dsub && state.subs[0]) void loadDirect(state.subs[0].id);
-                }}
+                onChange={(e) => setDirect(e.target.value === "direct")}
               >
                 <option value="landing">使用自己的落地（固定的出口地址）</option>
                 <option value="direct">直出：直接使用订阅中的节点作为出口</option>
@@ -691,12 +688,14 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
             {!direct && (
               <>
                 <Field label="网关" hint={gateway?.transit ? "流量经中转到达落地，由落地出站；落地无法连接时槽位无网络，不会改由中转出站。" : undefined}>
-                  <Select aria-label="网关" value={slot.gateway} onChange={(e) => setSlot({ ...slot, gateway: e.target.value })}>
+                  <Select aria-label="网关" value={slot.gateway} disabled={!state.gateways.length} onChange={(e) => setSlot({ ...slot, gateway: e.target.value })}>
+                    {!state.gateways.length && <option value="">暂无网关，请先在“节点与网关”页新建</option>}
                     {state.gateways.map((g) => <option key={g.id} value={g.id}>{g.id}（{g.transit ? `中转 ${g.transit}` : "不经中转"}，已有 {g.slots.length} 个槽位）</option>)}
                   </Select>
                 </Field>
                 <Field label="落地" warn={sharing > 0 ? `该落地已绑定 ${sharing} 个槽位，它们的出口地址相同；同一落地最多同时为 ${state.landing_limit} 个槽位接线。` : undefined}>
-                  <Select aria-label="落地" value={slot.landing} onChange={(e) => setSlot({ ...slot, landing: e.target.value })}>
+                  <Select aria-label="落地" value={slot.landing} disabled={!landings.length} onChange={(e) => setSlot({ ...slot, landing: e.target.value })}>
+                    {!landings.length && <option value="">暂无落地节点，请先在“节点与网关”页添加</option>}
                     {landings.map((n) => <option key={n.id} value={n.id}>{n.id}（{n.type}，{n.server}:{n.port}）</option>)}
                   </Select>
                 </Field>
@@ -705,15 +704,16 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
             {direct && (
               <>
                 <Field label="订阅">
-                  <Select aria-label="订阅" value={dsub} onChange={(e) => void loadDirect(e.target.value)}>
+                  <Select aria-label="订阅" value={dsub} disabled={!state.subs.length} onChange={(e) => setDsub(e.target.value)}>
                     {state.subs.length === 0 && <option value="">暂无订阅，请先在“订阅管理”页添加</option>}
                     {state.subs.map((s) => <option key={s.id} value={s.id}>{s.id}（{s.count} 个节点）</option>)}
                   </Select>
                 </Field>
-                <Field label="节点">
-                  <Select aria-label="作为出口的节点" value={dname} disabled={!dnodes} onChange={(e) => setDname(e.target.value)}>
-                    {!dnodes && <option value="">加载中…</option>}
-                    {dnodes?.map((d) => <option key={d.name} value={d.name}>{d.delay_ms > 0 ? `${d.delay_ms} ms` : "未测试"} · {d.name}</option>)}
+                <Field label="节点" warn={dfailed ? `无法读取该订阅的节点：${dfailed}` : dnodes?.length === 0 ? "该订阅中没有可用的节点，请先在“订阅管理”页测试延迟。" : undefined}>
+                  <Select aria-label="作为出口的节点" value={dname} disabled={!dnodes?.length} onChange={(e) => setDname(e.target.value)}>
+                    {!dnodes && <option value="">{dfailed ? "读取失败" : dsub ? "加载中…" : "请先选择订阅"}</option>}
+                    {dnodes?.length === 0 && <option value="">无可用节点</option>}
+                    {dnodes?.map((d, i) => <option key={`${i}:${d.name}`} value={d.name}>{d.delay_ms > 0 ? `${d.delay_ms} ms` : "未测试"} · {d.name}</option>)}
                   </Select>
                 </Field>
                 <div className="callout callout-warning field-span-2">
