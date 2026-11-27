@@ -60,19 +60,28 @@ func IsNotFound(err error) bool {
 	return errors.As(err, &e) && e.Status == http.StatusNotFound
 }
 
-// New 连接 Docker 守护进程并协商 API 版本。
+// SocketPath 返回 host 指定的 Docker socket 路径。
 // host 为空时取环境变量 DOCKER_HOST，再为空则用默认 socket；只支持 unix:// 形式。
-func New(ctx context.Context, host string) (*Client, error) {
+func SocketPath(host string) (string, error) {
 	if host == "" {
 		host = os.Getenv("DOCKER_HOST")
 	}
-	sock := defaultSocket
-	if host != "" {
-		p, ok := strings.CutPrefix(host, "unix://")
-		if !ok {
-			return nil, fmt.Errorf("仅支持 unix:// 形式的 Docker 地址，当前为 %q", host)
-		}
-		sock = p
+	if host == "" {
+		return defaultSocket, nil
+	}
+	p, ok := strings.CutPrefix(host, "unix://")
+	if !ok {
+		return "", fmt.Errorf("仅支持 unix:// 形式的 Docker 地址，当前为 %q", host)
+	}
+	return p, nil
+}
+
+// New 连接 Docker 守护进程并协商 API 版本。
+// host 的含义见 SocketPath。
+func New(ctx context.Context, host string) (*Client, error) {
+	sock, err := SocketPath(host)
+	if err != nil {
+		return nil, err
 	}
 	c := &Client{http: &http.Client{Transport: &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {

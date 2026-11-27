@@ -90,6 +90,20 @@ func TestCheckMountSource(t *testing.T) {
 	}
 }
 
+func TestCheckMountSocket(t *testing.T) {
+	sockets := []string{"/var/run/docker.sock", "/run/user/1000/docker.sock", ""}
+	for _, bad := range []string{"/var/run/docker.sock", "/var/run", "/var/run/", "/var", "/run/user/1000", "/run", "/"} {
+		if CheckMountSocket(bad, sockets...) == nil {
+			t.Errorf("%s 应被拒绝", bad)
+		}
+	}
+	for _, ok := range []string{"/var/runner", "/var/run/other", "/data/repo", "/run/user/1001"} {
+		if err := CheckMountSocket(ok, sockets...); err != nil {
+			t.Errorf("%s 应被接受: %v", ok, err)
+		}
+	}
+}
+
 func TestLinkNameAndDefaultDir(t *testing.T) {
 	home := "/home/user"
 	if n, ok := LinkName("/home/pi/project", home); !ok || n != "project" {

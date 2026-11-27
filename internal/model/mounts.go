@@ -81,6 +81,25 @@ func CheckMountSource(source string, protected ...string) error {
 	return nil
 }
 
+// CheckMountSocket 检查一个挂载源：它不能是 sockets 中某个路径本身或其上级。
+// sockets 是宿主上 Docker 守护进程的 socket：能访问它就能在宿主上创建任意容器，等于离开了隔离。
+// Slot.Validate 只能按文件名拦住 socket 本身；挂载它所在的目录（如 /var/run）同样会把它带进 worker。
+func CheckMountSocket(source string, sockets ...string) error {
+	source = filepath.Clean(source)
+	for _, s := range sockets {
+		if s == "" {
+			continue
+		}
+		if s = filepath.Clean(s); under(s, source) {
+			if s == source {
+				return fmt.Errorf("不允许将 Docker socket（%s）挂载到 worker", source)
+			}
+			return fmt.Errorf("不能挂载 %s：该目录包含 Docker socket（%s），请挂载具体的项目目录", source, s)
+		}
+	}
+	return nil
+}
+
 // LinkName 返回一个挂载在槽位 HOME 下的快捷方式的名字：挂载目标的最后一段。
 // 目标本来就在 HOME 里、或名字以点开头（会与配置目录混在一起）时不建快捷方式。
 func LinkName(target, home string) (string, bool) {

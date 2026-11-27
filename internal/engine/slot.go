@@ -415,10 +415,7 @@ func (e *Engine) AddSlot(ctx context.Context, sl model.Slot, opt SlotOptions) (o
 		}
 	}
 	for _, m := range sl.Mounts {
-		if _, err := os.Stat(m.Source); err != nil {
-			return sl, nil, fmt.Errorf("挂载源 %s 不可用：%w", m.Source, err)
-		}
-		if err := model.CheckMountSource(m.Source, e.ProtectedPaths()...); err != nil {
+		if err := e.checkMountSource(m.Source); err != nil {
 			return sl, nil, err
 		}
 		if err := model.CheckMountTarget(m.Target, ident.Home()); err != nil {
@@ -701,8 +698,9 @@ func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.
 	}
 	for _, m := range slot.Mounts {
 		// 挂载源不存在时 Docker 会以 root 身份在宿主上把它建出来，所以先自己检查。
-		if _, err := os.Stat(m.Source); err != nil {
-			return none, fmt.Errorf("槽位 %s 的挂载源 %s 不可用：%w", slot.ID, m.Source, err)
+		// 登记时检查过的路径之后可能被换成符号链接，每次都按它实际指向的位置重新核对。
+		if err := e.checkMountSource(m.Source); err != nil {
+			return none, fmt.Errorf("槽位 %s：%w", slot.ID, err)
 		}
 		if err := model.CheckMountTarget(m.Target, ident.Home()); err != nil {
 			return none, fmt.Errorf("槽位 %s：%w", slot.ID, err)
@@ -1358,7 +1356,7 @@ func (e *Engine) SlotAddWorkspace(id, dir string) (err error) {
 	if err := model.CheckMountTarget(dir, ident.Home()); err != nil {
 		return err
 	}
-	if err := model.CheckMountSource(dir, e.ProtectedPaths()...); err != nil {
+	if err := e.checkMountSource(dir); err != nil {
 		return err
 	}
 	sl.Mounts = model.AddWorkspace(sl.Mounts, dir)
