@@ -1,24 +1,24 @@
 # 从源码构建与开发
 
-需要 Go 1.23 以上；网页界面另外需要 Node.js 24 与 pnpm。
+需要 Go 1.23 及以上；构建网页界面另需 Node.js 24 与 pnpm。
 
 ```sh
 make check          # go vet、gofmt 检查、单元测试；不需要 Docker
-make lint           # staticcheck（要另外安装：go install honnef.co/go/tools/cmd/staticcheck@latest）
+make lint           # staticcheck（需另行安装：go install honnef.co/go/tools/cmd/staticcheck@latest）
 make web-test       # 前端的单元测试（Node.js 自带的测试运行器）
-make build          # bin/cc-cluster（没有执行过 make web 时不带网页界面）
-make release        # make web + make build：带网页界面的单个二进制
+make build          # bin/cc-cluster（未执行 make web 时不含网页界面）
+make release        # make web + make build：含网页界面的单个二进制
 make images         # 网关镜像与 worker 镜像
-make e2e            # 端到端测试：需要 Docker 与两个镜像，只用 internal 网络和假节点
+make e2e            # 端到端测试：需要 Docker 与两个镜像，只使用 internal 网络和模拟节点
 make dist           # 各平台的发布包与校验和
 make repo-check     # 敏感信息检查：订阅地址、代理密码、数据目录等是否被提交
 ```
 
-不想用发布的镜像时在本机构建（只需要 docker 和 make），`cc-cluster init` 不带镜像参数时默认就用这两个：
+不使用发布的镜像时可在本机构建（只需要 docker 和 make）；`cc-cluster init` 不带镜像参数时，源码构建的版本默认使用这两个镜像：
 
 ```sh
 make image-gateway       # 得到 cc-cluster-gateway:dev
-make image-worker        # 得到 cc-cluster-worker:dev，里面的 tmux 按这台机器的 tmux 版本编译
+make image-worker        # 得到 cc-cluster-worker:dev，其中的 tmux 按本机的 tmux 版本编译
 ```
 
 | 路径 | 内容 |
@@ -27,12 +27,12 @@ make image-worker        # 得到 cc-cluster-worker:dev，里面的 tmux 按这�
 | `internal/` | 配置模型、文件状态、编址、核心配置生成、订阅解析、Docker API 客户端、编排、命令行与网页服务 |
 | `web/` | 网页界面的前端源码（React），构建后嵌入二进制 |
 | `images/` | 网关镜像（固定版本的 Mihomo 与监督脚本）和默认的 worker 镜像 |
-| `test/e2e` | 端到端测试与假服务 |
-| `scripts/` | `install.sh` 一键安装；`ci/` 持续集成用的脚本（敏感信息检查、提取更新记录） |
+| `test/e2e` | 端到端测试与模拟服务 |
+| `scripts/` | `install.sh` 安装脚本；`ci/` 持续集成使用的脚本（敏感信息检查、提取更新记录） |
 | `docs/` | 使用文档 |
 
-各部分怎么配合见[架构说明](../ARCHITECTURE.md)。
+各部分的关系见[架构说明](../ARCHITECTURE.md)。
 
-开发在 `dev` 分支，`master` 只接收它的快进；PR 请提到 `dev`。
+开发在 `dev` 分支进行，`master` 只接收它的快进合并；PR 请提交到 `dev`。
 
-版本号是 `v主.次.修订`，预发布写成 `v0.1.0-alpha.1`、`v1.0.0-rc.1`。发版前先在 `CHANGELOG.md` 里写好这个版本的一段（中英文），再在 `master` 上打 `v*` 标签并推送；Release 的说明取自这一段，没有就不会发布。
+版本号为 `v主.次.修订`，预发布版本写作 `v0.1.0-alpha.1`、`v1.0.0-rc.1`。发版前先在 `CHANGELOG.md` 中写好该版本的一段（中英文），再在 `master` 上打 `v*` 标签并推送；Release 的说明取自这一段，缺少时不会发布。

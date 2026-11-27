@@ -13,6 +13,7 @@ One section per release, newest first. Versions follow `vMAJOR.MINOR.PATCH`; pre
 - **镜像默认不随 `cc-cluster` 更新**：修改镜像设置会使运行中的槽位变为“配置待应用”，因此改为按需更新。`cc-cluster update --images` 先拉取新版本的镜像，成功后再修改镜像设置；将网关停止后重新启动，并对槽位执行“重建 worker”后生效。
 - **安装脚本用于升级时不再修改镜像设置**：数据目录已存在时只更新二进制，不拉取镜像。
 - 源码构建的 `cc-cluster` 默认使用本机构建的镜像；版本号带提交信息的构建不再视为正式版。
+- **界面与命令行文案**：网页界面、命令行的提示与报错统一为简明的书面表述。中转的“候选”改称“备用”；“登记”改为“创建”（槽位、网关）或“添加”（节点、订阅）。仅文字变更，命令与参数不变。
 
 升级：v0.0.2 及更早的版本没有 `update` 命令，请重新运行安装命令；之后使用 `cc-cluster update`。
 
@@ -25,6 +26,7 @@ One section per release, newest first. Versions follow `vMAJOR.MINOR.PATCH`; pre
 - **Images are not updated with `cc-cluster` by default**: changing the image setting puts running slots into "配置待应用" (pending), so it is now opt-in. `cc-cluster update --images` pulls the new images first and changes the setting only if the pulls succeed; then stop and start each gateway and use "重建 worker" (recreate worker) on each slot to apply the change.
 - **The install script no longer changes the image setting on upgrade**: if the data directory already exists, it only updates the binary and does not pull images.
 - A `cc-cluster` built from source defaults to locally built images; builds whose version carries commit information are no longer treated as releases.
+- **Wording**: messages in the web UI and the CLI were rewritten to be concise and consistent. "候选" (candidate) transits are now called "备用" (backup); "登记" (register) is now "创建" (create) for slots and gateways and "添加" (add) for nodes and subscriptions. Text only; commands and flags are unchanged.
 
 To upgrade: v0.0.2 and earlier have no `update` command, so run the install command once more. After that, use `cc-cluster update`.
 

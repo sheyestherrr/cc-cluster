@@ -120,14 +120,14 @@ $ cd ~/projects/shop
 $ cc-cluster
 当前目录 /home/you/projects/shop
 
-  1)  work      已接线  日本 东京      主力，上次用的
+  1)  work      已接线  日本 东京      主力，上次使用
   2)  research  已接线  美国 洛杉矶
-  3)  spare     已停止  落地 home-gb   选它会先启动
+  3)  spare     已停止  落地 home-gb   选择后先启动
   w)  网页界面（管理槽位、节点、订阅）
   q)  退出
 
-选哪个？ [1]:
-进去做什么？ 1) Claude  2) 终端 [1]:
+请选择 [1]:
+进入方式：1) Claude  2) 终端 [1]:
 ```
 
 It lists the slots with their state and exit, asks which one, then whether to start Claude Code or a shell. A stopped slot is started first. The last choice is remembered per directory, so next time two Enter presses take you in. The first time Claude Code is started in a slot you are asked whether to install it.
@@ -193,7 +193,7 @@ These documents are in Chinese.
 - **DNS is resolved on the landing side.** Inside a slot, names resolve to mapped addresses in `100.64.0.0/10`; the real resolution is done by the landing node, so the resolver seen from outside is where the landing node is.
 - **Exit assessment.** Starting a slot queries third-party services once, through that slot's chain, for their view of the exit IP (datacentre, proxy and abuse flags). It is for display only and failure does not affect use. These are database opinions, not the verdict of any particular service. Turn the automatic query off on the 系统 (System) page.
 - **A landing node serves at most 5 slots at a time.**
-- **Slots sharing a gateway are affected together.** If the gateway's core crashes, all its slots lose network; a supervisor restarts the core, after which each slot is started again.
+- **Slots sharing a gateway are affected together.** If the gateway's core crashes, all its slots lose network; a supervisor restarts the core and the slots recover automatically.
 - **History is recorded only while the background service runs.** Traffic curves, the check timeline and connection records are written while the web UI (`cc-cluster web`, in the background by default) or `cc-cluster watch` is running. They are kept for 30 days under `history/` in the data directory and include the hosts each slot connected to. Delete that directory if you do not want them.
 - **Claude Code is installed in the slot's own HOME** and persists with it. Installation and updates go out through that slot's exit.
 - **Login uses your own browser.** When logging in to Claude Code inside a slot, the authorisation step happens in the browser where you open the link, over that machine's network, not through the slot's exit. Claude Code's own traffic afterwards goes through the slot's exit.
