@@ -58,8 +58,9 @@ cc-cluster doctor
 手动安装的步骤相同：
 
 ```sh
-# 以 Linux amd64 为例；Releases 中另有 arm64 与 macOS 的安装包。将 V 改为要安装的版本
-V=v0.0.2
+# 以 Linux amd64 为例；Releases 中另有 arm64 与 macOS 的安装包。
+# V 取最新正式版的版本号；安装其他版本时改为 V=vX.Y.Z
+V=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/sheyestherrr/cc-cluster/releases/latest); V=${V##*/}
 curl -LO https://github.com/sheyestherrr/cc-cluster/releases/download/$V/cc-cluster_${V}_linux_amd64.tar.gz
 curl -LO https://github.com/sheyestherrr/cc-cluster/releases/download/$V/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS

@@ -60,8 +60,9 @@ The script reads these environment variables:
 Installing by hand is the same steps:
 
 ```sh
-# Linux amd64 shown; Releases also has arm64 and macOS builds. Set V to the version you want.
-V=v0.0.2
+# Linux amd64 shown; Releases also has arm64 and macOS builds.
+# V is the latest release; to install another version, set V=vX.Y.Z instead.
+V=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/sheyestherrr/cc-cluster/releases/latest); V=${V##*/}
 curl -LO https://github.com/sheyestherrr/cc-cluster/releases/download/$V/cc-cluster_${V}_linux_amd64.tar.gz
 curl -LO https://github.com/sheyestherrr/cc-cluster/releases/download/$V/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
