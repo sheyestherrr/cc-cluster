@@ -173,6 +173,51 @@ func TestWriteSlotFileAndOps(t *testing.T) {
 	}
 }
 
+func TestSlotFilesRejectInvalidID(t *testing.T) {
+	s := newStore(t)
+	// 数据目录之外放一个文件：ID 里带路径分隔符时不应读到、改到或删到它。
+	outside := filepath.Join(filepath.Dir(s.Dir()), "hold.json")
+	if err := os.WriteFile(outside, []byte(`{"reason":"outside"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"../..", "a/../../..", "", ".", "A", "a b"} {
+		if _, _, err := s.Hold(id); err == nil {
+			t.Errorf("Hold(%q) 应报错", id)
+		}
+		if _, _, err := s.Identity(id); err == nil {
+			t.Errorf("Identity(%q) 应报错", id)
+		}
+		if _, _, err := s.Applied(id); err == nil {
+			t.Errorf("Applied(%q) 应报错", id)
+		}
+		if _, _, err := s.Watch(id); err == nil {
+			t.Errorf("Watch(%q) 应报错", id)
+		}
+		if err := s.SetHold(id, model.Hold{Reason: "x"}); err == nil {
+			t.Errorf("SetHold(%q) 应报错", id)
+		}
+		if err := s.ClearHold(id); err == nil {
+			t.Errorf("ClearHold(%q) 应报错", id)
+		}
+		if err := s.SaveIdentity(id, model.Identity{}); err == nil {
+			t.Errorf("SaveIdentity(%q) 应报错", id)
+		}
+		if _, err := s.WriteSlotFile(id, "machine-id", nil); err == nil {
+			t.Errorf("WriteSlotFile(%q) 应报错", id)
+		}
+		if _, err := s.WriteSlotDir(id, "dmi", nil); err == nil {
+			t.Errorf("WriteSlotDir(%q) 应报错", id)
+		}
+	}
+	if b, err := os.ReadFile(outside); err != nil || string(b) != `{"reason":"outside"}` {
+		t.Fatalf("数据目录之外的文件不应被改动: %q %v", b, err)
+	}
+	// 合法的 ID 照常：没有文件时 ok 为 false、不报错。
+	if _, ok, err := s.Hold("a"); ok || err != nil {
+		t.Fatalf("没有标记时应返回 ok=false: %v %v", ok, err)
+	}
+}
+
 func TestLockIsExclusive(t *testing.T) {
 	s := newStore(t)
 	unlock, err := s.Lock()

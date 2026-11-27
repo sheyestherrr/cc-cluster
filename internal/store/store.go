@@ -342,18 +342,56 @@ func (s *Store) DeleteSlot(id string, purge bool) error {
 	return nil
 }
 
+// slotFile 返回槽位目录下一个文件的路径。id 会成为路径的一段，所以这里再校验一次：
+// 调用方都先经 Slot 核对过槽位，这一层只为在漏掉核对时不至于读写到数据目录之外。
+func (s *Store) slotFile(id, name string) (string, error) {
+	if err := model.ValidateID("槽位", id); err != nil {
+		return "", err
+	}
+	return filepath.Join(s.SlotDir(id), name), nil
+}
+
+// readSlotJSON 读取槽位目录下的一个 JSON 文件；文件不存在时 ok 为 false。
+func (s *Store) readSlotJSON(id, name string, v any) (ok bool, err error) {
+	p, err := s.slotFile(id, name)
+	if err != nil {
+		return false, err
+	}
+	err = readJSON(p, v)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (s *Store) writeSlotJSON(id, name string, v any) error {
+	p, err := s.slotFile(id, name)
+	if err != nil {
+		return err
+	}
+	return writeJSON(p, v)
+}
+
+func (s *Store) removeSlotFile(id, name string) error {
+	p, err := s.slotFile(id, name)
+	if err != nil {
+		return err
+	}
+	return ignoreNotExist(os.Remove(p))
+}
+
 // Identity 读取槽位身份；尚未生成时 ok 为 false。
 func (s *Store) Identity(id string) (ident model.Identity, ok bool, err error) {
-	err = readJSON(filepath.Join(s.SlotDir(id), "identity.json"), &ident)
-	if errors.Is(err, fs.ErrNotExist) {
-		return ident, false, nil
-	}
-	return ident, err == nil, err
+	ok, err = s.readSlotJSON(id, "identity.json", &ident)
+	return ident, ok, err
 }
 
 // SaveIdentity 写入槽位身份；已有身份时返回 ErrExists，身份不允许被覆盖。
 func (s *Store) SaveIdentity(id string, ident model.Identity) error {
-	p := filepath.Join(s.SlotDir(id), "identity.json")
+	p, err := s.slotFile(id, "identity.json")
+	if err != nil {
+		return err
+	}
 	if exists(p) {
 		return fmt.Errorf("槽位 %s 的身份 %w", id, ErrExists)
 	}
@@ -365,65 +403,53 @@ func (s *Store) SaveIdentity(id string, ident model.Identity) error {
 
 // Applied 读取最近一次成功应用的记录；没有时 ok 为 false。
 func (s *Store) Applied(id string) (a model.Applied, ok bool, err error) {
-	err = readJSON(filepath.Join(s.SlotDir(id), "applied.json"), &a)
-	if errors.Is(err, fs.ErrNotExist) {
-		return a, false, nil
-	}
-	return a, err == nil, err
+	ok, err = s.readSlotJSON(id, "applied.json", &a)
+	return a, ok, err
 }
 
 // SaveApplied 写入应用记录。
 func (s *Store) SaveApplied(id string, a model.Applied) error {
-	return writeJSON(filepath.Join(s.SlotDir(id), "applied.json"), a)
+	return s.writeSlotJSON(id, "applied.json", a)
 }
 
 // ClearApplied 删除应用记录。
-func (s *Store) ClearApplied(id string) error {
-	return ignoreNotExist(os.Remove(filepath.Join(s.SlotDir(id), "applied.json")))
-}
+func (s *Store) ClearApplied(id string) error { return s.removeSlotFile(id, "applied.json") }
 
 // Watch 读取持续检测最近一次的结果；没有时 ok 为 false。
 func (s *Store) Watch(id string) (w model.Watch, ok bool, err error) {
-	err = readJSON(filepath.Join(s.SlotDir(id), "watch.json"), &w)
-	if errors.Is(err, fs.ErrNotExist) {
-		return w, false, nil
-	}
-	return w, err == nil, err
+	ok, err = s.readSlotJSON(id, "watch.json", &w)
+	return w, ok, err
 }
 
 // SaveWatch 写入持续检测的结果。
 func (s *Store) SaveWatch(id string, w model.Watch) error {
-	return writeJSON(filepath.Join(s.SlotDir(id), "watch.json"), w)
+	return s.writeSlotJSON(id, "watch.json", w)
 }
 
 // ClearWatch 删除持续检测的结果。
-func (s *Store) ClearWatch(id string) error {
-	return ignoreNotExist(os.Remove(filepath.Join(s.SlotDir(id), "watch.json")))
-}
+func (s *Store) ClearWatch(id string) error { return s.removeSlotFile(id, "watch.json") }
 
 // Hold 读取手动断网标记；没有时 ok 为 false。
 func (s *Store) Hold(id string) (h model.Hold, ok bool, err error) {
-	err = readJSON(filepath.Join(s.SlotDir(id), "hold.json"), &h)
-	if errors.Is(err, fs.ErrNotExist) {
-		return h, false, nil
-	}
-	return h, err == nil, err
+	ok, err = s.readSlotJSON(id, "hold.json", &h)
+	return h, ok, err
 }
 
 // SetHold 写入手动断网标记。
 func (s *Store) SetHold(id string, h model.Hold) error {
-	return writeJSON(filepath.Join(s.SlotDir(id), "hold.json"), h)
+	return s.writeSlotJSON(id, "hold.json", h)
 }
 
 // ClearHold 删除手动断网标记。
-func (s *Store) ClearHold(id string) error {
-	return ignoreNotExist(os.Remove(filepath.Join(s.SlotDir(id), "hold.json")))
-}
+func (s *Store) ClearHold(id string) error { return s.removeSlotFile(id, "hold.json") }
 
 // WriteSlotFile 在槽位的 etc 目录下写一个文件，返回它的绝对路径。
 // 文件会以只读方式挂进 worker，容器内的用户与宿主用户同 UID，因此权限用 0644 即可读。
 func (s *Store) WriteSlotFile(id, name string, data []byte) (string, error) {
-	if strings.ContainsAny(name, "/\\") {
+	if err := model.ValidateID("槽位", id); err != nil {
+		return "", err
+	}
+	if strings.ContainsAny(name, "/\\") || name == "" || name == "." || name == ".." {
 		return "", fmt.Errorf("文件名 %q 无效", name)
 	}
 	if err := os.MkdirAll(s.EtcDir(id), 0o700); err != nil {
@@ -435,6 +461,9 @@ func (s *Store) WriteSlotFile(id, name string, data []byte) (string, error) {
 
 // WriteSlotDir 在槽位的 etc 目录下重建一个子目录并写入给定的文件，返回它的绝对路径。
 func (s *Store) WriteSlotDir(id, name string, files map[string][]byte) (string, error) {
+	if err := model.ValidateID("槽位", id); err != nil {
+		return "", err
+	}
 	if strings.ContainsAny(name, "/\\") || name == "" || name == "." || name == ".." {
 		return "", fmt.Errorf("目录名 %q 无效", name)
 	}
