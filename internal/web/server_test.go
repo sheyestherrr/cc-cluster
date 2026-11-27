@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -79,6 +81,64 @@ func TestAPIRequiresToken(t *testing.T) {
 	}
 	if code, _, _ := do(t, h, "GET", "/api/nope", "127.0.0.1:7878", srv.Token(), ""); code != http.StatusNotFound {
 		t.Errorf("不存在的接口应是 404，得到 %d", code)
+	}
+}
+
+// 路径里的 ID 写法不对时直接拒绝，不交给引擎：转义过的斜杠（%2F）在路由之后已经还原成路径分隔符。
+func TestInvalidPathIDIsRejected(t *testing.T) {
+	srv, h := newTestServer(t)
+	for _, path := range []string{
+		"/api/slots/..%2F..%2Fx/release",
+		"/api/slots/..%2F..%2Fx/connections",
+		"/api/gateways/a%2F..%2Fb",
+		"/api/nodes/A%20b",
+	} {
+		method := "POST"
+		switch {
+		case strings.HasSuffix(path, "/connections"):
+			method = "GET"
+		case !strings.HasSuffix(path, "/release"):
+			method = "DELETE"
+		}
+		code, _, body := do(t, h, method, path, "127.0.0.1:7878", srv.Token(), "")
+		if code != http.StatusBadRequest || !strings.Contains(body, "无效") {
+			t.Errorf("%s %s 应以 400 拒绝，得到 %d %s", method, path, code, body)
+		}
+	}
+}
+
+// 操作记录很长时只取末尾的一段，仍然返回最近的记录、新的在前。
+func TestOpsReadsOnlyTheTail(t *testing.T) {
+	srv, h := newTestServer(t)
+	st, err := store.Open(srv.opt.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const total = 6000 // 每条约 280 字节，总长超过读取的那一段
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < total; i++ {
+		op := model.Op{Time: base.Add(time.Duration(i) * time.Second), Op: "slot.up", Target: fmt.Sprintf("s%d", i), OK: true, Detail: strings.Repeat("x", 200)}
+		if err := st.AppendOp(op); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if fi, err := os.Stat(filepath.Join(srv.opt.DataDir, "ops.jsonl")); err != nil || fi.Size() <= opsTail {
+		t.Fatalf("准备的操作记录应超过 %d 字节: %v", opsTail, err)
+	}
+	code, _, raw := do(t, h, "GET", "/api/ops", "127.0.0.1:7878", srv.Token(), "")
+	var out struct {
+		Data []model.Op `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(raw), &out); code != http.StatusOK || err != nil {
+		t.Fatalf("读取操作记录失败: %d %v", code, err)
+	}
+	if len(out.Data) != 200 {
+		t.Fatalf("应返回最近的 200 条，得到 %d 条", len(out.Data))
+	}
+	for i, op := range out.Data {
+		if want := fmt.Sprintf("s%d", total-1-i); op.Target != want {
+			t.Fatalf("第 %d 条应是 %s，得到 %s", i, want, op.Target)
+		}
 	}
 }
 

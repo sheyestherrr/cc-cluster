@@ -360,6 +360,13 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request, withDocker boo
 	ctx, cancel := context.WithTimeout(r.Context(), opTimeout)
 	defer cancel()
 	c := &call{ctx: ctx, r: r, id: r.PathValue("id"), log: &bytes.Buffer{}}
+	// 路径里的 ID 会用在文件名和容器名里（转义过的斜杠在这里已经还原）；写法不对的不往下传。
+	if c.id != "" {
+		if err := model.ValidateID("对象", c.id); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error(), "log": []string{}})
+			return
+		}
+	}
 	var err error
 	if c.st, err = store.Open(s.opt.DataDir); err == nil {
 		var dk *dockerapi.Client
@@ -706,16 +713,38 @@ func checks(in []engine.Check) []checkView {
 	return out
 }
 
+// opsTail 是读取操作记录时从文件末尾取的长度。记录只追加、不轮换，界面又会定时来取，
+// 所以不读整个文件；一条记录至多两千字节左右，这一段足够放下要显示的条数。
+const opsTail = 1 << 20
+
 // ops 返回最近的操作记录，新的在前。
 func (s *Server) ops(c *call) (any, error) {
-	data, err := os.ReadFile(filepath.Join(c.st.Dir(), "ops.jsonl"))
+	f, err := os.Open(filepath.Join(c.st.Dir(), "ops.jsonl"))
 	if errors.Is(err, fs.ErrNotExist) {
 		return []model.Op{}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	cut := fi.Size() > opsTail
+	if cut {
+		if _, err := f.Seek(-opsTail, io.SeekEnd); err != nil {
+			return nil, err
+		}
+	}
+	data, err := io.ReadAll(io.LimitReader(f, opsTail))
+	if err != nil {
+		return nil, err
+	}
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if cut {
+		lines = lines[1:] // 第一行多半只有后半截
+	}
 	out := []model.Op{}
 	for i := len(lines) - 1; i >= 0 && len(out) < 200; i-- {
 		var op model.Op
