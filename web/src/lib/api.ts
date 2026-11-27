@@ -244,17 +244,19 @@ export interface UpdateInfo {
   current: string;
   /** 假表示从源码构建的：没法与发布的版本比较。 */
   is_release: boolean;
+  /** 假表示关掉了自动检查，只在点“检查更新”时查。 */
+  auto_check: boolean;
   checked_at?: string;
   latest?: Release;
   newer: boolean;
   /** 要给使用者看的更新说明，新的在前。 */
   releases: Release[];
-  /** 最近一次没查成的原因。 */
+  /** 最近一次检查失败的原因。 */
   error?: string;
   /** 在终端里更新的命令。 */
   command: string;
   releases_url: string;
-  /** 镜像的设置落后于这个版本时，是它们现在的版本，和换成同版本的命令。 */
+  /** 镜像的设置比这个版本旧时，是它们现在的版本，和更新到同版本的命令。 */
   images_from?: string;
   images_command?: string;
 }

@@ -48,21 +48,16 @@ function VersionChip({ version, newVersion, stale, onClick }: Pick<AppShellProps
   if (!version) return null;
   if (stale) {
     return (
-      <button type="button" className="version-chip has-update" onClick={() => window.location.reload()} title="cc-cluster 已经更新，这个页面还是旧的">
-        <span className="version-dot" />
-        <span>已更新到 {version}，点这里刷新</span>
+      <button type="button" className="version-chip is-stale" onClick={() => window.location.reload()} title="cc-cluster 已更新，刷新页面后生效">
+        <span>已更新至 {version}，点击刷新</span>
       </button>
     );
   }
+  const label = newVersion ? `当前版本 ${version}，有新版本 ${newVersion}` : `当前版本 ${version}`;
   return (
-    <button type="button" className={cn("version-chip", newVersion && "has-update")} onClick={onClick} title="查看版本与更新说明">
+    <button type="button" className="version-chip" onClick={onClick} title={newVersion ? `有新版本 ${newVersion}` : "版本与更新"} aria-label={label}>
       <span className="mono version-number">{version}</span>
-      {newVersion && (
-        <>
-          <span className="version-dot" />
-          <span className="version-new">可更新到 {newVersion}</span>
-        </>
-      )}
+      {newVersion && <span className="version-dot" aria-hidden="true" />}
     </button>
   );
 }

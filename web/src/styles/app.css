@@ -87,7 +87,7 @@ h6 {
   letter-spacing: -0.01em;
 }
 
-/* 标题下面的版本号：点它打开“版本与更新”。有新版本时多一个蓝点和一句话。 */
+/* 标题下面的版本号：点它打开“版本与更新”。有新版本时版本号后面多一个缓慢明暗的小圆点。 */
 .version-chip {
   display: inline-flex;
   align-items: center;
@@ -107,7 +107,7 @@ h6 {
 
 .version-chip:hover,
 .version-chip:focus-visible,
-.version-chip.has-update {
+.version-chip.is-stale {
   padding-left: 8px;
   color: var(--primary-strong);
   background: var(--primary-soft);
@@ -124,12 +124,28 @@ h6 {
   flex: 0 0 6px;
   width: 6px;
   height: 6px;
+  overflow: visible;
   border-radius: 999px;
   background: var(--primary);
+  animation: version-breathe 2.4s ease-in-out infinite;
 }
 
-.version-chip .version-new {
-  font-weight: 600;
+@keyframes version-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    box-shadow: 0 0 0 0 rgba(20, 112, 255, 0);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 0 3px rgba(20, 112, 255, 0.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .version-chip .version-dot {
+    animation: none;
+  }
 }
 
 .nav-item {

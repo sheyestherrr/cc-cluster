@@ -48,6 +48,12 @@ export function clockTime(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("zh-CN", { hour12: false });
 }
 
+/** 只要日期：2026/11/27。 */
+export function dateText(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("zh-CN");
+}
+
 /** 字节数写成带单位的短形式：812 B、3.4 KB、120 MB。 */
 export function bytesText(n?: number): string {
   const v = n ?? 0;
