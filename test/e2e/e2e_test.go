@@ -506,7 +506,7 @@ func TestEndToEnd(t *testing.T) {
 		// 中转可用，落地连不上：分段检查应当直接指出是中转到落地这一段。
 		e.addSlot("d", "ldead")
 		_, err := e.eng.SlotUp(e.ctx, "d", engine.UpOptions{})
-		if err == nil || !strings.Contains(err.Error(), "中转 transit 本身可用，但经它连不上落地 ldead") {
+		if err == nil || !strings.Contains(err.Error(), "中转 transit 自身可用，但经其无法连接落地 ldead") {
 			t.Errorf("应指出中转可用而落地连不上: %v", err)
 		}
 		if got := e.state("d"); got != engine.StateAbsent {
@@ -518,7 +518,7 @@ func TestEndToEnd(t *testing.T) {
 		e.eng.LandingLimit = 1
 		e.addSlot("d", "la")
 		_, err = e.eng.SlotUp(e.ctx, "d", engine.UpOptions{})
-		if err == nil || !strings.Contains(err.Error(), "最多同时给 1 个槽位用") {
+		if err == nil || !strings.Contains(err.Error(), "最多同时为 1 个槽位接线") {
 			t.Errorf("落地接线的槽位数到上限时应拒绝: %v", err)
 		}
 		e.eng.LandingLimit = 0
@@ -540,7 +540,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 		// 候选接不通落地（这里是出口网段里一个没人应答的地址）：验证不过，不更换；明确跳过验证才换。
 		must(t, e.eng.AddNode(e.ctx, model.Node{ID: "tdead", Role: model.RoleTransit, Proxy: map[string]any{"type": "socks5", "server": "203.0.113.13", "port": 1080}}))
-		if _, err := e.eng.SetGatewayTransits(e.ctx, "main", []string{"transit", "tdead"}, engine.TransitOptions{}); err == nil || !strings.Contains(err.Error(), "tdead 接不通落地") {
+		if _, err := e.eng.SetGatewayTransits(e.ctx, "main", []string{"transit", "tdead"}, engine.TransitOptions{}); err == nil || !strings.Contains(err.Error(), "tdead 无法连通落地") {
 			t.Fatalf("接不通落地的候选应被拒绝并指名: %v", err)
 		}
 		if g, err := e.st.Gateway("main"); err != nil || len(g.Backups) != 0 {

@@ -25,7 +25,7 @@ func TestValidateID(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `"kr-home-lg"`) || !strings.Contains(err.Error(), "备注") {
 		t.Errorf("报错应给出可用的写法并提到备注: %v", err)
 	}
-	if err := ValidateID("节点", "韩国家宽"); err == nil || strings.Contains(err.Error(), "可以改用") {
+	if err := ValidateID("节点", "韩国家宽"); err == nil || strings.Contains(err.Error(), "可改用") {
 		t.Errorf("改不出合法写法时不应给建议: %v", err)
 	}
 }
