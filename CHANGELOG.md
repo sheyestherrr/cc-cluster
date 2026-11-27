@@ -4,6 +4,36 @@
 
 One section per release, newest first. Versions follow `vMAJOR.MINOR.PATCH`; pre-releases look like `v0.1.0-alpha.1` or `v1.0.0-rc.1`.
 
+## v0.0.4
+
+网页界面的交互与显示改进。
+
+- **危险操作需确认**：停止槽位、重建 worker、删除槽位、节点、网关与订阅之前弹出确认。网关的“强制停止”并入“停止”：其上有运行中的槽位时，确认弹窗说明后果。
+- **地址栏记录当前页面与打开的对象**：刷新后回到原处，浏览器的前进与后退可用，槽位、节点、订阅的详情页可存为书签。
+- **操作的进度与失败说明不随页面切换丢失**：失败的说明保留在页面上，直至手动关闭。
+- **弹窗、菜单与表单**：弹窗与菜单可用键盘操作，弹窗打开时页面不再滚动，卡片上的菜单不再被裁切。表单中按 Enter 提交；输入不符合规则时，在输入框下方说明原因。
+- **总览看板**：持续检测、节点延迟分布与可用节点数的变化重新排布；最近操作在卡片内滚动，最多显示 30 条；流量与连接数图表的图例移入图框。节点延迟分布与可用节点数的变化显示同一个订阅，不再提供“全部订阅”。
+- **显示**：侧栏不再显示容器名前缀，它显示在系统页与标签页标题中；备注与名称同行显示；系统页的镜像只显示名称与标签；窗口较窄时导航改为顶部横排。
+- **报错**：网页界面的报错不再给出命令行参数，改为说明界面上的入口。
+- 网页界面的字体只保留所需的子集，二进制文件减小约 0.5 MB。
+
+升级：执行 `cc-cluster update`。镜像的内容与 v0.0.3 相同，无需更新镜像。
+
+---
+
+Interaction and display improvements in the web UI.
+
+- **Confirmation for destructive actions**: stopping a slot, recreating a worker and deleting a slot, node, gateway or subscription now ask first. The gateway's "强制停止" (force stop) is merged into "停止" (stop): if slots are running on it, the confirmation explains the consequence.
+- **The address bar records the current page and the open object**: a reload returns to the same place, the browser's back and forward buttons work, and the detail pages of slots, nodes and subscriptions can be bookmarked.
+- **Progress and failure messages survive page switches**: a failure message stays on the page until it is dismissed.
+- **Dialogs, menus and forms**: dialogs and menus can be operated from the keyboard, the page no longer scrolls behind an open dialog, and card menus are no longer clipped. Enter submits a form; when a value does not match the rules, the reason is shown below the field.
+- **Overview**: the watch timeline, the node delay distribution and the usable-node trend are rearranged; recent operations scroll inside their card and show up to 30 entries; the legends of the traffic and connection charts moved inside the plot. The delay distribution and the usable-node trend always show the same subscription; the "全部订阅" (all subscriptions) option is gone.
+- **Display**: the sidebar no longer shows the container name prefix, which now appears on the system page and in the tab title; notes are shown on the same line as names; the system page shows images as name and tag only; in narrow windows the navigation becomes a horizontal bar at the top.
+- **Errors**: error messages in the web UI no longer refer to command-line flags and point to the corresponding control in the UI instead.
+- The web UI ships only the font subset it needs; the binary is about 0.5 MB smaller.
+
+To upgrade: run `cc-cluster update`. The images are identical to v0.0.3, so there is no need to update them.
+
 ## v0.0.3
 
 新增 `cc-cluster update` 命令，用于升级。
