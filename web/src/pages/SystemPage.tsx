@@ -11,16 +11,17 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { api, errorText, type Check, type Op, type State } from "@/lib/api";
 import { opDetail, opName } from "@/lib/ops";
-import { clockTime } from "@/lib/utils";
+import { clockTime, cn, imageName } from "@/lib/utils";
 
 interface Props {
   state: State | null;
   refresh: () => Promise<void>;
 }
 
-function KV({ k, v }: { k: string; v?: string }) {
+/** 一项键值。wide 时独占一行；title 是悬停提示。 */
+function KV({ k, v, title, wide }: { k: string; v?: string; title?: string; wide?: boolean }) {
   return (
-    <div className="kv">
+    <div className={cn("kv", wide && "wide")} title={title}>
       <span>{k}</span>
       <strong className="mono">{v || "—"}</strong>
     </div>
@@ -115,9 +116,9 @@ export function SystemPage({ state, refresh }: Props) {
           <div className="kv-grid">
             <KV k="版本" v={state?.version} />
             <KV k="容器名前缀" v={state?.cluster.name} />
-            <KV k="数据目录" v={state?.data_dir} />
-            <KV k="网关镜像" v={state?.cluster.gateway_image} />
-            <KV k="worker 镜像" v={state?.cluster.worker_image} />
+            <KV k="数据目录" v={state?.data_dir} wide />
+            <KV k="网关镜像" v={imageName(state?.cluster.gateway_image)} title={state?.cluster.gateway_image} />
+            <KV k="worker 镜像" v={imageName(state?.cluster.worker_image)} title={state?.cluster.worker_image} />
           </div>
           <SwitchItem
             label="启动槽位时查询出口评估"

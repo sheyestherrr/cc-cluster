@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { PALETTE, badgeLetter, bytesText, colorIndex, formatBytes, rateText, relativeTime, spanText } from "./utils.ts";
+import { PALETTE, badgeLetter, bytesText, colorIndex, formatBytes, imageName, rateText, relativeTime, spanText } from "./utils.ts";
+
+test("imageName 去掉仓库前缀", () => {
+  assert.equal(imageName("ghcr.io/sheyestherrr/cc-cluster-gateway:v0.0.1"), "cc-cluster-gateway:v0.0.1");
+  assert.equal(imageName("cc-cluster-gateway:dev"), "cc-cluster-gateway:dev");
+  assert.equal(imageName("localhost:5000/worker"), "worker");
+  assert.equal(imageName(`reg.example.com/a/worker@sha256:${"0123456789ab".repeat(5)}0123`), "worker@sha256:0123456789ab…");
+  assert.equal(imageName(), "");
+});
 
 test("bytesText 按大小换单位", () => {
   assert.equal(bytesText(), "0 B");

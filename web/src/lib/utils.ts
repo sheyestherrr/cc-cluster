@@ -82,6 +82,16 @@ export function spanText(ms: number): string {
   return `${+(s / 86400).toFixed(1)} 天`;
 }
 
+/**
+ * 镜像引用去掉仓库前缀，只留“名称:标签”：ghcr.io/owner/app:v1 → app:v1。
+ * 按摘要固定的引用只保留摘要的前 12 位。
+ */
+export function imageName(ref?: string): string {
+  const full = (ref ?? "").trim();
+  const cut = full.lastIndexOf("/", full.includes("@") ? full.indexOf("@") : full.length);
+  return full.slice(cut + 1).replace(/@sha256:([0-9a-f]{12})[0-9a-f]+$/, "@sha256:$1…");
+}
+
 export function formatBytes(n?: number): string {
   if (!n) return "";
   const gib = n / 2 ** 30;
