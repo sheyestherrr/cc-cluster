@@ -230,6 +230,35 @@ export interface State {
   subs: Sub[];
 }
 
+/** 一个发布的版本。只查到版本号时没有发布时间（年份是 1）和说明。 */
+export interface Release {
+  version: string;
+  published_at: string;
+  url: string;
+  /** 发布页上写的更新说明（Markdown）。 */
+  notes?: string;
+}
+
+/** 版本检查的结果：由 cc-cluster 去问 GitHub，浏览器不直接访问外面。 */
+export interface UpdateInfo {
+  current: string;
+  /** 假表示从源码构建的：没法与发布的版本比较。 */
+  is_release: boolean;
+  checked_at?: string;
+  latest?: Release;
+  newer: boolean;
+  /** 要给使用者看的更新说明，新的在前。 */
+  releases: Release[];
+  /** 最近一次没查成的原因。 */
+  error?: string;
+  /** 在终端里更新的命令。 */
+  command: string;
+  releases_url: string;
+  /** 镜像的设置落后于这个版本时，是它们现在的版本，和换成同版本的命令。 */
+  images_from?: string;
+  images_command?: string;
+}
+
 /** delay_ms：大于 0 是毫秒，0 是没测过，-1 是不通。 */
 export interface Delay {
   name: string;
@@ -402,6 +431,8 @@ export const api = {
   state: () => get<State>("state"),
   doctor: () => get<Check[]>("doctor"),
   ops: () => get<Op[]>("ops"),
+  /** 版本检查；refresh 为真是使用者点了“重新检查”。 */
+  update: (refresh = false) => get<UpdateInfo>(`update${refresh ? "?refresh=1" : ""}`),
 
   /** 各槽位此刻的流量（来自 cc-cluster web 进程里的采样）。 */
   traffic: () => get<Traffic>("traffic"),

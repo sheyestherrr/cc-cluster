@@ -32,12 +32,42 @@ interface AppShellProps {
   activePage: PageId;
   onPageChange: (page: PageId) => void;
   cluster?: string;
+  /** 正在运行的 cc-cluster 的版本；点它打开“版本与更新”。 */
+  version?: string;
+  /** 有新版本时是它的版本号。 */
+  newVersion?: string;
+  /** 页面打开之后 cc-cluster 被更新过：这个页面还是旧的，点一下刷新。 */
+  stale?: boolean;
+  onVersionClick?: () => void;
   /** 侧栏底部的一句现状。 */
   status?: { ready: number; total: number } | null;
   children: React.ReactNode;
 }
 
-export function AppShell({ activePage, onPageChange, cluster, status, children }: AppShellProps) {
+function VersionChip({ version, newVersion, stale, onClick }: Pick<AppShellProps, "version" | "newVersion" | "stale"> & { onClick?: () => void }) {
+  if (!version) return null;
+  if (stale) {
+    return (
+      <button type="button" className="version-chip has-update" onClick={() => window.location.reload()} title="cc-cluster 已经更新，这个页面还是旧的">
+        <span className="version-dot" />
+        <span>已更新到 {version}，点这里刷新</span>
+      </button>
+    );
+  }
+  return (
+    <button type="button" className={cn("version-chip", newVersion && "has-update")} onClick={onClick} title="查看版本与更新说明">
+      <span className="mono version-number">{version}</span>
+      {newVersion && (
+        <>
+          <span className="version-dot" />
+          <span className="version-new">可更新到 {newVersion}</span>
+        </>
+      )}
+    </button>
+  );
+}
+
+export function AppShell({ activePage, onPageChange, cluster, version, newVersion, stale, onVersionClick, status, children }: AppShellProps) {
   return (
     <div className="app-layout">
       <aside className="sidebar">
@@ -50,6 +80,7 @@ export function AppShell({ activePage, onPageChange, cluster, status, children }
               <p className="brand-title">cc-cluster</p>
               {cluster && cluster !== "cc-cluster" && <span className="brand-version" title={cluster}>{cluster}</span>}
             </div>
+            <VersionChip version={version} newVersion={newVersion} stale={stale} onClick={onVersionClick} />
           </div>
         </div>
 

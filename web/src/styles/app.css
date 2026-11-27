@@ -87,6 +87,51 @@ h6 {
   letter-spacing: -0.01em;
 }
 
+/* 标题下面的版本号：点它打开“版本与更新”。有新版本时多一个蓝点和一句话。 */
+.version-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-top: 3px;
+  padding: 2px 8px 2px 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease, padding 0.15s ease;
+}
+
+.version-chip:hover,
+.version-chip:focus-visible,
+.version-chip.has-update {
+  padding-left: 8px;
+  color: var(--primary-strong);
+  background: var(--primary-soft);
+}
+
+.version-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.version-chip .version-dot {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.version-chip .version-new {
+  font-weight: 600;
+}
+
 .nav-item {
   width: 100%;
   background: transparent;
@@ -747,6 +792,115 @@ button.snapshot-row:hover {
   color: #1f2a3f;
   overflow-wrap: anywhere;
   user-select: all;
+}
+
+/* ── 版本与更新 ── */
+.update-heading {
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.release {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(37, 72, 120, 0.12);
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.release > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.release > header > strong {
+  font-size: 14px;
+  color: #1f2a3f;
+}
+
+.release > header > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  color: var(--primary-strong);
+}
+
+.release > header > a:hover {
+  text-decoration: underline;
+}
+
+/* 更新说明里的 Markdown。 */
+.md {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: #2a3650;
+  overflow-wrap: anywhere;
+}
+
+.md > * + * {
+  margin-top: 8px;
+}
+
+.md h4 {
+  margin-top: 14px;
+  font-size: 14px;
+  color: #1f2a3f;
+}
+
+.md > h4:first-child {
+  margin-top: 0;
+}
+
+.md ul,
+.md ol {
+  padding-left: 20px;
+}
+
+.md ul {
+  list-style: disc;
+}
+
+.md ol {
+  list-style: decimal;
+}
+
+.md li + li {
+  margin-top: 3px;
+}
+
+.md code,
+.md pre {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: rgba(37, 72, 120, 0.08);
+}
+
+.md code {
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+
+.md pre {
+  padding: 10px 12px;
+  border-radius: 10px;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.md a {
+  color: var(--primary-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.md hr {
+  border: 0;
+  border-top: 1px solid rgba(37, 72, 120, 0.14);
 }
 
 /* ── 链路：中转 → 落地 → 出口 ── */

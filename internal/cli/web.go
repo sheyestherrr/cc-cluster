@@ -19,6 +19,7 @@ import (
 
 	"github.com/sheyestherrr/cc-cluster/internal/engine"
 	"github.com/sheyestherrr/cc-cluster/internal/store"
+	"github.com/sheyestherrr/cc-cluster/internal/update"
 	"github.com/sheyestherrr/cc-cluster/internal/web"
 )
 
@@ -174,7 +175,10 @@ func (a *app) webServe(ctx context.Context, opt webOptions) error {
 	if err != nil {
 		return err
 	}
-	srv, err := web.New(web.Options{DataDir: a.dataDir, Version: Version, NoWatch: opt.Interval <= 0, WatchInterval: opt.Interval, Token: token})
+	srv, err := web.New(web.Options{
+		DataDir: a.dataDir, Version: Version, NoWatch: opt.Interval <= 0, WatchInterval: opt.Interval, Token: token,
+		NoUpdateCheck: os.Getenv(update.EnvNoCheck) != "",
+	})
 	if err != nil {
 		return err
 	}

@@ -29,6 +29,7 @@ import (
 	"github.com/sheyestherrr/cc-cluster/internal/engine"
 	"github.com/sheyestherrr/cc-cluster/internal/model"
 	"github.com/sheyestherrr/cc-cluster/internal/store"
+	"github.com/sheyestherrr/cc-cluster/internal/update"
 )
 
 // dist 是前端的构建产物。仓库里只有一个占位文件，执行 make web 之后才有真正的页面；
@@ -63,6 +64,10 @@ type Options struct {
 	NoSample bool
 	// Token 是访问令牌；为空时生成一个只在这一次运行里有效的。
 	Token string
+	// NoUpdateCheck 为真时不自己去查新版本，只有使用者在页面上点了才查。
+	NoUpdateCheck bool
+	// UpdateClient 替换访问发布页的客户端，测试用。
+	UpdateClient *update.Client
 }
 
 // Server 是网页服务。
@@ -72,6 +77,8 @@ type Server struct {
 	assets fs.FS
 	// traffic 是采样循环在内存里的状态：各槽位此刻的速率与连接。
 	traffic *engine.Traffic
+	// upd 是版本检查在内存里的结果。
+	upd updater
 }
 
 // New 创建网页服务。没有给访问令牌时生成一个。
@@ -172,6 +179,7 @@ func (s *Server) Handler(port int) http.Handler {
 	api("GET /api/state", false, s.state)
 	api("GET /api/doctor", true, func(c *call) (any, error) { return checks(c.eng.Doctor(c.ctx)), nil })
 	api("GET /api/ops", false, s.ops)
+	api("GET /api/update", false, s.updateInfo)
 	api("POST /api/settings/exit-report", false, func(c *call) (any, error) {
 		var in struct {
 			Auto bool `json:"auto"`

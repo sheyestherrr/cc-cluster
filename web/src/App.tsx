@@ -1,7 +1,8 @@
 // 应用的入口：定时读取集群的现状，按当前页面渲染。
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell, pageTitles, type PageId } from "@/components/AppShell";
-import { api, errorText, isUnauthorized, type State } from "@/lib/api";
+import { UpdateDialog } from "@/components/UpdateDialog";
+import { api, errorText, isUnauthorized, type State, type UpdateInfo } from "@/lib/api";
 import { NetworkPage } from "@/pages/NetworkPage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { SlotsPage } from "@/pages/SlotsPage";
@@ -10,6 +11,8 @@ import { SystemPage } from "@/pages/SystemPage";
 
 /** 页面开着的时候每隔这么久重新读取一次现状：容器可能被命令行或别的操作改动。 */
 const REFRESH_MS = 8000;
+/** 每隔这么久问一次有没有新版本。cc-cluster 自己记着上次查到的结果，隔几个小时才真的去问 GitHub。 */
+const UPDATE_POLL_MS = 30 * 60_000;
 const APP_NAME = "cc-cluster";
 
 export default function App() {
@@ -57,6 +60,36 @@ export default function App() {
     window.scrollTo({ top: 0 });
   }, []);
 
+  // 版本与更新：读到现状（令牌没问题）之后问一次，之后隔一阵再问。查不成不打扰，弹窗里才显示原因。
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [updateError, setUpdateError] = useState("");
+  const checkUpdate = useCallback(async (manual = false) => {
+    if (manual) setChecking(true);
+    try {
+      setUpdate(await api.update(manual));
+      setUpdateError("");
+    } catch (e) {
+      setUpdateError(errorText(e));
+    } finally {
+      if (manual) setChecking(false);
+    }
+  }, []);
+  const loaded = state !== null;
+  useEffect(() => {
+    if (!loaded) return;
+    void checkUpdate();
+    const timer = setInterval(() => document.visibilityState === "visible" && void checkUpdate(), UPDATE_POLL_MS);
+    return () => clearInterval(timer);
+  }, [loaded, checkUpdate]);
+
+  // 页面打开之后 cc-cluster 被更新过：接口已经是新版本的，这个页面还是旧的，提示刷新。
+  const version = state?.version;
+  const firstVersion = useRef<string | undefined>(undefined);
+  if (version && !firstVersion.current) firstVersion.current = version;
+  const stale = !!version && version !== firstVersion.current;
+
   const ready = state?.slots.filter((s) => s.state === "ready" || s.state === "pending").length ?? 0;
 
   // 没有令牌（第一次用这个浏览器，或令牌换过）：只显示怎么拿到链接，不显示一堆读取失败的页面。
@@ -74,12 +107,22 @@ export default function App() {
   }
 
   return (
-    <AppShell activePage={page} onPageChange={go} cluster={cluster} status={state ? { ready, total: state.slots.length } : null}>
+    <AppShell
+      activePage={page}
+      onPageChange={go}
+      cluster={cluster}
+      version={version}
+      newVersion={update?.newer ? update.latest?.version : undefined}
+      stale={stale}
+      onVersionClick={() => setUpdateOpen(true)}
+      status={state ? { ready, total: state.slots.length } : null}
+    >
       {page === "overview" && <OverviewPage state={state} loadError={loadError} go={go} />}
       {page === "slots" && <SlotsPage state={state} loadError={loadError} refresh={refresh} goNetwork={() => go("network")} open={slot} setOpen={setSlot} />}
       {page === "network" && <NetworkPage key={visit} state={state} loadError={loadError} refresh={refresh} goSubs={() => go("subs")} />}
       {page === "subs" && <SubsPage key={visit} state={state} loadError={loadError} refresh={refresh} />}
       {page === "system" && <SystemPage state={state} refresh={refresh} />}
+      <UpdateDialog open={updateOpen} onClose={() => setUpdateOpen(false)} version={version} info={update} checking={checking} error={updateError} onCheck={() => void checkUpdate(true)} />
     </AppShell>
   );
 }
