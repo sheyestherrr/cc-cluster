@@ -154,6 +154,76 @@ h6 {
   font-size: 16px;
   font-weight: 600;
   text-align: left;
+  text-decoration: none;
+}
+
+.nav-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* 窄窗口（浏览器与终端左右分屏时常见）：侧栏改为吸顶的一条横向导航，不再占去半屏高度。 */
+@media (max-width: 1120px) {
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    flex-direction: row;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 14px;
+  }
+
+  .brand {
+    flex: 0 0 auto;
+    padding: 0;
+  }
+
+  .sidebar-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: visible;
+  }
+
+  /* 放不下时横向滚动；滚动条不显示，避免把导航条撑高。 */
+  .nav-list {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    padding: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .nav-item {
+    flex: 0 0 auto;
+    width: auto;
+    padding: 7px 11px;
+    font-size: 14px;
+  }
+
+  .sidebar-bottom {
+    flex: 0 0 auto;
+    padding-top: 0;
+  }
+
+  .sidebar-status {
+    padding: 7px 10px;
+    white-space: nowrap;
+  }
+}
+
+/* 更窄时只保留图标与导航：槽位数量在总览中可见。 */
+@media (max-width: 860px) {
+  .sidebar-bottom {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .brand-copy {
+    display: none;
+  }
 }
 
 /* 只在不支持 popover 的浏览器里需要：卡片各自是一个层叠上下文（毛玻璃），菜单打开时把它所在的卡片抬到后面的卡片之上。 */
