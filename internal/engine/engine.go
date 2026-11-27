@@ -102,8 +102,8 @@ func (e *Engine) SetExitReportAuto(on bool) (err error) {
 // 不是本项目发布的镜像（自己构建的、别处来的）不动，各槽位单独指定的镜像也不动。
 // 和 SetImages 一样只改设置：运行中的容器不停、不重建。changed 表示设置变了。
 func (e *Engine) UseReleaseImages(ctx context.Context, v string) (changed bool, err error) {
-	if !update.IsRelease(v) {
-		return false, fmt.Errorf("%q 不是发布的版本号", v)
+	if err := update.ValidVersion(v); err != nil {
+		return false, err
 	}
 	c, err := e.st.Cluster()
 	if err != nil {
@@ -120,7 +120,7 @@ func (e *Engine) UseReleaseImages(ctx context.Context, v string) (changed bool, 
 		return false, nil
 	}
 	if e.dk == nil {
-		return false, errors.New("拉取镜像需要连上 Docker")
+		return false, errors.New("未连接 Docker，无法拉取镜像")
 	}
 	for _, img := range []string{gateway, worker} {
 		if img == "" {

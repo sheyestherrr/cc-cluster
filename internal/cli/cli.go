@@ -65,7 +65,7 @@ const usage = `cc-cluster：为 Claude Code 管理相互独立的工作槽位。
   render <网关>             预览网关的核心配置（默认隐藏凭据）
   exit-report [on|off]      启动槽位时是否顺带查询第三方对出口 IP 的评估
   images                    查看或更换网关镜像与默认的 worker 镜像
-  update                    把 cc-cluster 换成最新发布的版本（--check 只查看；--images 顺带换镜像）；不改动数据目录里的槽位与设置
+  update                    更新 cc-cluster 至最新版本（--check 仅检查；--images 同时更新镜像设置）
   version                   显示版本
 
 每个命令和子命令都可以加 -h 查看参数，例如 cc-cluster slot add -h。

@@ -1,8 +1,11 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,14 +41,23 @@ func newUpdateServer(t *testing.T, current string, opt Options) (*Server, http.H
 
 func getUpdate(t *testing.T, srv *Server, h http.Handler, query string) updateView {
 	t.Helper()
+	got, err := fetchUpdate(t, srv, h, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+// fetchUpdate 不自己让测试失败，可以在别的 goroutine 里用。
+func fetchUpdate(t *testing.T, srv *Server, h http.Handler, query string) (updateView, error) {
 	code, _, raw := do(t, h, "GET", "/api/update"+query, "127.0.0.1:7878", srv.Token(), "")
 	var out struct {
 		Data updateView `json:"data"`
 	}
 	if code != http.StatusOK || json.Unmarshal([]byte(raw), &out) != nil {
-		t.Fatalf("GET /api/update%s: %d %s", query, code, raw)
+		return updateView{}, fmt.Errorf("GET /api/update%s: %d %s", query, code, raw)
 	}
-	return out.Data
+	return out.Data, nil
 }
 
 func TestUpdateInfo(t *testing.T) {
@@ -58,7 +70,7 @@ func TestUpdateInfo(t *testing.T) {
 		t.Fatalf("没有令牌不应能查: %d", code)
 	}
 	got := getUpdate(t, srv, h, "")
-	if got.Current != "v0.0.2" || !got.IsRelease || !got.Newer || got.Latest == nil || got.Latest.Version != "v0.0.4" || got.CheckedAt == nil || got.Error != "" {
+	if got.Current != "v0.0.2" || !got.IsRelease || !got.AutoCheck || !got.Newer || got.Latest == nil || got.Latest.Version != "v0.0.4" || got.CheckedAt == nil || got.Error != "" {
 		t.Fatalf("应查到新版本: %+v", got)
 	}
 	if len(got.Releases) != 2 || got.Releases[0].Version != "v0.0.4" || got.Releases[1].Version != "v0.0.3" {
@@ -66,6 +78,10 @@ func TestUpdateInfo(t *testing.T) {
 	}
 	if got.Releases[0].Notes != "第四版\n- 一条" || got.Releases[0].PublishedAt.Day() != 28 {
 		t.Fatalf("更新说明应只留中文的那一段，并带发布时间: %+v", got.Releases[0])
+	}
+	// 给人点的链接由版本号拼出，不采用接口返回的地址。
+	if got.Releases[0].URL != update.ReleasesURL+"/tag/v0.0.4" {
+		t.Fatalf("发布页的地址不对: %s", got.Releases[0].URL)
 	}
 	// 数据目录不是默认的那个：给出的命令带着它。
 	if got.Command != "cc-cluster --data-dir "+dir+" update" || got.ReleasesURL != update.ReleasesURL {
@@ -124,11 +140,76 @@ func TestUpdateInfoKeepsLastResultOnFailure(t *testing.T) {
 func TestUpdateInfoRespectsNoCheck(t *testing.T) {
 	srv, h, hub, _ := newUpdateServer(t, "v0.0.2", Options{NoUpdateCheck: true})
 	hub.Add("v0.0.3", 27, "第三版")
-	if got := getUpdate(t, srv, h, ""); got.CheckedAt != nil || got.Latest != nil || got.Newer {
+	if got := getUpdate(t, srv, h, ""); got.AutoCheck || got.CheckedAt != nil || got.Latest != nil || got.Newer {
 		t.Fatalf("关掉自动检查后，不点就不应去查: %+v", got)
 	}
 	if got := getUpdate(t, srv, h, "?refresh=1"); !got.Newer || got.Latest == nil {
 		t.Fatalf("使用者点了才查: %+v", got)
+	}
+}
+
+// 同时来的请求等同一次检查：都拿到结果，只问 GitHub 一次。
+func TestUpdateInfoSharesOneCheck(t *testing.T) {
+	srv, h, hub, _ := newUpdateServer(t, "v0.0.2", Options{})
+	hub.Add("v0.0.3", 27, "第三版")
+	hub.Gate = make(chan struct{})
+	const n = 4
+	type result struct {
+		view updateView
+		err  error
+	}
+	results := make(chan result, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			v, err := fetchUpdate(t, srv, h, "")
+			results <- result{v, err}
+		}()
+	}
+	// 等第一个请求把检查发起来，再放行。
+	for i := 0; i < 200 && hub.APICalls.Load() == 0; i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(20 * time.Millisecond)
+	close(hub.Gate)
+	for i := 0; i < n; i++ {
+		if got := <-results; got.err != nil || got.view.Latest == nil || !got.view.Newer || got.view.Error != "" {
+			t.Fatalf("每个请求都应拿到这次检查的结果: %+v %v", got.view, got.err)
+		}
+	}
+	if calls := hub.APICalls.Load(); calls != 1 {
+		t.Fatalf("同时来的请求应共用一次检查，实际问了 %d 次", calls)
+	}
+}
+
+// 发起检查的页面刷新或关掉了：检查照常做完并记下结果，不把“请求被取消”记成检查失败。
+func TestUpdateInfoSurvivesCancelledRequest(t *testing.T) {
+	srv, h, hub, _ := newUpdateServer(t, "v0.0.2", Options{})
+	hub.Add("v0.0.3", 27, "第三版")
+	hub.Gate = make(chan struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest("GET", "/api/update", nil).WithContext(ctx)
+	req.Host = "127.0.0.1:7878"
+	req.Header.Set(TokenHeader, srv.Token())
+	rec := httptest.NewRecorder()
+	served := make(chan struct{})
+	go func() { h.ServeHTTP(rec, req); close(served) }()
+	for i := 0; i < 200 && hub.APICalls.Load() == 0; i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	<-served
+	var out struct {
+		Data updateView `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || out.Data.Error != "" {
+		t.Fatalf("请求被取消不应记成检查失败: %s %v", rec.Body.String(), err)
+	}
+
+	close(hub.Gate)
+	got := getUpdate(t, srv, h, "") // 等的还是那一次检查
+	if got.Latest == nil || !got.Newer || got.Error != "" || hub.APICalls.Load() != 1 {
+		t.Fatalf("那次检查应照常做完并被之后的请求用上: %+v（问了 %d 次）", got, hub.APICalls.Load())
 	}
 }
 
@@ -150,6 +231,13 @@ func TestUpdateInfoForSourceBuildAndStaleImages(t *testing.T) {
 	if len(got.Releases) != 1 || got.Releases[0].Notes != "第三版" {
 		t.Fatalf("已是最新时给现在这个版本的说明: %+v", got.Releases)
 	}
+
+	// 二进制退回了 v0.0.1，镜像的设置是更新的 v0.0.2：不提示“更新镜像”。
+	srv, h, hub, _ = newUpdateServer(t, "v0.0.1", Options{})
+	hub.Add("v0.0.1", 24, "第一版")
+	if got := getUpdate(t, srv, h, ""); got.ImagesFrom != "" || got.ImagesCommand != "" {
+		t.Fatalf("镜像比二进制新时不应提醒: %+v", got)
+	}
 }
 
 func TestSelfCommand(t *testing.T) {
@@ -158,5 +246,11 @@ func TestSelfCommand(t *testing.T) {
 	}
 	if got := SelfCommand(filepath.Join("/srv", "cc data"), "update --images"); !strings.HasPrefix(got, "cc-cluster --data-dir '/srv/cc data' update") {
 		t.Errorf("带空格的路径应加引号: %s", got)
+	}
+	if got := CommandFor("/srv/a", "/srv/a/", "web"); got != "cc-cluster web" {
+		t.Errorf("就是不带 --data-dir 时会用的那个目录时不用带: %s", got)
+	}
+	if got := CommandFor("/srv/a", "", "web"); got != "cc-cluster --data-dir /srv/a web" {
+		t.Errorf("不知道默认目录时一定带上: %s", got)
 	}
 }

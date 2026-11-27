@@ -56,35 +56,39 @@ func (c *Client) Stage(ctx context.Context, v, target string) (*Staged, error) {
 }
 
 func (c *Client) stage(ctx context.Context, v, target, goos, goarch string) (_ *Staged, err error) {
-	if _, ok := parseVersion(v); !ok {
-		return nil, fmt.Errorf("版本号 %q 不对：应当是 v0.0.3 这样的写法", v)
+	if err := ValidVersion(v); err != nil {
+		return nil, err
+	}
+	// 先确认能写，再去下载。
+	dir := filepath.Dir(target)
+	if err := checkWritable(dir); err != nil {
+		return nil, err
 	}
 	name := AssetName(v, goos, goarch)
 	base := c.Site + "/" + Repo + "/releases/download/" + v + "/"
 
 	sums, err := c.download(ctx, base+"SHA256SUMS", maxSumsSize)
 	if err != nil {
-		return nil, fmt.Errorf("下载校验和文件：%w", err)
+		if errors.Is(err, errNotFound) {
+			return nil, fmt.Errorf("未找到版本 %s", v)
+		}
+		return nil, fmt.Errorf("下载校验和文件失败：%w", err)
 	}
 	want := findSum(sums, name+".tar.gz")
 	if want == "" {
-		return nil, fmt.Errorf("%s 的发布里没有 %s/%s 的包", v, goos, goarch)
+		return nil, fmt.Errorf("版本 %s 未提供 %s/%s 的安装包", v, goos, goarch)
 	}
 	archive, err := c.download(ctx, base+name+".tar.gz", maxArchiveSize)
 	if err != nil {
-		return nil, fmt.Errorf("下载 %s.tar.gz：%w", name, err)
+		return nil, fmt.Errorf("下载 %s.tar.gz 失败：%w", name, err)
 	}
 	sum := sha256.Sum256(archive)
 	if got := hex.EncodeToString(sum[:]); got != want {
-		return nil, fmt.Errorf("%s.tar.gz 的校验和对不上，下载的文件可能不完整（应为 %s，得到 %s）", name, want, got)
+		return nil, fmt.Errorf("%s.tar.gz 校验和不匹配（应为 %s，实际为 %s）", name, want, got)
 	}
 
-	dir := filepath.Dir(target)
 	f, err := os.CreateTemp(dir, ".cc-cluster-*.new")
 	if err != nil {
-		if errors.Is(err, os.ErrPermission) {
-			return nil, fmt.Errorf("没有权限写 %s：用安装它的那个用户执行，或者重新运行安装脚本", dir)
-		}
 		return nil, err
 	}
 	tmp := f.Name()
@@ -106,26 +110,39 @@ func (c *Client) stage(ctx context.Context, v, target, goos, goarch string) (_ *
 	if err = f.Close(); err != nil {
 		return nil, err
 	}
-	// 新的二进制跑不起来（坏包、架构不对、目录不让执行）就不替换。
+	// 新的二进制无法运行（文件损坏、架构不符、目录禁止执行）就不替换。
 	vctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	out, rerr := exec.CommandContext(vctx, tmp, "version").Output()
 	if rerr != nil {
-		err = fmt.Errorf("下载到的 cc-cluster 运行不了，没有替换：%w", rerr)
+		err = fmt.Errorf("新版本无法运行：%w", rerr)
 		return nil, err
 	}
 	if got := strings.TrimSpace(string(out)); got != v {
-		err = fmt.Errorf("下载到的 cc-cluster 报告的版本是 %q，不是 %s，没有替换", got, v)
+		err = fmt.Errorf("安装包内的程序版本为 %q，与 %s 不符", got, v)
 		return nil, err
 	}
 	return &Staged{Version: v, Target: target, tmp: tmp}, nil
+}
+
+// checkWritable 确认能在 dir 里创建文件：建一个空文件再删掉。
+func checkWritable(dir string) error {
+	f, err := os.CreateTemp(dir, ".cc-cluster-*.new")
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return fmt.Errorf("无权写入 %s，请以安装 cc-cluster 的用户执行", dir)
+		}
+		return err
+	}
+	f.Close()
+	return os.Remove(f.Name())
 }
 
 // Commit 用新的二进制替换目标：同一个目录里的一次改名，要么是旧的要么是新的，不会有写了一半的文件。
 // 正在运行的进程继续用它已经打开的旧文件，不受影响。
 func (s *Staged) Commit() error {
 	if s.tmp == "" {
-		return errors.New("已经替换过或放弃了")
+		return errors.New("更新已完成或已取消")
 	}
 	// 沿用原来的权限位（至少可执行）。
 	if fi, err := os.Stat(s.Target); err == nil {
@@ -134,7 +151,7 @@ func (s *Staged) Commit() error {
 	if err := os.Rename(s.tmp, s.Target); err != nil {
 		os.Remove(s.tmp)
 		s.tmp = ""
-		return fmt.Errorf("替换 %s：%w", s.Target, err)
+		return fmt.Errorf("替换 %s 失败：%w", s.Target, err)
 	}
 	s.tmp = ""
 	if d, err := os.Open(filepath.Dir(s.Target)); err == nil {
@@ -161,10 +178,13 @@ func (c *Client) download(ctx context.Context, url string, limit int64) ([]byte,
 	defer resp.Body.Close()
 	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, errors.New("下载超时")
+		}
 		return nil, fmt.Errorf("下载中断：%w", err)
 	}
 	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("内容超过了 %d MB，不像是发布的文件", limit>>20)
+		return nil, fmt.Errorf("文件大小超过上限（%d MB）", limit>>20)
 	}
 	return b, nil
 }
@@ -185,27 +205,27 @@ func findSum(sums []byte, file string) string {
 func extractBinary(archive []byte, entry string, w io.Writer) error {
 	gz, err := gzip.NewReader(bytes.NewReader(archive))
 	if err != nil {
-		return fmt.Errorf("发布包解不开：%w", err)
+		return fmt.Errorf("安装包解压失败：%w", err)
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
 	for {
 		h, err := tr.Next()
 		if errors.Is(err, io.EOF) {
-			return fmt.Errorf("发布包里没有找到 %s", entry)
+			return fmt.Errorf("安装包中缺少 %s", entry)
 		}
 		if err != nil {
-			return fmt.Errorf("发布包解不开：%w", err)
+			return fmt.Errorf("安装包解压失败：%w", err)
 		}
 		if h.Typeflag != tar.TypeReg || h.Name != entry {
 			continue
 		}
 		n, err := io.Copy(w, io.LimitReader(tr, maxBinarySize+1))
 		if err != nil {
-			return fmt.Errorf("发布包解不开：%w", err)
+			return fmt.Errorf("安装包解压失败：%w", err)
 		}
 		if n > maxBinarySize {
-			return errors.New("发布包里的 cc-cluster 大得不正常")
+			return fmt.Errorf("安装包中的 cc-cluster 大小超过上限（%d MB）", maxBinarySize>>20)
 		}
 		return nil
 	}

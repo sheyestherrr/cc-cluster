@@ -662,8 +662,15 @@ func enterCommand(dataDir, slot string) string {
 }
 
 // SelfCommand 是让使用者在终端里照着执行的一条 cc-cluster 命令；数据目录就是默认的那个时不用带 --data-dir。
+// 网页服务不知道使用者的终端里有没有用环境变量另外指定数据目录，所以只认默认的那个。
 func SelfCommand(dataDir, rest string) string {
-	if filepath.Clean(dataDir) == store.DefaultDir() {
+	return CommandFor(dataDir, store.DefaultDir(), rest)
+}
+
+// CommandFor 同 SelfCommand，implicit 是执行这条命令的终端里不带 --data-dir 时会用的数据目录：
+// dataDir 就是它时不用带，否则一定带上。
+func CommandFor(dataDir, implicit, rest string) string {
+	if implicit != "" && filepath.Clean(dataDir) == filepath.Clean(implicit) {
 		return "cc-cluster " + rest
 	}
 	return fmt.Sprintf("cc-cluster --data-dir %s %s", shellQuote(dataDir), rest)

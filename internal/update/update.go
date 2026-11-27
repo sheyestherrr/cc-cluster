@@ -11,11 +11,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -28,7 +30,24 @@ const (
 
 	defaultAPI  = "https://api.github.com"
 	defaultSite = "https://github.com"
+
+	// 等应答头最多这么久。
+	headerTimeout = 30 * time.Second
 )
+
+// apiTimeout 是 Check 里问接口最多用的时间，剩下的留给不走接口的退路。测试时调短。
+var apiTimeout = 10 * time.Second
+
+// errNotFound 是请求的地址返回 404。
+var errNotFound = errors.New("资源不存在（HTTP 404）")
+
+// ValidVersion 在 v 不是发布版的版本号时返回说明格式的错误。
+func ValidVersion(v string) error {
+	if !IsRelease(v) {
+		return fmt.Errorf("版本号 %q 无效，格式应为 vX.Y.Z（如 v0.0.3）", v)
+	}
+	return nil
+}
 
 // versionRe 与发布工作流认的标签写法一致：v主.次.修订，可以带预发布段（alpha.1、rc.1）。
 var versionRe = regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*))?$`)
@@ -142,18 +161,37 @@ type Client struct {
 // NewClient 创建访问 GitHub 的客户端；current 是本程序的版本号，只用在 User-Agent 里。
 // 代理按环境变量 HTTPS_PROXY 等的设置走。
 func NewClient(current string) *Client {
-	return &Client{
-		HTTP: &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return errors.New("跳转次数太多")
-			}
-			if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
-				return errors.New("下载地址跳转到了不加密的连接，已中止")
-			}
-			return nil
-		}},
-		API: defaultAPI, Site: defaultSite, UserAgent: "cc-cluster/" + current,
+	hc := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("重定向次数过多")
+		}
+		if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
+			return errors.New("拒绝从 HTTPS 重定向到 HTTP")
+		}
+		return nil
+	}}
+	// 对方接了连接却迟迟不应答时不无限等下去；应答开始之后的时限由调用方的 context 管。
+	if tr, ok := http.DefaultTransport.(*http.Transport); ok {
+		tr = tr.Clone()
+		tr.ResponseHeaderTimeout = headerTimeout
+		hc.Transport = tr
 	}
+	return &Client{HTTP: hc, API: defaultAPI, Site: defaultSite, UserAgent: "cc-cluster/" + current}
+}
+
+// requestError 把一次请求的失败写成给人看的一句：超时和取消单独说，其余去掉标准库加的“Get "地址":”前缀。
+func requestError(host string, err error) error {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("请求 %s 超时", host)
+	case errors.Is(err, context.Canceled):
+		return fmt.Errorf("请求 %s 已取消", host)
+	}
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		err = ue.Err
+	}
+	return fmt.Errorf("请求 %s 失败：%w", host, err)
 }
 
 // get 发一个 GET 请求，只接受 200；调用方负责关闭 Body。
@@ -168,7 +206,7 @@ func (c *Client) get(ctx context.Context, url, accept string) (*http.Response, e
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("连不上 %s：%w", req.URL.Host, err)
+		return nil, requestError(req.URL.Host, err)
 	}
 	if resp.StatusCode == http.StatusOK {
 		return resp, nil
@@ -177,25 +215,38 @@ func (c *Client) get(ctx context.Context, url, accept string) (*http.Response, e
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
-		return nil, fmt.Errorf("%s 不存在（HTTP 404）", url)
+		return nil, fmt.Errorf("%w：%s", errNotFound, url)
 	case (resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests) && resp.Header.Get("X-RateLimit-Remaining") == "0":
-		return nil, errors.New("GitHub 对这个出口地址的匿名请求限流了，过一会儿再试")
+		return nil, errors.New("GitHub API 请求次数已达上限，请稍后重试")
 	}
-	return nil, fmt.Errorf("%s 返回了 HTTP %d", req.URL.Host, resp.StatusCode)
+	return nil, fmt.Errorf("%s 返回 HTTP %d", req.URL.Host, resp.StatusCode)
 }
 
 // ghRelease 是 GitHub 接口里一个 Release 的字段。
 type ghRelease struct {
 	TagName     string    `json:"tag_name"`
-	HTMLURL     string    `json:"html_url"`
 	Body        string    `json:"body"`
 	Draft       bool      `json:"draft"`
 	Prerelease  bool      `json:"prerelease"`
 	PublishedAt time.Time `json:"published_at"`
 }
 
+// release 只在标签是合法的版本号时调用。发布页的地址由版本号拼出，不采用接口返回的那个：
+// 它会被做成链接给人点。
 func (g ghRelease) release() Release {
-	return Release{Version: g.TagName, PublishedAt: g.PublishedAt, URL: g.HTMLURL, Notes: strings.TrimSpace(strings.ReplaceAll(g.Body, "\r\n", "\n"))}
+	return Release{Version: g.TagName, PublishedAt: g.PublishedAt, URL: ReleasesURL + "/tag/" + g.TagName, Notes: cleanNotes(g.Body)}
+}
+
+// cleanNotes 统一换行，并去掉换行和制表符以外的控制字符：更新说明会原样打印到终端，
+// 里面的转义序列不该有机会改写屏幕上的内容。
+func cleanNotes(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	return strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r != '\n' && r != '\t' && unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s))
 }
 
 func (c *Client) getJSON(ctx context.Context, path string, out any) error {
@@ -205,7 +256,7 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 	}
 	defer resp.Body.Close()
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out); err != nil {
-		return fmt.Errorf("GitHub 返回的内容读不懂：%w", err)
+		return fmt.Errorf("无法解析 GitHub 的响应：%w", err)
 	}
 	return nil
 }
@@ -241,7 +292,10 @@ type Check struct {
 // Check 查出最新的正式版，以及从 current 升到它要经过的各个版本。
 // 接口用不了（多半是被限流）时改从发布页的跳转里读版本号，这样得到的结果没有发布时间和更新说明。
 func (c *Client) Check(ctx context.Context, current string) (Check, error) {
-	list, err := c.Releases(ctx)
+	// 接口单独限时：它把 ctx 的时限耗尽的话，后面的退路一开始就已经超时了。
+	actx, cancel := context.WithTimeout(ctx, apiTimeout)
+	list, err := c.Releases(actx)
+	cancel()
 	if err != nil || len(list) == 0 {
 		tag, terr := c.latestTag(ctx)
 		if terr != nil {
@@ -276,13 +330,13 @@ func (c *Client) latestTag(ctx context.Context) (string, error) {
 	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := hc.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("连不上 %s：%w", req.URL.Host, err)
+		return "", requestError(req.URL.Host, err)
 	}
 	defer resp.Body.Close()
 	loc := resp.Header.Get("Location")
 	tag := loc[strings.LastIndex(loc, "/")+1:]
 	if resp.StatusCode/100 != 3 || !IsRelease(tag) {
-		return "", errors.New("查不到最新的版本")
+		return "", errors.New("未找到已发布的版本")
 	}
 	return tag, nil
 }

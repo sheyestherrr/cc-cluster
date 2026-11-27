@@ -36,7 +36,15 @@ type webRun struct {
 	Port    int    `json:"port"`
 	Token   string `json:"token"`
 	Version string `json:"version,omitempty"`
+	// 启动时的选项：换成新版本重新启动时沿用。旧版本留下的记录里没有这几项。
+	Watch         string `json:"watch,omitempty"` // 持续检测的间隔，0s 表示不检测
+	NoUpdateCheck bool   `json:"no_update_check,omitempty"`
+	// Foreground 表示它是使用者用 --foreground 启动的（多半由 systemd 之类管理），更新时不替它重启。
+	Foreground bool `json:"foreground,omitempty"`
 }
+
+// envWebChild 由 webSpawn 设给它启动的后台进程，用来和使用者自己执行的 web --foreground 区分开。
+const envWebChild = "CC_CLUSTER_WEB_CHILD"
 
 func webRunPath(dataDir string) string   { return filepath.Join(dataDir, "web.run.json") }
 func webTokenPath(dataDir string) string { return filepath.Join(dataDir, "web.token") }
@@ -110,6 +118,8 @@ type webOptions struct {
 	Port     int
 	Fixed    bool // 使用者指定了端口：被占用就报错，不往后找
 	Interval time.Duration
+	// NoUpdateCheck 为真时不自动检查新版本。
+	NoUpdateCheck bool
 }
 
 // cmdWeb 让网页界面在后台运行并打印它的地址；已经在运行时只打印地址。
@@ -129,8 +139,12 @@ func (a *app) cmdWeb(ctx context.Context, args []string) error {
 		fs.Usage()
 		return errUsage
 	}
-	opt := webOptions{Port: *port, Interval: *interval}
-	fs.Visit(func(f *flag.Flag) { opt.Fixed = opt.Fixed || f.Name == "port" })
+	opt := webOptions{Port: *port, Interval: *interval, NoUpdateCheck: os.Getenv(update.EnvNoCheck) != ""}
+	watchSet := false
+	fs.Visit(func(f *flag.Flag) {
+		opt.Fixed = opt.Fixed || f.Name == "port"
+		watchSet = watchSet || f.Name == "watch"
+	})
 	if !web.HasUI() {
 		return errors.New("这个二进制不带网页界面：发布版自带；从源码构建时先执行 make web（需要 Node.js 与 pnpm），再 make build")
 	}
@@ -147,14 +161,17 @@ func (a *app) cmdWeb(ctx context.Context, args []string) error {
 			fmt.Fprintln(a.out, "停止：cc-cluster web stop")
 			return nil
 		}
-		// 二进制升级过：在跑的还是旧版本，换成现在这个。
-		fmt.Fprintf(a.out, "在运行的网页界面是 %s，现在的版本是 %s：重新启动它。\n", orDash(r.Version), Version)
+		// 二进制升级过，在运行的还是旧版本。以前台方式运行的由启动它的一方（systemd 之类）负责重启，这里不抢。
+		if r.Foreground && !*foreground {
+			fmt.Fprintf(a.out, "网页界面以前台方式运行（进程 %d，版本 %s），请手动重启以使用 %s。当前地址：\n\n", r.PID, orDash(r.Version), Version)
+			a.printWebAddr(r.Port, r.Token)
+			return nil
+		}
+		fmt.Fprintf(a.out, "网页界面版本为 %s，正在重启为 %s …\n", orDash(r.Version), Version)
 		if err := stopWeb(a.dataDir, r); err != nil {
 			return err
 		}
-		if !opt.Fixed {
-			opt.Port, opt.Fixed = r.Port, false // 尽量沿用原来的端口，浏览器里记着的地址不用变
-		}
+		opt = inheritWebOptions(opt, watchSet, r)
 	}
 	if *foreground {
 		return a.webServe(ctx, opt)
@@ -169,15 +186,31 @@ func (a *app) cmdWeb(ctx context.Context, args []string) error {
 	return nil
 }
 
+// inheritWebOptions 让换了版本之后重新启动的网页界面沿用原来那一份的选项；这次明确指定了的以这次的为准。
+// 不能因为换了版本就把关掉的持续检测打开。旧版本留下的记录里没有这些选项，那时用这次的。
+func inheritWebOptions(opt webOptions, watchSet bool, r webRun) webOptions {
+	if !opt.Fixed {
+		opt.Port = r.Port // 尽量沿用原来的端口，浏览器里记着的地址不用变；被占用了仍会往后找
+	}
+	if d, err := time.ParseDuration(r.Watch); err == nil && !watchSet {
+		opt.Interval = d
+	}
+	opt.NoUpdateCheck = opt.NoUpdateCheck || r.NoUpdateCheck
+	return opt
+}
+
 // webServe 在前台提供网页界面，直到收到中断信号。
 func (a *app) webServe(ctx context.Context, opt webOptions) error {
 	token, err := webToken(a.dataDir)
 	if err != nil {
 		return err
 	}
+	// 由 webSpawn 启动的不算“在前台运行”。这个标记只给本进程看，不传给它再启动的进程。
+	foreground := os.Getenv(envWebChild) == ""
+	os.Unsetenv(envWebChild)
 	srv, err := web.New(web.Options{
 		DataDir: a.dataDir, Version: Version, NoWatch: opt.Interval <= 0, WatchInterval: opt.Interval, Token: token,
-		NoUpdateCheck: os.Getenv(update.EnvNoCheck) != "",
+		NoUpdateCheck: opt.NoUpdateCheck,
 	})
 	if err != nil {
 		return err
@@ -190,7 +223,8 @@ func (a *app) webServe(ctx context.Context, opt webOptions) error {
 	defer stop()
 
 	addr := ln.Addr().(*net.TCPAddr)
-	if b, err := json.Marshal(webRun{PID: os.Getpid(), Port: addr.Port, Token: token, Version: Version}); err == nil {
+	run := webRun{PID: os.Getpid(), Port: addr.Port, Token: token, Version: Version, Watch: max(opt.Interval, 0).String(), NoUpdateCheck: opt.NoUpdateCheck, Foreground: foreground}
+	if b, err := json.Marshal(run); err == nil {
 		if err := os.WriteFile(webRunPath(a.dataDir), b, 0o600); err == nil {
 			defer os.Remove(webRunPath(a.dataDir))
 		}
@@ -226,6 +260,10 @@ func (a *app) webSpawn(opt webOptions) (webRun, error) {
 		argv = append(argv, "--port", strconv.Itoa(opt.Port))
 	}
 	cmd := exec.Command(exe, argv...)
+	cmd.Env = append(os.Environ(), envWebChild+"=1")
+	if opt.NoUpdateCheck {
+		cmd.Env = append(cmd.Env, update.EnvNoCheck+"=1")
+	}
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // 自成一个会话：关掉终端不会带走它
 	if err := cmd.Start(); err != nil {

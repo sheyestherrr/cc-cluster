@@ -5,10 +5,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sheyestherrr/cc-cluster/internal/update/updatetest"
 )
@@ -82,6 +84,22 @@ func TestReleasesSkipsDraftsAndPrereleases(t *testing.T) {
 	if got[0].Notes != "三\n- 一条" || got[0].PublishedAt.Day() != 27 {
 		t.Fatalf("更新说明或发布时间不对: %+v", got[0])
 	}
+	// 发布页的地址由版本号拼出，不采用接口给的那个。
+	if got[0].URL != ReleasesURL+"/tag/v0.0.3" {
+		t.Fatalf("发布页的地址不对: %s", got[0].URL)
+	}
+}
+
+func TestNotesDropControlCharacters(t *testing.T) {
+	h, c := newHub(t)
+	h.Add("v0.0.3", 27, "三\x1b[2J\x1b]0;x\x07\n\t- 一条\x00\r\n")
+	got, err := c.Releases(context.Background())
+	if err != nil || len(got) != 1 {
+		t.Fatal(got, err)
+	}
+	if got[0].Notes != "三[2J]0;x\n\t- 一条" {
+		t.Fatalf("更新说明里的控制字符应去掉，换行和制表符留着: %q", got[0].Notes)
+	}
 }
 
 func TestCheck(t *testing.T) {
@@ -126,13 +144,44 @@ func TestCheckFallsBackWhenRateLimited(t *testing.T) {
 	if !strings.HasSuffix(got.Latest.URL, "/releases/tag/v0.0.3") || versions(got.Releases) != "v0.0.3" {
 		t.Fatalf("应给出发布页的地址: %+v", got)
 	}
-	if _, err := c.Releases(ctx); err == nil || !strings.Contains(err.Error(), "限流") {
+	if _, err := c.Releases(ctx); err == nil || !strings.Contains(err.Error(), "已达上限") {
 		t.Fatalf("列表接口被限流时应说明原因: %v", err)
 	}
 
 	h.Releases = nil
-	if _, err := c.Check(ctx, "v0.0.2"); err == nil || !strings.Contains(err.Error(), "限流") {
+	if _, err := c.Check(ctx, "v0.0.2"); err == nil || !strings.Contains(err.Error(), "已达上限") {
 		t.Fatalf("一个版本都查不到时应报出接口的错误: %v", err)
+	}
+}
+
+func TestCheckFallsBackWhenAPIStalls(t *testing.T) {
+	h, c := newHub(t)
+	h.Add("v0.0.3", 27, "三")
+	h.Gate = make(chan struct{}) // 一直不放行
+	old := apiTimeout
+	apiTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { apiTimeout = old })
+
+	// 接口一直不应答：它只用掉自己的时限，剩下的时间够退路用。
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	got, err := c.Check(ctx, "v0.0.2")
+	if err != nil || !got.Newer || got.Latest.Version != "v0.0.3" {
+		t.Fatalf("接口超时后应从跳转里读到版本号: %+v %v", got, err)
+	}
+}
+
+func TestRequestErrorsAreReadable(t *testing.T) {
+	h, c := newHub(t)
+	h.Close()
+	_, err := c.Releases(context.Background())
+	if err == nil || !strings.HasPrefix(err.Error(), "请求 ") || strings.Contains(err.Error(), "Get \"") {
+		t.Fatalf("连接失败应写成一句，不带标准库的前缀: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := c.Releases(ctx); err == nil || !strings.Contains(err.Error(), "已取消") {
+		t.Fatalf("取消应单独说明: %v", err)
 	}
 }
 
@@ -226,24 +275,24 @@ func TestStageFailuresLeaveBinaryAlone(t *testing.T) {
 			h.Publish(t, "v0.0.3", "linux", "amd64", updatetest.Script("v0.0.3"))
 			b := h.Files["v0.0.3/"+pkg]
 			h.Files["v0.0.3/"+pkg] = append([]byte{}, b[:len(b)-1]...)
-		}, "校验和对不上"},
+		}, "校验和不匹配"},
 		{"没有这个平台的包", func(t *testing.T, h *updatetest.Hub) {
 			h.Publish(t, "v0.0.3", "darwin", "arm64", updatetest.Script("v0.0.3"))
-		}, "没有 linux/amd64 的包"},
-		{"没有这个版本", func(*testing.T, *updatetest.Hub) {}, "校验和文件"},
+		}, "未提供 linux/amd64 的安装包"},
+		{"没有这个版本", func(*testing.T, *updatetest.Hub) {}, "未找到版本 v0.0.3"},
 		{"包里的程序报告的是别的版本", func(t *testing.T, h *updatetest.Hub) {
 			h.Publish(t, "v0.0.3", "linux", "amd64", updatetest.Script("v0.0.1"))
-		}, "不是 v0.0.3"},
+		}, "与 v0.0.3 不符"},
 		{"包里的程序运行不了", func(t *testing.T, h *updatetest.Hub) {
 			h.Publish(t, "v0.0.3", "linux", "amd64", []byte("#!/bin/sh\nexit 3\n"))
-		}, "运行不了"},
+		}, "无法运行"},
 		{"包里没有 cc-cluster", func(t *testing.T, h *updatetest.Hub) {
 			// 把另一个版本的包冒充成这个版本的：校验和照着它写，里面的目录名却对不上。
 			h.Publish(t, "v0.0.4", "linux", "amd64", updatetest.Script("v0.0.4"))
 			b := h.Files["v0.0.4/"+updatetest.PackageName("v0.0.4", "linux", "amd64")+".tar.gz"]
 			h.Files["v0.0.3/"+pkg] = b
 			h.Files["v0.0.3/SHA256SUMS"] = []byte(fmt.Sprintf("%x  %s\n", sha256.Sum256(b), pkg))
-		}, "没有找到"},
+		}, "缺少"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -268,6 +317,31 @@ func TestStageRejectsMalformedVersion(t *testing.T) {
 		}
 	}
 	onlyOld(t, target)
+}
+
+func TestStageChecksDirectoryBeforeDownloading(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root 不受目录权限限制")
+	}
+	h, c := newHub(t)
+	h.Publish(t, "v0.0.3", "linux", "amd64", updatetest.Script("v0.0.3"))
+	// 记下有没有人来下载。
+	hits := 0
+	inner := h.Config.Handler
+	h.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++; inner.ServeHTTP(w, r) })
+	target := oldBinary(t)
+	dir := filepath.Dir(target)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	_, err := c.stage(context.Background(), "v0.0.3", target, "linux", "amd64")
+	if err == nil || !strings.Contains(err.Error(), "无权写入") {
+		t.Fatalf("目录不可写时应说明: %v", err)
+	}
+	if hits != 0 {
+		t.Fatalf("目录不可写时不应先去下载: %d 次请求", hits)
+	}
 }
 
 func TestImageVersion(t *testing.T) {
@@ -296,6 +370,16 @@ func TestImageVersion(t *testing.T) {
 	}
 	if _, behind := ImagesBehind("my/gw:1", "cc-cluster-worker:dev", "v0.0.3"); behind {
 		t.Error("自己指定的镜像不算落后")
+	}
+	// 二进制退回了旧版本：镜像比它新，不算落后，但确实不是同一个版本。
+	if _, behind := ImagesBehind(g, w, "v0.0.2"); behind {
+		t.Error("镜像比二进制新时不算落后")
+	}
+	if cur, differs := ImagesVersion(g, w, "v0.0.2"); !differs || cur != "v0.0.3" {
+		t.Errorf("镜像比二进制新时应认出不是同一个版本: %q %v", cur, differs)
+	}
+	if _, differs := ImagesVersion(g, w, "v0.0.3"); differs {
+		t.Error("同一个版本时不应算不同")
 	}
 }
 

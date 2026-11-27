@@ -233,7 +233,7 @@ func (c *Client) ImagePull(ctx context.Context, ref string, progress func(string
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
-			return fmt.Errorf("拉取 %s 时连接中断：%w", ref, err)
+			return fmt.Errorf("拉取 %s 中断：%w", ref, err)
 		}
 		if m.Error != "" {
 			return fmt.Errorf("拉取 %s 失败：%s", ref, m.Error)

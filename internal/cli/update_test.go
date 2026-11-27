@@ -132,18 +132,22 @@ func TestUpdateReplacesOnlyTheBinary(t *testing.T) {
 
 	// 只查看：说明要经过的两个版本，什么都不换。
 	out, code := e.run("update", "--check")
-	if code != 0 || !strings.Contains(out, "当前版本 v0.0.2，最新的是 v0.0.4") || !strings.Contains(out, "第三版") || !strings.Contains(out, "修了一处") {
+	if code != 0 || !strings.Contains(out, "当前版本 v0.0.2，最新版本 v0.0.4") || !strings.Contains(out, "第三版") || !strings.Contains(out, "修了一处") {
 		t.Fatalf("--check 的输出不对: %d %s", code, out)
 	}
 	if strings.Contains(out, "Fourth") || strings.Contains(out, "第二版") {
 		t.Fatalf("只应显示新版本说明的中文部分: %s", out)
+	}
+	// 数据目录不是默认的那个：给出的命令带着它。
+	if !strings.Contains(out, "cc-cluster --data-dir "+e.data+" update\n") {
+		t.Fatalf("应给出能照着执行的更新命令: %s", out)
 	}
 	if e.binary() != string(updatetest.Script("v0.0.2")) || e.snapshot() != before {
 		t.Fatal("--check 不应改动任何东西")
 	}
 
 	out, code = e.run("update")
-	if code != 0 || !strings.Contains(out, "现在是 v0.0.4") {
+	if code != 0 || !strings.Contains(out, "已更新至 v0.0.4") {
 		t.Fatalf("更新失败: %d %s", code, out)
 	}
 	if e.binary() != string(updatetest.Script("v0.0.4")) {
@@ -160,7 +164,7 @@ func TestUpdateReplacesOnlyTheBinary(t *testing.T) {
 	if c := e.cluster(); !strings.HasSuffix(c.GatewayImage, ":v0.0.2") || !strings.HasSuffix(c.WorkerImage, ":v0.0.2") {
 		t.Fatalf("镜像的设置不应自动更换: %+v", c)
 	}
-	if !strings.Contains(out, "镜像的设置仍是 v0.0.2 的") || !strings.Contains(out, "update --images") {
+	if !strings.Contains(out, "镜像设置仍为 v0.0.2") || !strings.Contains(out, "update --images") {
 		t.Fatalf("应提醒镜像可以另外更换: %s", out)
 	}
 }
@@ -170,7 +174,7 @@ func TestUpdateWhenNothingToDo(t *testing.T) {
 	e.publish("v0.0.3", 27, "第三版")
 	before := e.snapshot()
 	out, code := e.run("update")
-	if code != 0 || !strings.Contains(out, "已经是最新的版本 v0.0.3") || strings.Contains(out, "镜像") {
+	if code != 0 || !strings.Contains(out, "已是最新版本（v0.0.3）") || strings.Contains(out, "镜像") {
 		t.Fatalf("已是最新时: %d %s", code, out)
 	}
 	if e.binary() != string(updatetest.Script("v0.0.3")) || e.snapshot() != before {
@@ -186,7 +190,7 @@ func TestUpdateFailureChangesNothing(t *testing.T) {
 	before := e.snapshot()
 
 	out, code := e.run("update")
-	if code == 0 || !strings.Contains(out, "校验和对不上") || !strings.Contains(out, "什么都没有改动") {
+	if code == 0 || !strings.Contains(out, "校验和不匹配") || !strings.Contains(out, "未做任何更改") {
 		t.Fatalf("下载坏了应当失败并说明: %d %s", code, out)
 	}
 	if e.binary() != string(updatetest.Script("v0.0.2")) || e.snapshot() != before {
@@ -198,7 +202,7 @@ func TestUpdateFailureChangesNothing(t *testing.T) {
 
 	// 发布页连不上。
 	e.hub.Close()
-	if out, code := e.run("update"); code == 0 || !strings.Contains(out, "查不到最新的版本") {
+	if out, code := e.run("update"); code == 0 || !strings.Contains(out, "检查更新失败") {
 		t.Fatalf("连不上时应说明: %d %s", code, out)
 	}
 	if e.binary() != string(updatetest.Script("v0.0.2")) || e.snapshot() != before {
@@ -209,11 +213,11 @@ func TestUpdateFailureChangesNothing(t *testing.T) {
 func TestUpdateRefusesSourceBuilds(t *testing.T) {
 	e := newUpdateEnv(t, "v0.0.2-3-g768d650")
 	e.publish("v0.0.3", 27, "第三版")
-	if out, code := e.run("update", "--check"); code != 0 || !strings.Contains(out, "从源码构建的") || !strings.Contains(out, "v0.0.3") {
-		t.Fatalf("源码构建也应能查看最新版本: %d %s", code, out)
+	if out, code := e.run("update", "--check"); code != 0 || !strings.Contains(out, "源码构建") || !strings.Contains(out, "v0.0.3") || strings.Contains(out, "执行以下命令") {
+		t.Fatalf("源码构建也应能查看最新版本，但不提示更新命令: %d %s", code, out)
 	}
 	out, code := e.run("update")
-	if code == 0 || !strings.Contains(out, "不自动更新") {
+	if code == 0 || !strings.Contains(out, "无法自动更新") {
 		t.Fatalf("源码构建不应被自动换掉: %d %s", code, out)
 	}
 	if e.binary() != string(updatetest.Script("v0.0.2-3-g768d650")) {
@@ -226,17 +230,96 @@ func TestUpdateToGivenVersion(t *testing.T) {
 	e.publish("v0.0.3", 27, "第三版")
 	e.publish("v0.0.2", 25, "第二版")
 	for _, bad := range []string{"latest", "0.0.2", "v0.0.2/../x"} {
-		if out, code := e.run("update", "--version", bad); code == 0 || !strings.Contains(out, "不对") {
+		if out, code := e.run("update", "--version", bad); code == 0 || !strings.Contains(out, "无效") {
 			t.Fatalf("版本号 %q 应被拒绝: %d %s", bad, code, out)
 		}
 	}
-	// 明确指定时可以换回旧版本。
-	if out, code := e.run("update", "--version", "v0.0.2"); code != 0 || e.binary() != string(updatetest.Script("v0.0.2")) {
+	// --check 查的是最新版本，和指定版本一起用没有意义。
+	if out, code := e.run("update", "--check", "--version", "v0.0.2"); code == 0 || !strings.Contains(out, "不能同时使用") {
+		t.Fatalf("--check 与 --version 不应同时接受: %d %s", code, out)
+	}
+	// 已经是这个版本。
+	if out, code := e.run("update", "--version", "v0.0.3"); code != 0 || !strings.Contains(out, "无需更新") || e.binary() != string(updatetest.Script("v0.0.3")) {
+		t.Fatalf("指定的就是当前版本时不应有动作: %d %s", code, out)
+	}
+	// 明确指定时可以换回旧版本。镜像的设置比它新，不提示“更新镜像”。
+	out, code := e.run("update", "--version", "v0.0.2")
+	if code != 0 || e.binary() != string(updatetest.Script("v0.0.2")) {
 		t.Fatalf("应换成指定的版本: %d %s", code, out)
 	}
+	if strings.Contains(out, "镜像") {
+		t.Fatalf("退回旧版本时不应提示更新镜像: %s", out)
+	}
 	// 指定的版本没有发布过。
-	if out, code := e.run("update", "--version", "v0.9.9"); code == 0 || !strings.Contains(out, "什么都没有改动") {
+	if out, code := e.run("update", "--version", "v0.9.9"); code == 0 || !strings.Contains(out, "未找到版本 v0.9.9") || !strings.Contains(out, "未做任何更改") {
 		t.Fatalf("不存在的版本应当失败: %d %s", code, out)
+	}
+}
+
+// webRecord 在数据目录里放一份“网页界面正在运行”的记录：进程用父进程冒充，端口真的有人在听。
+func webRecord(t *testing.T, dataDir string, r webRun) {
+	t.Helper()
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	r.PID, r.Port, r.Token = os.Getppid(), ln.Addr().(*net.TCPAddr).Port, "t"
+	b, _ := json.Marshal(r)
+	if err := os.WriteFile(webRunPath(dataDir), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUpdateRestartsStaleWeb(t *testing.T) {
+	e := newUpdateEnv(t, "v0.0.3")
+	e.publish("v0.0.3", 27, "第三版")
+	// 冒充二进制的脚本把收到的参数记下来，再照常打印版本号。
+	args := filepath.Join(t.TempDir(), "args")
+	script := func(tail string) {
+		body := "#!/bin/sh\necho \"$@\" >> " + args + "\n" + tail
+		if err := os.WriteFile(e.target, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	called := func() string {
+		b, _ := os.ReadFile(args)
+		_ = os.Remove(args)
+		return strings.TrimSpace(string(b))
+	}
+
+	// 二进制已经是最新的，后台的网页界面还是旧版本（用安装脚本升级过，或上次没能重启）：照样重启它。
+	script("echo v0.0.3\n")
+	webRecord(t, e.data, webRun{Version: "v0.0.2"})
+	out, code := e.run("update")
+	if code != 0 || !strings.Contains(out, "已是最新版本") || !strings.Contains(out, "网页界面已重启") {
+		t.Fatalf("旧版本的网页界面应被重启: %d %s", code, out)
+	}
+	if got := called(); got != "--data-dir "+e.data+" web" {
+		t.Fatalf("应由二进制自己重启网页界面: %q", got)
+	}
+
+	// 版本相同：不动。
+	webRecord(t, e.data, webRun{Version: "v0.0.3"})
+	if out, _ := e.run("update"); strings.Contains(out, "网页界面") || called() != "" {
+		t.Fatalf("版本相同时不应重启: %s", out)
+	}
+
+	// 以前台方式运行的（由别的程序管着）：只提示，不替它重启。
+	webRecord(t, e.data, webRun{Version: "v0.0.2", Foreground: true})
+	if out, _ := e.run("update"); !strings.Contains(out, "请手动重启") || called() != "" {
+		t.Fatalf("前台运行的网页界面不应被重启: %s", out)
+	}
+
+	// 重启失败：说明原因和要执行的命令，更新本身不算失败；带令牌的地址不出现在输出里。
+	script("echo 'http://127.0.0.1:1/#token=abc'\necho '错误：端口被占用' >&2\nexit 1\n")
+	webRecord(t, e.data, webRun{Version: "v0.0.2"})
+	out, code = e.run("update")
+	if code != 0 || !strings.Contains(out, "网页界面重启失败：端口被占用") || !strings.Contains(out, "cc-cluster --data-dir "+e.data+" web") {
+		t.Fatalf("重启失败时应说明: %d %s", code, out)
+	}
+	if strings.Contains(out, "token=") {
+		t.Fatalf("不应转述带令牌的地址: %s", out)
 	}
 }
 
@@ -292,8 +375,8 @@ func TestUpdateImagesOnlyWhenAsked(t *testing.T) {
 	if strings.Join(*pulled, " ") != gw+" "+wk {
 		t.Fatalf("应先把两个镜像拉到本机: %v", *pulled)
 	}
-	if !strings.Contains(out, "配置待应用") {
-		t.Fatalf("应说明运行中的容器要重建后才用上: %s", out)
+	if !strings.Contains(out, "配置待应用") || !strings.Contains(out, "持续检测暂停") {
+		t.Fatalf("应说明运行中的容器要重建后才用上，期间不做持续检测: %s", out)
 	}
 	// 使用者的文件仍然原样。
 	if b, _ := os.ReadFile(filepath.Join(e.data, "slots/a/home/work/notes.txt")); string(b) != "使用者的文件" {
@@ -304,7 +387,7 @@ func TestUpdateImagesOnlyWhenAsked(t *testing.T) {
 	*pulled = nil
 	before := e.snapshot()
 	Version = "v0.0.3"
-	if out, code := e.run("update", "--images"); code != 0 || !strings.Contains(out, "不用换") || len(*pulled) != 0 || e.snapshot() != before {
+	if out, code := e.run("update", "--images"); code != 0 || !strings.Contains(out, "无需更新") || len(*pulled) != 0 || e.snapshot() != before {
 		t.Fatalf("没有可换的时候不应有动作: %d %s %v", code, out, *pulled)
 	}
 }
@@ -321,7 +404,7 @@ func TestUpdateImagesLeavesCustomImagesAndFailuresAlone(t *testing.T) {
 	// 拉不下来：设置保持原样。
 	fakeDocker(t, "manifest unknown")
 	out, code := e.run("update", "--images")
-	if code == 0 || !strings.Contains(out, "manifest unknown") || !strings.Contains(out, "设置保持原样") {
+	if code == 0 || !strings.Contains(out, "manifest unknown") || !strings.Contains(out, "镜像设置未更改") {
 		t.Fatalf("拉取失败应当报出来: %d %s", code, out)
 	}
 	if c := e.cluster(); c.GatewayImage != "my/gateway:1" || c.WorkerImage != oldWorker {
@@ -350,6 +433,11 @@ func TestSelfCommand(t *testing.T) {
 	}
 	t.Setenv(EnvDataDir, "/srv/cc data")
 	if got := a.selfCommand("update"); got != "cc-cluster update" {
-		t.Fatalf("环境变量里已经指定时不用带: %s", got)
+		t.Fatalf("环境变量指定的就是它时不用带: %s", got)
+	}
+	// 环境变量指的是另一个目录，这次用 --data-dir 换了：不带的话照着执行会改到另一个目录。
+	t.Setenv(EnvDataDir, "/srv/other")
+	if got := a.selfCommand("update --images"); got != "cc-cluster --data-dir '/srv/cc data' update --images" {
+		t.Fatalf("与环境变量指定的不是同一个目录时应带上它: %s", got)
 	}
 }

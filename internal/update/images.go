@@ -27,12 +27,21 @@ func ImageVersion(ref string) (string, bool) {
 	return tag, true
 }
 
-// ImagesBehind 看设置里的两个镜像：其中有本项目发布的、但不是 v 这个版本的，就返回它现在的版本。
-func ImagesBehind(gateway, worker, v string) (from string, behind bool) {
+// ImagesVersion 看设置里的两个镜像：其中有本项目发布的、但不是 v 这个版本的，就返回它现在的版本。
+// 两个都是 v 的，或者都不是本项目发布的，ok 为假。
+func ImagesVersion(gateway, worker, v string) (cur string, ok bool) {
 	for _, ref := range []string{gateway, worker} {
 		if cur, ok := ImageVersion(ref); ok && cur != v {
 			return cur, true
 		}
+	}
+	return "", false
+}
+
+// ImagesBehind 报告镜像的设置是否比 v 旧，并返回它现在的版本。比 v 新（退回过旧版本的二进制）不算。
+func ImagesBehind(gateway, worker, v string) (from string, behind bool) {
+	if cur, ok := ImagesVersion(gateway, worker, v); ok && Newer(v, cur) {
+		return cur, true
 	}
 	return "", false
 }

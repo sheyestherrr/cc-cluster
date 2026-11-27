@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -33,6 +34,10 @@ type Hub struct {
 	Releases []Release
 	// Limited 为真时接口一律回“被限流”；下载和页面跳转不受影响。
 	Limited bool
+	// Gate 非 nil 时，接口收到请求后先等它被关闭（或对方放弃）再应答；下载和页面跳转不受影响。
+	Gate chan struct{}
+	// APICalls 是接口被请求的次数。
+	APICalls atomic.Int32
 	// Files 是可以下载的文件，键是 "<标签>/<文件名>"。
 	Files map[string][]byte
 }
@@ -49,7 +54,19 @@ func New(t testing.TB, repo string) *Hub {
 		}
 		return Release{}, false
 	}
-	api := func(w http.ResponseWriter, v any) {
+	closing := make(chan struct{})
+	t.Cleanup(func() { close(closing) })
+	api := func(w http.ResponseWriter, r *http.Request, v any) {
+		h.APICalls.Add(1)
+		if h.Gate != nil {
+			select {
+			case <-h.Gate:
+			case <-r.Context().Done():
+				return
+			case <-closing:
+				return
+			}
+		}
 		if h.Limited {
 			w.Header().Set("X-RateLimit-Remaining", "0")
 			http.Error(w, `{"message":"API rate limit exceeded"}`, http.StatusForbidden)
@@ -58,10 +75,10 @@ func New(t testing.TB, repo string) *Hub {
 		_ = json.NewEncoder(w).Encode(v)
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /repos/"+repo+"/releases", func(w http.ResponseWriter, _ *http.Request) { api(w, h.Releases) })
+	mux.HandleFunc("GET /repos/"+repo+"/releases", func(w http.ResponseWriter, r *http.Request) { api(w, r, h.Releases) })
 	mux.HandleFunc("GET /repos/"+repo+"/releases/latest", func(w http.ResponseWriter, r *http.Request) {
 		if rel, ok := stable(); ok {
-			api(w, rel)
+			api(w, r, rel)
 			return
 		}
 		http.NotFound(w, r)
@@ -69,7 +86,7 @@ func New(t testing.TB, repo string) *Hub {
 	mux.HandleFunc("GET /repos/"+repo+"/releases/tags/{tag}", func(w http.ResponseWriter, r *http.Request) {
 		for _, rel := range h.Releases {
 			if rel.TagName == r.PathValue("tag") {
-				api(w, rel)
+				api(w, r, rel)
 				return
 			}
 		}
