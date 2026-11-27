@@ -473,18 +473,22 @@ func SampleLoop(ctx context.Context, t *Traffic, interval time.Duration, open fu
 	var eng *Engine
 	var st historyStore
 	for {
-		if eng == nil {
-			if e, err := open(ctx); err == nil {
-				eng, st = e, e.st
+		// 一轮采样出错（包括崩溃）时丢开这个连接，下一轮重新打开。
+		if !guard("流量采样", func() {
+			if eng == nil {
+				if e, err := open(ctx); err == nil {
+					eng, st = e, e.st
+				}
 			}
-		}
-		if eng != nil {
-			rctx, cancel := context.WithTimeout(ctx, interval)
-			err := eng.SampleInto(rctx, t)
-			cancel()
-			if err != nil {
-				eng = nil
+			if eng != nil {
+				rctx, cancel := context.WithTimeout(ctx, interval)
+				defer cancel()
+				if err := eng.SampleInto(rctx, t); err != nil {
+					eng = nil
+				}
 			}
+		}) {
+			eng = nil
 		}
 		select {
 		case <-ctx.Done():

@@ -3,6 +3,9 @@ package engine
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
+	"runtime/debug"
 	"time"
 
 	"github.com/sheyestherrr/cc-cluster/internal/model"
@@ -171,16 +174,41 @@ func Watch(ctx context.Context, interval time.Duration, open func(context.Contex
 		case <-time.After(wait):
 		}
 		wait = interval
-		eng, err := open(ctx)
-		if err != nil {
+		var eng *Engine
+		guard("持续检测", func() {
+			var err error
+			if eng, err = open(ctx); err != nil {
+				eng = nil
+				return
+			}
+			rctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+			defer cancel()
+			_, _ = eng.WatchOnce(rctx)
+		})
+		if eng == nil {
 			continue
 		}
-		rctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-		_, _ = eng.WatchOnce(rctx)
-		cancel()
 		// 顺带刷新到了时间的远程订阅：管理器没有别的常驻进程可以做这件事。
-		rctx, cancel = context.WithTimeout(ctx, 2*time.Minute)
-		eng.RefreshDueSubs(rctx)
-		cancel()
+		// 与检测分开保护：其中一个出错不影响另一个。
+		guard("订阅的定时刷新", func() {
+			rctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+			defer cancel()
+			eng.RefreshDueSubs(rctx)
+		})
 	}
+}
+
+// guardOut 是 guard 写入崩溃信息的地方；后台运行的网页界面把它收进 web.log。
+var guardOut io.Writer = os.Stderr
+
+// guard 运行 fn。fn 崩溃时记下原因和调用栈后返回，不让它结束整个进程：
+// 后台循环（持续检测、流量采样）与网页服务在同一个进程里，一轮出错不应让之后的检测都停掉。
+func guard(what string, fn func()) (ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(guardOut, "%s出错，已跳过本轮：%v\n%s\n", what, r, debug.Stack())
+		}
+	}()
+	fn()
+	return true
 }
