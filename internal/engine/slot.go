@@ -1216,6 +1216,9 @@ func (e *Engine) SlotHold(ctx context.Context, id, reason string) (err error) {
 	}
 	defer unlock()
 	defer func() { e.record("slot.hold", id, err, reason) }()
+	if err := model.ValidateHoldReason(reason); err != nil {
+		return err
+	}
 	slot, err := e.st.Slot(id)
 	if err != nil {
 		return err

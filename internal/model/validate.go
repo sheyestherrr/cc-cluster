@@ -77,6 +77,22 @@ func ValidateNote(note string) error {
 	return nil
 }
 
+// MaxHoldReasonLen 是手动断网原因的最大长度（按字符数）。
+const MaxHoldReasonLen = 200
+
+// ValidateHoldReason 检查手动断网的原因：与备注一样是给人看的一行文字，会写进断网标记和操作记录。
+func ValidateHoldReason(reason string) error {
+	if utf8.RuneCountInString(reason) > MaxHoldReasonLen {
+		return fmt.Errorf("断网原因最长 %d 个字符", MaxHoldReasonLen)
+	}
+	for _, r := range reason {
+		if unicode.IsControl(r) {
+			return errors.New("断网原因须为单行文字，不能包含换行、制表符等控制字符")
+		}
+	}
+	return nil
+}
+
 // Normalize 给未填的字段补默认值。
 func (c *Cluster) Normalize() {
 	if c.Name == "" {

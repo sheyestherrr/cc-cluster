@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -87,5 +89,25 @@ func TestSetNote(t *testing.T) {
 	}
 	if err := eng.SetNote("cluster", "t", "x"); err == nil {
 		t.Error("不认识的对象种类应报错")
+	}
+
+	// 断网原因同样是给人看的一行文字：超长或带换行的不收，也不留下断网标记。
+	for what, reason := range map[string]string{"超长": strings.Repeat("长", model.MaxHoldReasonLen+1), "带换行": "第一行\n第二行"} {
+		if err := eng.SlotHold(ctx, "s", reason); err == nil {
+			t.Errorf("%s的断网原因应被拒绝", what)
+		}
+	}
+	if _, held, _ := st.Hold("s"); held {
+		t.Error("原因被拒绝时不应写入断网标记")
+	}
+	// 操作记录里的说明有长度上限。
+	eng.record("test.op", "s", nil, strings.Repeat("x", 5000))
+	b, err := os.ReadFile(filepath.Join(st.Dir(), "ops.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if last := lines[len(lines)-1]; len(last) > 1000 {
+		t.Errorf("操作记录的一行应被截短，实际 %d 字节", len(last))
 	}
 }

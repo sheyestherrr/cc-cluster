@@ -251,7 +251,8 @@ func (e *Engine) labels(role, id string) map[string]string {
 
 // record 写一条操作记录；记录失败不影响操作本身的结果。
 func (e *Engine) record(op, target string, err error, detail string) {
-	o := model.Op{Time: time.Now().UTC(), Op: op, Target: target, OK: err == nil, Detail: detail}
+	// 说明里可能带使用者填写的文字（断网原因、备注）：一条记录不应长到挤掉别的记录。
+	o := model.Op{Time: time.Now().UTC(), Op: op, Target: target, OK: err == nil, Detail: truncate(detail, 500)}
 	if err != nil {
 		o.Error = truncate(err.Error(), 500)
 		var ce *configError
