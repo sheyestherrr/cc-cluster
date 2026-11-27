@@ -8,7 +8,7 @@
 
 在一台机器上为 Claude Code 运行多个相互独立的“工作槽位”：每个槽位是一个 Docker 容器，有独立的 HOME、用户名、hostname、machine-id 和一个**固定的代理出口**，通过本机的网页界面管理。
 
-![总览](docs/images/overview.png)
+![总览看板](docs/images/overview.png)
 
 - **默认无网络。** 槽位的容器以 `--network none` 启动，全部流量由网关容器透明转发至该槽位绑定的出口。网关、核心或链路发生故障时，槽位断网，不会改为直连。
 - **容器内没有代理的痕迹。** 没有 `HTTPS_PROXY` 等变量，没有 TUN 网卡；不读取代理变量的程序同样被接管。
@@ -152,7 +152,7 @@ $ cc-cluster
 
 **订阅管理**：远程订阅或粘贴的分享链接；可按地区与协议筛选、测试延迟，并将选中的节点添加为中转或落地。
 
-![订阅](docs/images/subscription.png)
+![订阅管理](docs/images/subscription.png)
 
 截图中为演示数据。需要较新的浏览器（Chrome 111、Firefox 128、Safari 16.4 及以上）。
 

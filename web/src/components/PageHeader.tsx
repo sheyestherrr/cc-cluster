@@ -113,7 +113,7 @@ export function ErrorBox({ text, log, onClose }: { text: string; log?: string[];
         <span className="whitespace-pre-wrap break-words">{text}</span>
         {!!log?.length && <pre className="mono mt-2 whitespace-pre-wrap break-words text-[12px] leading-[18px] opacity-80">{log.join("\n")}</pre>}
       </div>
-      {onClose && <button type="button" onClick={onClose} className="shrink-0 border-0 bg-transparent text-[13px] font-semibold underline-offset-2 hover:underline">知道了</button>}
+      {onClose && <button type="button" onClick={onClose} className="shrink-0 border-0 bg-transparent text-[13px] font-semibold underline-offset-2 hover:underline">关闭</button>}
     </div>
   );
 }

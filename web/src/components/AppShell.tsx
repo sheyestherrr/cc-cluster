@@ -15,7 +15,8 @@ const navItems: NavItem[] = [
   { id: "subs", label: "订阅管理", icon: Rss },
   { id: "system", label: "系统", icon: Settings },
 ];
-export const pageTitles: Record<PageId, string> = { overview: "总览", slots: "槽位", network: "节点与网关", subs: "订阅", system: "系统" };
+/** 各页面的名称：导航、页头、标签页标题和正文中的引用都取自这里。 */
+export const pageTitles = Object.fromEntries(navItems.map((item) => [item.id, item.label])) as Record<PageId, string>;
 
 /** 和标签页图标（favicon.svg）同一个图形：两个容器，上面一个出口。 */
 function Logo() {

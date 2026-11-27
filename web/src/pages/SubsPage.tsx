@@ -120,11 +120,11 @@ export function SubsPage({ state, loadError, refresh }: Props) {
   };
 
   const actions = (s: Sub): SubActions => ({
-    reload: () => run(s.id, s.local ? "解析中" : "刷新中", () => api.refreshSub(s.id), (r) => refreshText(s.id, (r as Awaited<ReturnType<typeof api.refreshSub>>).data)),
+    reload: () => run(s.id, s.local ? "解析中…" : "刷新中…", () => api.refreshSub(s.id), (r) => refreshText(s.id, (r as Awaited<ReturnType<typeof api.refreshSub>>).data)),
     edit: () => setEditing({ mode: "edit", sub: s }),
     note: () => setNoting({ kind: "subs", what: "订阅", id: s.id, note: s.note }),
     remove: () => setRemoving(s),
-    every: (minutes) => run(s.id, "保存中", () => api.setSubEvery(s.id, minutes), minutes ? `订阅 ${s.id} 已设为${everyText(minutes)}自动刷新` : `订阅 ${s.id} 的自动刷新已关闭`),
+    every: (minutes) => run(s.id, "保存中…", () => api.setSubEvery(s.id, minutes), minutes ? `订阅 ${s.id} 已设为${everyText(minutes)}自动刷新` : `订阅 ${s.id} 的自动刷新已关闭`),
   });
 
   const subs = state?.subs ?? [];
@@ -172,7 +172,7 @@ export function SubsPage({ state, loadError, refresh }: Props) {
                 const s = removing!;
                 setRemoving(null);
                 if (open === s.id) setOpen(null);
-                run(s.id, "删除中", () => api.removeSub(s.id), `已删除订阅 ${s.id}`);
+                run(s.id, "删除中…", () => api.removeSub(s.id), `已删除订阅 ${s.id}`);
               }}
             >
               删除
@@ -195,7 +195,7 @@ export function SubsPage({ state, loadError, refresh }: Props) {
   return (
     <Page className="platform-page">
       <PageHeader
-        title="订阅"
+        title="订阅管理"
         subtitle="管理远程与本地订阅，从中选择节点。"
         actions={<Button onClick={() => setEditing({ mode: "add" })}><Plus />添加订阅</Button>}
       />

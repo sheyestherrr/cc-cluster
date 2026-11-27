@@ -20,7 +20,7 @@ interface Props {
   state: State | null;
   loadError: string | null;
   refresh: () => Promise<void>;
-  /** 去“订阅”页：从订阅里挑节点在那边做。 */
+  /** 去“订阅管理”页：从订阅里挑节点在那边做。 */
   goSubs: () => void;
 }
 
@@ -113,7 +113,7 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
     setRemoving(null);
     if (open?.kind === r.kind && open.id === r.id) setOpen(null);
     const action = r.kind === "gateway" ? () => api.removeGateway(r.id) : () => api.removeNode(r.id);
-    run(`${r.kind}:${r.id}`, "删除中", action, `已删除 ${r.id}`);
+    run(`${r.kind}:${r.id}`, "删除中…", action, `已删除 ${r.id}`);
   };
 
   const created = async (text: string) => {
@@ -123,14 +123,14 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
   };
 
   const gatewayActions = (g: Gateway) => ({
-    up: () => run(`gateway:${g.id}`, "启动中", () => api.gatewayUp(g.id), `网关 ${g.id} 已就绪`),
-    down: (force: boolean) => run(`gateway:${g.id}`, "停止中", () => api.gatewayDown(g.id, force), `已停止网关 ${g.id}`),
+    up: () => run(`gateway:${g.id}`, "启动中…", () => api.gatewayUp(g.id), `网关 ${g.id} 已就绪`),
+    down: (force: boolean) => run(`gateway:${g.id}`, "停止中…", () => api.gatewayDown(g.id, force), `已停止网关 ${g.id}`),
     note: () => setNoting({ kind: "gateways", what: "网关", id: g.id, note: g.note }),
     remove: () => setRemoving({ kind: "gateway", id: g.id, note: g.slots.length ? `仍有槽位使用该网关（${g.slots.join("、")}），请先删除这些槽位。` : "将删除网关容器及其配置。" }),
   });
   const nodeActions = (n: NodeInfo) => ({
-    resolve: () => run(`node:${n.id}`, "解析中", () => api.resolveNode(n.id), (r) => `${n.id} 的首跳地址：${(r as { data: { connect_ipv4: string } }).data.connect_ipv4}`),
-    report: () => run(`node:${n.id}`, "检测中", () => api.nodeReport(n.id), `已更新 ${n.id} 的出口评估`),
+    resolve: () => run(`node:${n.id}`, "解析中…", () => api.resolveNode(n.id), (r) => `${n.id} 的首跳地址：${(r as { data: { connect_ipv4: string } }).data.connect_ipv4}`),
+    report: () => run(`node:${n.id}`, "检测中…", () => api.nodeReport(n.id), `已更新 ${n.id} 的出口评估`),
     note: () => setNoting({ kind: "nodes", what: "节点", id: n.id, note: n.note }),
     remove: () => setRemoving({ kind: "node", id: n.id, note: n.used_by.length ? `该节点正被 ${n.used_by.join("、")} 使用，请先解除使用。` : "该节点未被使用。" }),
   });
@@ -200,7 +200,7 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
         subtitle="管理网关、中转与落地节点。"
         actions={
           <>
-            <Button variant="outline" onClick={goSubs} title="前往“订阅”页，从订阅的节点中选择"><Rss />从订阅中选择</Button>
+            <Button variant="outline" onClick={goSubs} title="前往“订阅管理”页，从订阅的节点中选择"><Rss />从订阅中选择</Button>
             <Button variant="outline" onClick={() => setDialog("node")}><Plus />添加节点</Button>
             <Button onClick={() => setDialog("gateway")} disabled={!state}><Plus />新建网关</Button>
           </>
@@ -215,7 +215,7 @@ export function NetworkPage({ state, loadError, refresh, goSubs }: Props) {
           <div className="empty-box plain flex-col !gap-3 !py-12">
             <Globe2 size={20} />
             <p className="text-[15px] font-semibold text-fg">暂无节点</p>
-            <p className="max-w-[480px] text-center text-[13px]">请先添加落地节点（槽位的出口）；需要中转时，在“订阅”页添加订阅，并按延迟选择节点。</p>
+            <p className="max-w-[480px] text-center text-[13px]">请先添加落地节点（槽位的出口）；需要中转时，在“订阅管理”页添加订阅，并按延迟选择节点。</p>
             <Button onClick={() => setDialog("node")}>添加节点</Button>
           </div>
         </Card>
@@ -409,7 +409,7 @@ function NodeDetail({ n, state, busy, a, alerts, back }: DetailCommon & { n: Nod
           <ExitCard
             report={n.exit_report}
             currentIP={wired?.exit_ip}
-            busy={busy === "检测中"}
+            busy={busy === "检测中…"}
             onRefresh={a.report}
             disabledWhy={reachable ? undefined : slots.length ? "查询需经链路发出：请先启动使用该落地的槽位" : "查询需经链路发出：请先创建并启动使用该落地的槽位"}
           />
@@ -618,7 +618,7 @@ function TransitDialog({ open, g, state, onClose, onChanged }: { open: boolean; 
           })}
         </div>
         <p className="field-hint !mt-0">
-          此处仅列出已添加的中转节点。如需从订阅中选择：在“订阅”页选择一个落地测试整条链路，将可连通该落地的节点添加为中转。更换时逐个验证该网关各槽位的落地能否连通，任一失败则不更换。
+          此处仅列出已添加的中转节点。如需从订阅中选择：在“订阅管理”页选择一个落地测试整条链路，将可连通该落地的节点添加为中转。更换时逐个验证该网关各槽位的落地能否连通，任一失败则不更换。
         </p>
         <SwitchItem label="跳过落地连通性验证" hint="仅在落地暂时无法连接时使用。" checked={skipCheck} onChange={setSkipCheck} />
         {error && <ErrorBox text={error} />}

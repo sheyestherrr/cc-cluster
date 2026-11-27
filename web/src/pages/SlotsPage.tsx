@@ -114,17 +114,17 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
   };
 
   const actions: Actions = {
-    up: (s, recreate = false) => run(s, recreate ? "重建中" : "启动中", () => api.slotUp(s.id, recreate), (r) => `${s.id} 已接线，出口 ${(r as { data: { exit: string } }).data.exit}`),
-    stop: (s) => run(s, "停止中", () => api.slotStop(s.id), `已停止 ${s.id}`),
-    hold: (s) => run(s, "断网中", () => api.slotHold(s.id, "通过网页界面手动断网"), `已断开 ${s.id} 的网络`),
-    release: (s) => run(s, "解除中", () => api.slotRelease(s.id), `已解除 ${s.id} 的手动断网，启动后恢复网络`),
+    up: (s, recreate = false) => run(s, recreate ? "重建中…" : "启动中…", () => api.slotUp(s.id, recreate), (r) => `${s.id} 已接线，出口 ${(r as { data: { exit: string } }).data.exit}`),
+    stop: (s) => run(s, "停止中…", () => api.slotStop(s.id), `已停止 ${s.id}`),
+    hold: (s) => run(s, "断网中…", () => api.slotHold(s.id, "通过网页界面手动断网"), `已断开 ${s.id} 的网络`),
+    release: (s) => run(s, "解除中…", () => api.slotRelease(s.id), `已解除 ${s.id} 的手动断网，启动后恢复网络`),
     enter: setEntering,
     note: (s) => setNoting({ kind: "slots", what: "槽位", id: s.id, note: s.note }),
     remove: (s) => {
       setPurge(false);
       setDeleting(s);
     },
-    report: (s) => run(s, "检测中", () => api.nodeReport(s.landing), `已更新 ${s.landing} 的出口评估`),
+    report: (s) => run(s, "检测中…", () => api.nodeReport(s.landing), `已更新 ${s.landing} 的出口评估`),
   };
 
   const slots = state?.slots ?? null;
@@ -207,7 +207,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
                 const s = deleting!;
                 setDeleting(null);
                 if (open === s.id) setOpen(null);
-                run(s, "删除中", () => api.removeSlot(s.id, purge), `已删除 ${s.id}`);
+                run(s, "删除中…", () => api.removeSlot(s.id, purge), `已删除 ${s.id}`);
               }}
             >
               删除
@@ -451,7 +451,7 @@ function SlotDetail({ s, state, live, history, busy, a, alerts, onBack }: Detail
             <ExitCard
               report={landing?.exit_report}
               currentIP={wired ? s.exit_ip : undefined}
-              busy={busy === "检测中"}
+              busy={busy === "检测中…"}
               onRefresh={() => a.report(s)}
               disabledWhy={gatewayUp ? undefined : "查询需经链路发出：网关未运行，请先启动该槽位"}
             />
@@ -678,7 +678,7 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
             <Field label="名称" hint={ID_HINT}>
               <Input aria-label="槽位名称" value={slot.id} maxLength={32} autoFocus placeholder="例如 work-a" onChange={(e) => setSlot({ ...slot, id: e.target.value })} />
             </Field>
-            <Field label="备注（可选）">
+            <Field label="备注">
               <Input aria-label="槽位备注" value={slot.note} maxLength={NOTE_MAX} placeholder={NOTE_PLACEHOLDER} onChange={(e) => setSlot({ ...slot, note: e.target.value })} />
             </Field>
             <Field label="出口" wide>
@@ -713,7 +713,7 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
               <>
                 <Field label="订阅">
                   <Select aria-label="订阅" value={dsub} onChange={(e) => void loadDirect(e.target.value)}>
-                    {state.subs.length === 0 && <option value="">暂无订阅，请先在“订阅管理”中添加</option>}
+                    {state.subs.length === 0 && <option value="">暂无订阅，请先在“订阅管理”页添加</option>}
                     {state.subs.map((s) => <option key={s.id} value={s.id}>{s.id}（{s.count} 个节点）</option>)}
                   </Select>
                 </Field>
@@ -724,7 +724,7 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
                   </Select>
                 </Field>
                 <div className="callout callout-warning field-span-2">
-                  <span>出口即该节点，出口地址为多人共用。节点固定后，其不可用时槽位无网络，不会自动更换节点（否则出口可能切换到其他国家），需手动更换。列表按最近一次测试的延迟排序，不含不可用的节点；尚未测试时，请先在订阅页测试延迟。</span>
+                  <span>出口即该节点，出口地址为多人共用。节点固定后，其不可用时槽位无网络，不会自动更换节点（否则出口可能切换到其他国家），需手动更换。列表按最近一次测试的延迟排序，不含不可用的节点；尚未测试时，请先在“订阅管理”页测试延迟。</span>
                 </div>
               </>
             )}
@@ -735,7 +735,7 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
           <Textarea aria-label="挂载的目录" rows={3} spellCheck={false} placeholder="/data/projects" value={mounts} onChange={(e) => setMounts(e.target.value)} />
         </FormSection>
 
-        <FormSection title="资源与身份（可选）">
+        <FormSection title="资源与身份" hint="均为选填。">
           <FormGrid>
             <Field label="CPU 核数">
               <Input aria-label="CPU 核数" type="number" min={0} step={0.5} placeholder="不限" value={slot.cpus || ""} onChange={(e) => setSlot({ ...slot, cpus: Number(e.target.value) || 0 })} />

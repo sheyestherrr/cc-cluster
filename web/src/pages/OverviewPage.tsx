@@ -179,7 +179,7 @@ export function OverviewPage({ state, loadError, go }: Props) {
 
       <div className="dashboard-main-grid">
         <Card className="dashboard-panel span-2">
-          <PanelHead title="流量趋势" hint={`各槽位合计的下行 / 上行（${history ? (history.step >= 3600 ? `每 ${history.step / 3600} 小时一个数据点` : `每 ${history.step / 60} 分钟一个数据点`) : "加载中"}）`}>
+          <PanelHead title="流量趋势" hint={`各槽位合计的下行 / 上行（${history ? (history.step >= 3600 ? `每 ${history.step / 3600} 小时一个数据点` : `每 ${history.step / 60} 分钟一个数据点`) : "加载中…"}）`}>
             <div className="panel-totals">
               <div className="panel-total">
                 <span><i style={{ background: "var(--chart-1)" }} />{rangeText}下行</span>
@@ -395,7 +395,7 @@ function SubsPanels({ state, delays, error, history, rangeText, goSubs }: { stat
         {!error && delays !== null && !ok.length && (
           <div className="empty-box plain" style={{ minHeight: 226 }}>
             <p>{nodes.length ? `${nodes.length} 个节点中${dead ? `有 ${dead} 个不可用，其余` : ""}尚未测试延迟。` : "订阅中没有节点。"}</p>
-            <Button size="sm" variant="outline" onClick={goSubs}>前往订阅页测试</Button>
+            <Button size="sm" variant="outline" onClick={goSubs}>前往“订阅管理”页测试</Button>
           </div>
         )}
         {!error && !!ok.length && (
@@ -418,7 +418,7 @@ function SubsPanels({ state, delays, error, history, rangeText, goSubs }: { stat
         {trend.length && history ? (
           <SubUsableChart points={trend} from={history.from} to={history.to} height={226} />
         ) : (
-          <ChartEmpty height={226}>该时段内未进行延迟测试。每次在订阅页测试延迟后，此处增加一个数据点。</ChartEmpty>
+          <ChartEmpty height={226}>该时段内未进行延迟测试。每次在“订阅管理”页测试延迟后，此处增加一个数据点。</ChartEmpty>
         )}
       </Card>
     </>

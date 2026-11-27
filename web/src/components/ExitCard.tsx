@@ -75,7 +75,7 @@ export function ExitCard({ report: r, currentIP, busy, onRefresh, disabledWhy, c
       {onRefresh && (
         <Button variant="outline" size="sm" onClick={onRefresh} disabled={busy || !!disabledWhy} title={disabledWhy ?? "经该落地的链路重新查询，查询请求的来源即该出口"}>
           {busy ? <Loader2 className="spin" /> : <RefreshCw />}
-          {busy ? "检测中" : "重新检测"}
+          {busy ? "检测中…" : "重新检测"}
         </Button>
       )}
     </div>
