@@ -87,7 +87,7 @@ func (e *Engine) watchSlot(ctx context.Context, sl model.Slot) (w model.Watch, c
 	}
 	switch {
 	case perr != nil:
-		w.Status, w.Detail = WatchUnreachable, "经链路访问不了探测地址；此时槽位没有网络，出口恢复后会自己恢复"
+		w.Status, w.Detail = WatchUnreachable, "经链路无法访问探测地址；槽位当前无网络，出口恢复后自动恢复"
 	case ip == st.ExitIP:
 		w.Status, w.ExitIP = WatchOK, ip
 	default:
@@ -97,9 +97,9 @@ func (e *Engine) watchSlot(ctx context.Context, sl model.Slot) (w model.Watch, c
 			break
 		}
 		w.Status, w.ExitIP = WatchChanged, ip
-		w.Detail = fmt.Sprintf("出口从 %s 变成了 %s", st.ExitIP, ip)
-		if herr := e.holdIfUnchanged(ctx, sl.ID, st.ExitIP, "持续检测："+w.Detail+"，已自动断网；确认后 slot release 再 slot up"); herr != nil {
-			w.Detail += "；自动断网没有成功：" + herr.Error()
+		w.Detail = fmt.Sprintf("出口由 %s 变更为 %s", st.ExitIP, ip)
+		if herr := e.holdIfUnchanged(ctx, sl.ID, st.ExitIP, "持续检测："+w.Detail+"，已自动断网；确认后请执行 slot release，再执行 slot up"); herr != nil {
+			w.Detail += "；自动断网失败：" + herr.Error()
 		}
 	}
 
@@ -115,7 +115,7 @@ func (e *Engine) watchSlot(ctx context.Context, sl model.Slot) (w model.Watch, c
 			e.logf("槽位 %s：%s，已自动断网", sl.ID, w.Detail)
 		case WatchOK:
 			if had {
-				e.logf("槽位 %s：恢复正常，出口 %s", sl.ID, w.ExitIP)
+				e.logf("槽位 %s：已恢复，出口 %s", sl.ID, w.ExitIP)
 			}
 		}
 	}

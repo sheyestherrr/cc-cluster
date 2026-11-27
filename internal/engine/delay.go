@@ -63,9 +63,9 @@ func (d NodeDelay) DelayText() string {
 	case d.DelayMS > 0:
 		return fmt.Sprintf("%d ms", d.DelayMS)
 	case d.DelayMS == model.DelayFailed:
-		return "不通"
+		return "不可用"
 	}
-	return "未测"
+	return "未测试"
 }
 
 // SubDelays 返回订阅里各节点最近一次的测速结果：测通的按延迟从低到高排在前面，
@@ -124,9 +124,9 @@ func (e *Engine) SubTest(ctx context.Context, id string, opt DelayOptions) (res 
 				ok++
 			}
 		}
-		detail := fmt.Sprintf("%d 个节点里 %d 个测通", len(res), ok)
+		detail := fmt.Sprintf("%d 个节点中 %d 个可用", len(res), ok)
 		if opt.Landing != "" {
-			detail += "（接落地 " + opt.Landing + "）"
+			detail += "（经落地 " + opt.Landing + "）"
 		}
 		e.record("sub.test", id, err, detail)
 	}()
@@ -135,7 +135,7 @@ func (e *Engine) SubTest(ctx context.Context, id string, opt DelayOptions) (res 
 		return nil, err
 	}
 	if len(sub.Proxies) == 0 {
-		return nil, fmt.Errorf("订阅 %s 里没有节点", id)
+		return nil, fmt.Errorf("订阅 %s 中没有节点", id)
 	}
 	var via map[string]any
 	if opt.Landing != "" {
@@ -153,9 +153,9 @@ func (e *Engine) SubTest(ctx context.Context, id string, opt DelayOptions) (res 
 		fragments[i] = p.Proxy
 	}
 	if via != nil {
-		e.logf("正在测订阅 %s 里 %d 个节点接落地 %s 的整条链路", id, len(fragments), opt.Landing)
+		e.logf("正在测试订阅 %s 的 %d 个节点经落地 %s 的整条链路", id, len(fragments), opt.Landing)
 	} else {
-		e.logf("正在测订阅 %s 里 %d 个节点的延迟", id, len(fragments))
+		e.logf("正在测试订阅 %s 的 %d 个节点的延迟", id, len(fragments))
 	}
 	delays, err := e.measureDelays(ctx, fragments, via, opt)
 	if err != nil {
@@ -210,14 +210,14 @@ func (e *Engine) SubTest(ctx context.Context, id string, opt DelayOptions) (res 
 // via 不为空时每个节点后面接上这个落地，测整条链路。
 func (e *Engine) measureDelays(ctx context.Context, proxies []map[string]any, via map[string]any, opt DelayOptions) ([]int, error) {
 	if e.dk == nil {
-		return nil, errors.New("测延迟需要连接 Docker")
+		return nil, errors.New("延迟测试需要连接 Docker")
 	}
 	target := opt.URL
 	if target == "" {
 		target = DefaultDelayURL
 	}
 	if u, err := url.Parse(target); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return nil, fmt.Errorf("测速地址 %q 不合法：应是 http 或 https 地址", target)
+		return nil, fmt.Errorf("测试地址 %q 无效，须为 http 或 https 地址", target)
 	}
 	timeout := opt.Timeout
 	if timeout <= 0 {
@@ -234,7 +234,7 @@ func (e *Engine) measureDelays(ctx context.Context, proxies []map[string]any, vi
 	if has, err := e.dk.ImageExists(ctx, image); err != nil {
 		return nil, err
 	} else if !has {
-		return nil, fmt.Errorf("本地没有网关镜像 %s；先%s", image, imageHint(image))
+		return nil, fmt.Errorf("本机未找到网关镜像 %s；请先%s", image, imageHint(image))
 	}
 	if err := e.ensureEgressNetwork(ctx, network); err != nil {
 		return nil, err
@@ -271,7 +271,7 @@ func (e *Engine) measureDelays(ctx context.Context, proxies []map[string]any, vi
 		"delay.yaml": {Data: config, Mode: 0o600},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("写入测速配置：%w", err)
+		return nil, fmt.Errorf("写入延迟测试的配置：%w", err)
 	}
 	if err := e.dk.ContainerStart(ctx, id); err != nil {
 		return nil, err
@@ -294,7 +294,7 @@ func (e *Engine) measureDelays(ctx context.Context, proxies []map[string]any, vi
 		return err == nil, err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("测速用的核心没有就绪：%w", err)
+		return nil, fmt.Errorf("延迟测试所用的核心未就绪：%w", err)
 	}
 
 	// 一次请求测完整组：核心并发地经每个节点访问测速地址，超时的不出现在结果里。
@@ -302,7 +302,7 @@ func (e *Engine) measureDelays(ctx context.Context, proxies []map[string]any, vi
 	out, err := e.sh(ctx, id, fmt.Sprintf("curl -sS -m %d --unix-socket %s 'http://localhost/group/%s/delay?%s'",
 		int(timeout.Seconds())+10, mihomo.SocketPath, mihomo.DelayGroup, query.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf("发起测速：%w", err)
+		return nil, fmt.Errorf("发起延迟测试：%w", err)
 	}
 	got, err := parseDelays(out, names)
 	if err != nil {
@@ -316,7 +316,7 @@ func (e *Engine) measureDelays(ctx context.Context, proxies []map[string]any, vi
 func parseDelays(body string, names []string) ([]int, error) {
 	var m map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(body)), &m); err != nil {
-		return nil, fmt.Errorf("测速应答无法解析：%s", truncate(strings.TrimSpace(body), 120))
+		return nil, fmt.Errorf("无法解析延迟测试的响应：%s", truncate(strings.TrimSpace(body), 120))
 	}
 	res := make([]int, len(names))
 	hit := false
@@ -327,7 +327,7 @@ func parseDelays(body string, names []string) ([]int, error) {
 		}
 	}
 	if _, isErr := m["message"]; !hit && !isErr && len(m) > 0 {
-		return nil, fmt.Errorf("测速应答里没有认识的节点：%s", truncate(strings.TrimSpace(body), 120))
+		return nil, fmt.Errorf("延迟测试的响应中没有对应的节点：%s", truncate(strings.TrimSpace(body), 120))
 	}
 	return res, nil
 }

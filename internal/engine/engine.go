@@ -155,7 +155,7 @@ func (e *Engine) SetImages(gateway, worker string) (err error) {
 	defer func() { e.record("cluster.images", "", err, "网关 "+c.GatewayImage+"，worker "+c.WorkerImage) }()
 	for _, img := range []string{c.GatewayImage, c.WorkerImage} {
 		if strings.ContainsAny(img, " \t\n") {
-			return fmt.Errorf("镜像名 %q 里不能有空白", img)
+			return fmt.Errorf("镜像名 %q 不能包含空白字符", img)
 		}
 	}
 	if err := c.Validate(); err != nil {
@@ -219,7 +219,7 @@ func (e *Engine) SetNote(kind, id, note string) (err error) {
 		sl.Note = note
 		return e.st.SaveSlot(sl, false)
 	}
-	return fmt.Errorf("不认识的对象种类 %q", kind)
+	return fmt.Errorf("未知的对象类型 %q", kind)
 }
 
 // ProtectedPaths 返回宿主上不允许整个挂进槽位的目录：使用者的主目录和数据目录。
@@ -256,7 +256,7 @@ func (e *Engine) record(op, target string, err error, detail string) {
 		o.Error = truncate(err.Error(), 500)
 		var ce *configError
 		if errors.As(err, &ce) {
-			o.Error = "核心配置校验失败（核心的报错可能带出配置片段，不写入记录）"
+			o.Error = "核心配置校验失败（核心的报错可能包含配置片段，未写入记录）"
 		}
 	}
 	_ = e.st.AppendOp(o)

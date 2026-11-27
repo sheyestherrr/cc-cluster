@@ -106,7 +106,7 @@ type Report struct {
 	Skipped []int
 }
 
-var errUnknownFormat = errors.New("认不出订阅内容的格式：支持 Clash 格式（带 proxies 列表）、base64 订阅，和一行一个的分享链接（ss、vmess、vless、trojan、hysteria2、socks5、http）")
+var errUnknownFormat = errors.New("无法识别订阅内容的格式：支持 Clash 格式（含 proxies 列表）、base64 订阅，以及每行一个的分享链接（ss、vmess、vless、trojan、hysteria2、socks5、http）")
 
 // Parse 解析订阅内容，只返回节点。
 func Parse(body []byte) ([]model.SubProxy, error) {
@@ -118,7 +118,7 @@ func Parse(body []byte) ([]model.SubProxy, error) {
 func ParseReport(body []byte) (Report, error) {
 	text := normalizeText(body)
 	if text == "" {
-		return Report{}, errors.New("订阅内容是空的")
+		return Report{}, errors.New("订阅内容为空")
 	}
 	rep, ok, err := parseText(text)
 	if err == nil && !ok {
@@ -135,9 +135,9 @@ func ParseReport(body []byte) (Report, error) {
 	}
 	if len(rep.Proxies) == 0 {
 		if rep.Format == FormatLinks {
-			return Report{}, fmt.Errorf("没有能用的节点：%d 行都没能解析（协议不支持或写法不对）", len(rep.Skipped))
+			return Report{}, fmt.Errorf("没有可用的节点：%d 行均无法解析（协议不受支持或格式有误）", len(rep.Skipped))
 		}
-		return Report{}, errors.New("订阅里没有可用的节点（proxies 列表是空的，或者条目缺少名称、类型、服务器、端口）")
+		return Report{}, errors.New("订阅中没有可用的节点（proxies 列表为空，或条目缺少名称、类型、服务器、端口）")
 	}
 	return rep, nil
 }
@@ -203,10 +203,10 @@ func parseClash(text string) ([]model.SubProxy, error) {
 		Outbounds []any            `yaml:"outbounds"`
 	}
 	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
-		return nil, errors.New("订阅内容看起来是 Clash 格式，但不是合法的 YAML")
+		return nil, errors.New("订阅内容疑似 Clash 格式，但不是有效的 YAML")
 	}
 	if doc.Proxies == nil && doc.Outbounds != nil {
-		return nil, errors.New("这是 sing-box 格式的配置，暂不支持；请换成 Clash 格式或通用（base64）格式的订阅")
+		return nil, errors.New("暂不支持 sing-box 格式的配置；请改用 Clash 格式或通用（base64）格式的订阅")
 	}
 	seen := map[string]bool{}
 	var out []model.SubProxy

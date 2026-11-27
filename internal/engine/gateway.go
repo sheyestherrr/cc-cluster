@@ -206,13 +206,13 @@ func (e *Engine) ensureGateway(ctx context.Context, p *gatewayPlan) (*gatewayRun
 		return nil, err
 	}
 	if ok && c.Config.Labels[labelSpec] != digest {
-		return nil, fmt.Errorf("网关容器 %s 的设置与期望不一致；先执行 gateway down %s 再 up（它上面所有槽的线会断开，之后逐槽 slot up）", name, p.gw.ID)
+		return nil, fmt.Errorf("网关容器 %s 与当前配置不一致；请先执行 gateway down %s 再 up（该网关上所有槽位将断开接线，之后需逐个执行 slot up）", name, p.gw.ID)
 	}
 	if !ok {
 		if has, err := e.dk.ImageExists(ctx, p.image); err != nil {
 			return nil, err
 		} else if !has {
-			return nil, fmt.Errorf("本地没有网关镜像 %s；先%s", p.image, imageHint(p.image))
+			return nil, fmt.Errorf("本机未找到网关镜像 %s；请先%s", p.image, imageHint(p.image))
 		}
 		if err := e.ensureEgressNetwork(ctx, p.gw.EgressNetwork); err != nil {
 			return nil, err
@@ -238,7 +238,7 @@ func (e *Engine) ensureGateway(ctx context.Context, p *gatewayPlan) (*gatewayRun
 		return err == nil, err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("网关 %s 的监督进程没有就绪：%w", p.gw.ID, err)
+		return nil, fmt.Errorf("网关 %s 的监督进程未就绪：%w", p.gw.ID, err)
 	}
 	return e.gatewayRuntime(ctx, p.gw)
 }
@@ -264,11 +264,11 @@ func (e *Engine) gatewayRuntime(ctx context.Context, gw model.Gateway) (*gateway
 		return nil, err
 	}
 	if !ok || !c.State.Running {
-		return nil, fmt.Errorf("网关 %s 没有在运行", gw.ID)
+		return nil, fmt.Errorf("网关 %s 未运行", gw.ID)
 	}
 	ep, ok := c.NetworkSettings.Networks[gw.EgressNetwork]
 	if !ok || ep.IPAddress == "" {
-		return nil, fmt.Errorf("网关容器 %s 没有接在出口网络 %s 上", name, gw.EgressNetwork)
+		return nil, fmt.Errorf("网关容器 %s 未连接到出口网络 %s", name, gw.EgressNetwork)
 	}
 	ip, err := netip.ParseAddr(ep.IPAddress)
 	if err != nil {
@@ -284,7 +284,7 @@ func (e *Engine) gatewayRuntime(ctx context.Context, gw model.Gateway) (*gateway
 	}
 	rt.egressIf = ifaceWithAddr(out, ip)
 	if rt.egressIf == "" {
-		return nil, fmt.Errorf("在网关容器 %s 里找不到地址为 %s 的网卡", name, ip)
+		return nil, fmt.Errorf("在网关容器 %s 中未找到地址为 %s 的网卡", name, ip)
 	}
 	return rt, nil
 }
@@ -433,7 +433,7 @@ func (e *Engine) syncConfig(ctx context.Context, rt *gatewayRuntime, out mihomo.
 		case code == "204", code == "nosock":
 		default:
 			// 在线重载没成功：让监督进程用新配置重启核心。所有槽会短暂断网，但不会带着旧配置继续跑。
-			e.logf("在线重载未成功（%s），重启核心", code)
+			e.logf("在线重载失败（%s），改为重启核心", code)
 			if _, err := e.sh(ctx, rt.name, "pkill mihomo; true"); err != nil {
 				return err
 			}
@@ -448,7 +448,7 @@ func (e *Engine) syncConfig(ctx context.Context, rt *gatewayRuntime, out mihomo.
 		return err == nil, err
 	})
 	if err != nil {
-		return fmt.Errorf("网关 %s 的 TUN 没有就绪（%w）；用 docker logs %s 查看核心输出", rt.name, err, rt.name)
+		return fmt.Errorf("网关 %s 的 TUN 未就绪（%w）；可用 docker logs %s 查看核心输出", rt.name, err, rt.name)
 	}
 	return nil
 }
@@ -489,7 +489,7 @@ func (e *Engine) GatewayDown(ctx context.Context, id string, force bool) (err er
 		}
 	}
 	if len(running) > 0 && !force {
-		return fmt.Errorf("网关 %s 上还有运行中的槽位 %s；停网关会让它们全部断网，确认后加 --force", id, strings.Join(running, "、"))
+		return fmt.Errorf("网关 %s 上仍有运行中的槽位 %s；停止网关将使这些槽位全部断网，确认后请加 --force", id, strings.Join(running, "、"))
 	}
 	name := e.GatewayContainer(id)
 	if err := e.dk.ContainerStop(ctx, name, 10*time.Second); err != nil {
@@ -513,13 +513,13 @@ func (e *Engine) RemoveGateway(ctx context.Context, id string) (err error) {
 	}
 	for _, sl := range slots {
 		if sl.Gateway == id {
-			return fmt.Errorf("槽位 %s 还在使用网关 %s", sl.ID, id)
+			return fmt.Errorf("槽位 %s 仍在使用网关 %s", sl.ID, id)
 		}
 	}
 	if _, ok, err := e.inspect(ctx, e.GatewayContainer(id)); err != nil {
 		return err
 	} else if ok {
-		return fmt.Errorf("网关 %s 的容器还在，先执行 gateway down %s", id, id)
+		return fmt.Errorf("网关 %s 的容器仍存在，请先执行 gateway down %s", id, id)
 	}
 	return e.st.DeleteGateway(id)
 }

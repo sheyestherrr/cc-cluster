@@ -24,12 +24,12 @@ func ValidateID(kind, id string) error {
 	if idRe.MatchString(id) {
 		return nil
 	}
-	msg := fmt.Sprintf("%s ID %q 不合法：只能用小写字母、数字和连字符，以字母或数字开头，最长 31 个字符（它会用在容器名和文件名里）", kind, id)
+	msg := fmt.Sprintf("%s ID %q 无效：仅可使用小写字母、数字和连字符，以字母或数字开头，最长 31 个字符（用于容器名和文件名）", kind, id)
 	if s := SuggestID(id); s != "" {
-		msg += fmt.Sprintf("；可以改用 %q", s)
+		msg += fmt.Sprintf("；可改用 %q", s)
 	}
 	if kind != "集群" {
-		msg += "；中文等其他写法可以放在备注里"
+		msg += "；中文名称可写在备注中"
 	}
 	return errors.New(msg)
 }
@@ -70,7 +70,7 @@ func ValidateNote(note string) error {
 	}
 	for _, r := range note {
 		if unicode.IsControl(r) {
-			return errors.New("备注只能是一行文字，不能有换行、制表符等控制字符")
+			return errors.New("备注须为单行文字，不能包含换行、制表符等控制字符")
 		}
 	}
 	return nil
@@ -121,11 +121,11 @@ func (n Node) Validate() error {
 		return fmt.Errorf("节点 %s 的片段缺少 server", n.ID)
 	}
 	if p := n.Port(); p < 1 || p > 65535 {
-		return fmt.Errorf("节点 %s 的片段 port 不合法", n.ID)
+		return fmt.Errorf("节点 %s 的片段 port 无效", n.ID)
 	}
 	for _, k := range forbiddenProxyKeys {
 		if _, ok := n.Proxy[k]; ok {
-			return fmt.Errorf("节点 %s 的片段不能自带 %s（由管理器控制）", n.ID, k)
+			return fmt.Errorf("节点 %s 的片段不能包含 %s（由管理器设置）", n.ID, k)
 		}
 	}
 	if n.ConnectIPv4 != "" {
@@ -193,10 +193,10 @@ func (n Node) FirstHopIP() (netip.Addr, error) {
 	}
 	a, err := netip.ParseAddr(n.Server())
 	if err != nil {
-		return netip.Addr{}, fmt.Errorf("节点 %s 的 server 是域名，作首跳时需要它的地址：执行 node resolve %s 解析，或用 --connect-ipv4 指定", n.ID, n.ID)
+		return netip.Addr{}, fmt.Errorf("节点 %s 的 server 为域名，用作首跳时需要其 IP 地址：请执行 node resolve %s 解析，或通过 --connect-ipv4 指定", n.ID, n.ID)
 	}
 	if !a.Is4() {
-		return netip.Addr{}, fmt.Errorf("节点 %s 的 server 不是 IPv4 地址；首版只支持 IPv4 首跳", n.ID)
+		return netip.Addr{}, fmt.Errorf("节点 %s 的 server 不是 IPv4 地址；首跳目前仅支持 IPv4", n.ID)
 	}
 	return a, nil
 }
@@ -229,7 +229,7 @@ func (g Gateway) Validate() error {
 		return err
 	}
 	if g.Transit == "" && len(g.Backups) > 0 {
-		return fmt.Errorf("网关 %s 没有主用的中转，不能有候选中转", g.ID)
+		return fmt.Errorf("网关 %s 未设置主用中转，不能设置备用中转", g.ID)
 	}
 	seen := map[string]bool{}
 	for _, t := range g.Transits() {
@@ -237,22 +237,22 @@ func (g Gateway) Validate() error {
 			return err
 		}
 		if seen[t] {
-			return fmt.Errorf("网关 %s 的中转 %s 重复了", g.ID, t)
+			return fmt.Errorf("网关 %s 的中转 %s 重复", g.ID, t)
 		}
 		seen[t] = true
 	}
 	if len(g.Backups) > MaxTransitBackups {
-		return fmt.Errorf("网关 %s 的候选中转最多 %d 个", g.ID, MaxTransitBackups)
+		return fmt.Errorf("网关 %s 的备用中转最多 %d 个", g.ID, MaxTransitBackups)
 	}
 	if g.EgressNetwork == "" {
 		return fmt.Errorf("网关 %s 缺少出口网络名", g.ID)
 	}
 	p, err := netip.ParsePrefix(g.Pool)
 	if err != nil || !p.Addr().Is4() || p.Bits() > 30 || p != p.Masked() {
-		return fmt.Errorf("网关 %s 的地址池 %q 不合法：需要一个不小于 /30 的 IPv4 网段", g.ID, g.Pool)
+		return fmt.Errorf("网关 %s 的地址池 %q 无效：须为不小于 /30 的 IPv4 网段", g.ID, g.Pool)
 	}
 	if !p.Addr().IsPrivate() {
-		return fmt.Errorf("网关 %s 的地址池 %q 必须是私网网段", g.ID, g.Pool)
+		return fmt.Errorf("网关 %s 的地址池 %q 必须是私有网段", g.ID, g.Pool)
 	}
 	if len(g.DNS) == 0 {
 		return fmt.Errorf("网关 %s 至少需要一个 DNS 服务器", g.ID)
@@ -268,7 +268,7 @@ func (g Gateway) Validate() error {
 	for _, e := range append(append([]string(nil), g.EchoURLs...), g.ConnectURLs...) {
 		u, err := url.Parse(e)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return fmt.Errorf("网关 %s 的探测地址 %q 不合法", g.ID, e)
+			return fmt.Errorf("网关 %s 的探测地址 %q 无效", g.ID, e)
 		}
 		if strings.ContainsAny(e, " '\"\\$`") {
 			return fmt.Errorf("网关 %s 的探测地址 %q 含有不允许的字符", g.ID, e)
@@ -277,7 +277,7 @@ func (g Gateway) Validate() error {
 	switch g.LogLevel {
 	case "", "silent", "error", "warning", "info", "debug":
 	default:
-		return fmt.Errorf("网关 %s 的日志级别 %q 不合法", g.ID, g.LogLevel)
+		return fmt.Errorf("网关 %s 的日志级别 %q 无效", g.ID, g.LogLevel)
 	}
 	return nil
 }
@@ -286,7 +286,7 @@ func (g Gateway) Validate() error {
 // 域名形式的 DoH 地址解析不出来。'#' 后缀由管理器追加，用来指定这次查询走哪条链。
 func checkDNS(s string) error {
 	if strings.Contains(s, "#") {
-		return errors.New("不能自带 # 后缀")
+		return errors.New("不能包含 # 后缀")
 	}
 	u, err := url.Parse(s)
 	if err != nil {
@@ -295,7 +295,7 @@ func checkDNS(s string) error {
 	switch u.Scheme {
 	case "https", "tls", "tcp":
 	default:
-		return errors.New("只支持 https://、tls://、tcp:// 三种形式（业务 UDP 不转发）")
+		return errors.New("仅支持 https://、tls://、tcp:// 三种形式（网关不转发 UDP）")
 	}
 	if _, err := netip.ParseAddr(u.Hostname()); err != nil {
 		return errors.New("主机部分必须是 IP 地址")
@@ -337,7 +337,7 @@ var (
 // CheckTZ 检查一个时区名的写法；空值也不合格。
 func CheckTZ(tz string) error {
 	if !tzRe.MatchString(tz) {
-		return fmt.Errorf("时区 %q 不合法：应形如 Asia/Tokyo", tz)
+		return fmt.Errorf("时区 %q 无效，格式应为 Asia/Tokyo", tz)
 	}
 	return nil
 }
@@ -350,7 +350,7 @@ func checkLocale(tz, lang string) error {
 		}
 	}
 	if lang != "" && !langRe.MatchString(lang) {
-		return fmt.Errorf("语言 %q 不合法：应形如 en_US.UTF-8", lang)
+		return fmt.Errorf("语言 %q 无效，格式应为 en_US.UTF-8", lang)
 	}
 	return nil
 }
@@ -370,11 +370,11 @@ func CheckMountTarget(target, home string) error {
 	}
 	for _, r := range reservedTrees {
 		if t == r || strings.HasPrefix(t, r+"/") {
-			return fmt.Errorf("挂载目标 %q 在系统目录 %s 里", target, r)
+			return fmt.Errorf("挂载目标 %q 位于系统目录 %s 下", target, r)
 		}
 	}
 	if home != "" && (t == home || strings.HasPrefix(home, t+"/")) {
-		return fmt.Errorf("挂载目标 %q 会盖住该槽的 HOME（%s）", target, home)
+		return fmt.Errorf("挂载目标 %q 将覆盖该槽位的 HOME（%s）", target, home)
 	}
 	return nil
 }
@@ -395,7 +395,7 @@ func (s Slot) Validate() error {
 	}
 	p, err := netip.ParsePrefix(s.Subnet)
 	if err != nil || !p.Addr().Is4() || p.Bits() != 30 || p != p.Masked() {
-		return fmt.Errorf("槽位 %s 的网段 %q 不合法：需要一个 IPv4 /30", s.ID, s.Subnet)
+		return fmt.Errorf("槽位 %s 的网段 %q 无效：须为 IPv4 /30 网段", s.ID, s.Subnet)
 	}
 	if s.UID <= 0 || s.GID <= 0 {
 		return fmt.Errorf("槽位 %s 的 UID/GID 必须是非 root 用户", s.ID)
@@ -411,10 +411,10 @@ func (s Slot) Validate() error {
 			return fmt.Errorf("槽位 %s 的挂载源 %q 必须是绝对路径", s.ID, m.Source)
 		}
 		if filepath.Base(m.Source) == "docker.sock" {
-			return fmt.Errorf("槽位 %s：不允许把 Docker socket 挂进 worker", s.ID)
+			return fmt.Errorf("槽位 %s：不允许将 Docker socket 挂载到 worker", s.ID)
 		}
 		if strings.ContainsAny(m.Source+m.Target, ":\n") {
-			return fmt.Errorf("槽位 %s 的挂载路径不能含冒号或换行", s.ID)
+			return fmt.Errorf("槽位 %s 的挂载路径不能包含冒号或换行", s.ID)
 		}
 		if err := CheckMountTarget(m.Target, ""); err != nil {
 			return fmt.Errorf("槽位 %s：%w", s.ID, err)
@@ -425,14 +425,14 @@ func (s Slot) Validate() error {
 			return fmt.Errorf("槽位 %s：不允许设置代理环境变量 %s（流量由网关透明转发）", s.ID, k)
 		}
 		if k == "" || strings.ContainsAny(k, "= \n") {
-			return fmt.Errorf("槽位 %s 的环境变量名 %q 不合法", s.ID, k)
+			return fmt.Errorf("槽位 %s 的环境变量名 %q 无效", s.ID, k)
 		}
 	}
 	if s.MemoryBytes < 0 || s.CPUs < 0 || s.PidsLimit < 0 {
 		return fmt.Errorf("槽位 %s 的资源限额不能为负", s.ID)
 	}
 	if s.FakeProc && s.CPUs == 0 && s.MemoryBytes == 0 {
-		return fmt.Errorf("槽位 %s：/proc 信息按限额显示，需要先设置 CPU 或内存上限", s.ID)
+		return fmt.Errorf("槽位 %s：按限额显示 /proc 信息前，须先设置 CPU 或内存上限", s.ID)
 	}
 	if s.TmuxTools != "" {
 		if _, _, err := ParseTmuxTools(s.TmuxTools); err != nil {
@@ -442,7 +442,7 @@ func (s Slot) Validate() error {
 	switch s.TmuxShell {
 	case "", "bash", "zsh", "fish":
 	default:
-		return fmt.Errorf("槽位 %s 的 tmux shell 类型 %q 不受支持：只能是 bash、zsh 或 fish", s.ID, s.TmuxShell)
+		return fmt.Errorf("槽位 %s 的 tmux shell 类型 %q 不受支持，可选 bash、zsh、fish", s.ID, s.TmuxShell)
 	}
 	return nil
 }
@@ -455,19 +455,19 @@ var tmuxToolItem = regexp.MustCompile(`^@?[a-z][a-z0-9-]*$`)
 func ParseTmuxTools(v string) (mode string, items []string, err error) {
 	mode, list, ok := strings.Cut(v, ":")
 	if !ok || (mode != "allow" && mode != "deny") {
-		return "", nil, fmt.Errorf("tmux 工具范围 %q 的写法应为 deny:项,项 或 allow:项,项", v)
+		return "", nil, fmt.Errorf("tmux 工具范围 %q 格式有误，应为 deny:项,项 或 allow:项,项", v)
 	}
 	for _, it := range strings.Split(list, ",") {
 		if it == "" {
 			continue
 		}
 		if !tmuxToolItem.MatchString(it) {
-			return "", nil, fmt.Errorf("tmux 工具范围里的 %q 不是工具名或 @组名", it)
+			return "", nil, fmt.Errorf("tmux 工具范围中的 %q 不是工具名或 @组名", it)
 		}
 		items = append(items, it)
 	}
 	if mode == "allow" && len(items) == 0 {
-		return "", nil, fmt.Errorf("tmux 工具范围 %q 没有放行任何工具", v)
+		return "", nil, fmt.Errorf("tmux 工具范围 %q 未允许任何工具", v)
 	}
 	return mode, items, nil
 }
@@ -484,10 +484,10 @@ func IsProxyEnv(k string) bool {
 func checkIPv4(s string) error {
 	a, err := netip.ParseAddr(s)
 	if err != nil {
-		return fmt.Errorf("%q 不是合法的 IP 地址", s)
+		return fmt.Errorf("%q 不是有效的 IP 地址", s)
 	}
 	if !a.Is4() {
-		return errors.New("需要 IPv4 地址")
+		return errors.New("须为 IPv4 地址")
 	}
 	return nil
 }

@@ -56,7 +56,7 @@ func resolveFirstHop(ctx context.Context, n *model.Node) error {
 	}
 	addrs, err := lookupIPv4(ctx, n.Server())
 	if err != nil || len(addrs) == 0 {
-		return fmt.Errorf("无法解析节点 %s 的服务器地址 %s；检查宿主的网络，或用 --connect-ipv4 指定", n.ID, n.Server())
+		return fmt.Errorf("无法解析节点 %s 的服务器地址 %s；请检查宿主的网络，或用 --connect-ipv4 指定", n.ID, n.Server())
 	}
 	for i := range addrs {
 		addrs[i] = addrs[i].Unmap()
@@ -80,7 +80,7 @@ func (e *Engine) refreshFirstHop(ctx context.Context, id string) {
 	}
 	old := n.ConnectIPv4
 	if err := resolveFirstHop(ctx, &n); err != nil {
-		e.logf("提醒：%v；沿用已记下的 %s", err, old)
+		e.logf("提醒：%v；沿用已保存的 %s", err, old)
 		return
 	}
 	if n.ConnectIPv4 == old {
@@ -109,7 +109,7 @@ func (e *Engine) ResolveNode(ctx context.Context, id string) (ip string, err err
 		return n.Server(), nil
 	}
 	if n.ConnectIPv4 != "" && !n.ConnectAuto {
-		return "", fmt.Errorf("节点 %s 的首跳地址是手工指定的（%s），不自动解析", id, n.ConnectIPv4)
+		return "", fmt.Errorf("节点 %s 的首跳地址为手动指定（%s），不自动解析", id, n.ConnectIPv4)
 	}
 	n.ConnectIPv4 = ""
 	if err := resolveFirstHop(ctx, &n); err != nil {
@@ -137,15 +137,15 @@ func (in *SubInput) check() error {
 	}
 	switch {
 	case in.URL == "" && in.Content == "":
-		return errors.New("需要订阅地址，或者订阅内容（分享链接、base64 订阅或 Clash 配置）")
+		return errors.New("请提供订阅地址或订阅内容（分享链接、base64 订阅或 Clash 配置）")
 	case in.URL != "" && in.Content != "":
-		return errors.New("订阅地址和订阅内容只能给一个")
+		return errors.New("订阅地址与订阅内容只能提供其一")
 	case in.URL != "":
 		return subscription.CheckURL(in.URL)
 	case len(in.Content) > MaxSubContent:
 		return fmt.Errorf("订阅内容超过 %d KB", MaxSubContent>>10)
 	case subscription.LooksLikeSubURL(in.Content):
-		return errors.New("贴进来的是一个网址，不是订阅内容：远程订阅请填在订阅地址里")
+		return errors.New("所填内容是网址而非订阅内容：远程订阅请填写在订阅地址中")
 	}
 	return nil
 }
@@ -165,14 +165,14 @@ func setSource(sub *model.Subscription, in SubInput) error {
 		case !sub.Local():
 			return errors.New("只有本地订阅可以追加内容")
 		case sub.Format != subscription.FormatLinks:
-			return errors.New("现有内容不是分享链接，不能往后追加；请整体替换")
+			return errors.New("现有内容不是分享链接，不支持追加，请整体替换")
 		}
 		rep, err := subscription.ParseReport([]byte(content))
 		if err != nil {
 			return err
 		}
 		if rep.Format != subscription.FormatLinks {
-			return errors.New("追加的内容得是分享链接；Clash 配置只能整体替换")
+			return errors.New("追加的内容须为分享链接；Clash 配置只能整体替换")
 		}
 		content = strings.TrimRight(sub.Content, "\n") + "\n" + content
 		if len(content) > MaxSubContent {
@@ -264,9 +264,9 @@ func (e *Engine) SubSetEvery(id string, every time.Duration) (err error) {
 	switch {
 	case every == 0:
 	case sub.Local():
-		return errors.New("本地订阅的内容是贴进来的，没有地址可拉取，不需要自动刷新")
+		return errors.New("本地订阅没有可获取的地址，不支持自动刷新")
 	case every < MinSubEvery || every > MaxSubEvery:
-		return fmt.Errorf("自动刷新的间隔要在 %s 到 %d 天之间", everyText(MinSubEvery), int(MaxSubEvery.Hours()/24))
+		return fmt.Errorf("自动刷新的间隔须在 %s 到 %d 天之间", everyText(MinSubEvery), int(MaxSubEvery.Hours()/24))
 	}
 	sub.EveryMin = int(every / time.Minute)
 	return e.st.SaveSub(sub, false)
@@ -335,9 +335,9 @@ type RefreshResult struct {
 }
 
 func (res RefreshResult) detail() string {
-	detail := fmt.Sprintf("%d 个节点，更新 %d 个已登记的节点，%d 个已不在订阅里", res.Total, len(res.Updated), len(res.Missing))
+	detail := fmt.Sprintf("%d 个节点，更新 %d 个已添加的节点，%d 个已不在订阅中", res.Total, len(res.Updated), len(res.Missing))
 	if len(res.Renamed) > 0 {
-		detail += fmt.Sprintf("，%d 个改了名", len(res.Renamed))
+		detail += fmt.Sprintf("，%d 个已改名", len(res.Renamed))
 	}
 	return detail
 }
@@ -477,7 +477,7 @@ func (e *Engine) SubRemove(id string) (err error) {
 const DirectGatewayID = "direct"
 
 // DirectNotice 是登记直出槽位时给用户的提醒。
-const DirectNotice = "这个槽位直接用订阅里的节点当出口：出口是多人共用的地址；节点已固定，不会自动换成别的，它不通时槽位就是没网，要换请手动改"
+const DirectNotice = "该槽位直接使用订阅中的节点作为出口：出口地址为多人共用；节点已固定，不会自动更换，节点不可用时槽位无网络，需手动更换"
 
 // PrepareDirect 为“不用落地、直接用订阅里的一个节点当出口”的槽位做准备：把订阅 subID 里名为
 // name 的节点登记为该槽专用的出口节点（<槽位>-exit，标记为直出），并确保有一个不带中转的网关。
@@ -522,7 +522,7 @@ func (e *Engine) PrepareDirect(ctx context.Context, slotID, subID, name string) 
 		}
 	}
 	if pool == "" {
-		return "", "", errors.New("没有空闲的地址池可以给直出网关；先用 gateway add --pool 手动建一个不带中转的网关")
+		return "", "", errors.New("没有可分配给直出网关的空闲地址池；请先用 gateway add --pool 手动创建不带中转的网关")
 	}
 	if err := e.AddGateway(model.Gateway{ID: gateway, Pool: pool}); err != nil {
 		return "", "", err
@@ -538,10 +538,10 @@ func (e *Engine) NodeFromSub(ctx context.Context, n model.Node, subID, name stri
 	}
 	p, ok := sub.Find(name)
 	if !ok {
-		return fmt.Errorf("订阅 %s 里没有名为 %q 的节点；用 sub nodes %s 查看", subID, name, subID)
+		return fmt.Errorf("订阅 %s 中没有名为 %q 的节点；可用 sub nodes %s 查看", subID, name, subID)
 	}
 	if len(n.Proxy) != 0 {
-		return errors.New("取自订阅的节点不能再另外指定片段")
+		return errors.New("取自订阅的节点不能另行指定片段")
 	}
 	n.Proxy = p.Proxy
 	n.Source = &model.NodeSource{Sub: subID, Name: name}

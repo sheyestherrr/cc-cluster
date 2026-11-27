@@ -73,9 +73,9 @@ func CheckMountSource(source string, protected ...string) error {
 		}
 		if p = filepath.Clean(p); under(p, source) {
 			if p == source {
-				return fmt.Errorf("不能把 %s 整个挂进槽位：请挂载它下面具体的项目目录", source)
+				return fmt.Errorf("不能将 %s 整体挂载到槽位，请挂载其下的具体项目目录", source)
 			}
-			return fmt.Errorf("不能挂载 %s：它包住了 %s，请挂载具体的项目目录", source, p)
+			return fmt.Errorf("不能挂载 %s：该目录包含 %s，请挂载具体的项目目录", source, p)
 		}
 	}
 	return nil

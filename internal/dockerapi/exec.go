@@ -135,10 +135,10 @@ func (c *Client) CopyFrom(ctx context.Context, container, file string) ([]byte, 
 		return nil, fmt.Errorf("读取容器文件 %s: %w", file, err)
 	}
 	if hdr.Typeflag != tar.TypeReg {
-		return nil, fmt.Errorf("容器里的 %s 不是普通文件", file)
+		return nil, fmt.Errorf("容器中的 %s 不是普通文件", file)
 	}
 	if hdr.Size > maxCopyFrom {
-		return nil, fmt.Errorf("容器里的 %s 超过 %d 字节", file, maxCopyFrom)
+		return nil, fmt.Errorf("容器中的 %s 超过 %d 字节", file, maxCopyFrom)
 	}
 	return io.ReadAll(io.LimitReader(tr, maxCopyFrom))
 }

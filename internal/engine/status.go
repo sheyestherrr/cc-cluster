@@ -138,7 +138,7 @@ func (e *Engine) RequireReady(ctx context.Context, id string) error {
 		return err
 	}
 	if s.State != StateReady {
-		return fmt.Errorf("槽位 %s 当前是 %s，不是 ready；先执行 slot up %s", id, s.State, id)
+		return fmt.Errorf("槽位 %s 的状态为 %s，尚未就绪；请先执行 slot up %s", id, s.State, id)
 	}
 	return nil
 }
@@ -170,7 +170,7 @@ func (e *Engine) Doctor(ctx context.Context) []Check {
 	hasW, err := e.dk.ImageExists(ctx, e.cl.WorkerImage)
 	add("worker 镜像 "+e.cl.WorkerImage, hasW && err == nil, imageDetail(hasW, err, imageHint(e.cl.WorkerImage)))
 	if !hasGW {
-		add("容器内网络能力", false, "缺少网关镜像，跳过")
+		add("容器内网络能力", false, "未找到网关镜像，已跳过")
 		return out
 	}
 
@@ -208,9 +208,9 @@ func imageDetail(has bool, err error, hint string) string {
 	case err != nil:
 		return err.Error()
 	case !has:
-		return "本地没有；" + hint
+		return "本机未找到；" + hint
 	}
-	return "已在本地"
+	return "已在本机"
 }
 
 // imageHint 说明本地缺一个镜像时该怎么办：带仓库地址的拉取，本机构建的名字用 make。

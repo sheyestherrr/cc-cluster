@@ -59,7 +59,7 @@ func (e *Engine) RemoveNode(id string) (err error) {
 	for _, g := range gws {
 		for _, t := range g.Transits() {
 			if t == id {
-				return fmt.Errorf("网关 %s 还在用节点 %s 作中转", g.ID, id)
+				return fmt.Errorf("网关 %s 仍在使用节点 %s 作为中转", g.ID, id)
 			}
 		}
 	}
@@ -69,7 +69,7 @@ func (e *Engine) RemoveNode(id string) (err error) {
 	}
 	for _, s := range slots {
 		if s.Landing == id {
-			return fmt.Errorf("槽位 %s 还在用节点 %s 作落地", s.ID, id)
+			return fmt.Errorf("槽位 %s 仍在使用节点 %s 作为落地", s.ID, id)
 		}
 	}
 	return e.st.DeleteNode(id)
@@ -167,7 +167,7 @@ func (e *Engine) verifyTransitChains(ctx context.Context, g model.Gateway) error
 		users[sl.Landing] = append(users[sl.Landing], sl.ID)
 	}
 	if len(landings) == 0 {
-		e.logf("网关 %s 上还没有槽位，中转能否接通落地留到槽位启动时验证", g.ID)
+		e.logf("网关 %s 暂无槽位，中转到落地的连通性将在槽位启动时验证", g.ID)
 		return nil
 	}
 	var transits []model.Node
@@ -178,24 +178,24 @@ func (e *Engine) verifyTransitChains(ctx context.Context, g model.Gateway) error
 		}
 		transits = append(transits, n)
 	}
-	const hint = "可以跳过这项检查（命令行加 --skip-check，网页里打开“不验证”）"
+	const hint = "可跳过此项验证（命令行加 --skip-check，网页中开启“跳过落地连通性验证”）"
 	var problems []string
 	for _, lid := range landings {
 		landing, err := e.st.Node(lid)
 		if err != nil {
 			return err
 		}
-		e.logf("正在验证 %d 个中转能否接通落地 %s", len(transits), lid)
+		e.logf("正在验证 %d 个中转到落地 %s 的连通性", len(transits), lid)
 		bad, err := e.transitChainFailures(ctx, g, transits, landing)
 		if err != nil {
-			return fmt.Errorf("验证中转能否接通落地 %s 时出错，没有更换：%w；确认无妨时%s", lid, err, hint)
+			return fmt.Errorf("验证中转到落地 %s 的连通性时出错，未更换：%w；确认无影响时%s", lid, err, hint)
 		}
 		if len(bad) > 0 {
-			problems = append(problems, fmt.Sprintf("%s 接不通落地 %s（槽位 %s 在用）", strings.Join(bad, "、"), lid, strings.Join(users[lid], "、")))
+			problems = append(problems, fmt.Sprintf("%s 无法连通落地 %s（槽位 %s 使用中）", strings.Join(bad, "、"), lid, strings.Join(users[lid], "、")))
 		}
 	}
 	if len(problems) > 0 {
-		return fmt.Errorf("没有更换：中转 %s。换成能接通的（取自订阅的可以用 sub test <订阅> --landing <落地> 按整条链路测速）；落地只是暂时连不上、确认无妨时%s",
+		return fmt.Errorf("未更换：中转 %s。请更换为可连通落地的中转（取自订阅的节点可用 sub test <订阅> --landing <落地> 测试整条链路）；落地仅暂时无法连接、确认无影响时%s",
 			strings.Join(problems, "；"), hint)
 	}
 	return nil
@@ -208,7 +208,7 @@ func (e *Engine) warnBackupChains(ctx context.Context, g model.Gateway, landing 
 	for _, id := range g.Backups {
 		n, err := e.st.Node(id)
 		if err != nil {
-			e.logf("提醒：没有验证候选中转能否接通落地 %s：%v", landing.ID, err)
+			e.logf("提醒：未能验证备用中转到落地 %s 的连通性：%v", landing.ID, err)
 			return
 		}
 		backups = append(backups, n)
@@ -216,9 +216,9 @@ func (e *Engine) warnBackupChains(ctx context.Context, g model.Gateway, landing 
 	bad, err := e.transitChainFailures(ctx, g, backups, landing)
 	switch {
 	case err != nil:
-		e.logf("提醒：没有验证候选中转能否接通落地 %s：%v", landing.ID, err)
+		e.logf("提醒：未能验证备用中转到落地 %s 的连通性：%v", landing.ID, err)
 	case len(bad) > 0:
-		e.logf("提醒：候选中转 %s 接不通落地 %s，主用的不通时改用它们这个槽会没网；用 gateway set-transit 换成能接通的", strings.Join(bad, "、"), landing.ID)
+		e.logf("提醒：备用中转 %s 无法连通落地 %s，切换到这些中转后该槽位将无网络；请用 gateway set-transit 更换", strings.Join(bad, "、"), landing.ID)
 	}
 }
 
@@ -255,10 +255,10 @@ func (e *Engine) SetGatewayTransits(ctx context.Context, id string, transits []s
 		return res, err
 	}
 	if g.Transit == "" {
-		return res, fmt.Errorf("网关 %s 是直连落地的，没有中转可换；要经中转就另建一个带中转的网关", id)
+		return res, fmt.Errorf("网关 %s 直连落地，未使用中转；如需中转，请另建带中转的网关", id)
 	}
 	if len(transits) == 0 {
-		return res, errors.New("至少给出一个中转")
+		return res, errors.New("至少指定一个中转")
 	}
 	g.Transit, g.Backups = transits[0], append([]string(nil), transits[1:]...)
 	g.Normalize()
@@ -307,7 +307,7 @@ func (e *Engine) SetGatewayTransits(ctx context.Context, id string, transits []s
 		res.Rechecked = append(res.Rechecked, sid)
 		if _, uerr := e.slotUp(ctx, sid, UpOptions{skipBackupCheck: true}); uerr != nil {
 			res.Failed[sid] = uerr.Error()
-			e.logf("提醒：槽位 %s 换中转后没有通过核对：%v", sid, uerr)
+			e.logf("提醒：槽位 %s 更换中转后未通过出口核对：%v", sid, uerr)
 		}
 	}
 	return res, nil
@@ -386,7 +386,7 @@ func (e *Engine) AddSlot(ctx context.Context, sl model.Slot, opt SlotOptions) (o
 		}
 	}
 	if len(sharing) > 0 {
-		warnings = append(warnings, fmt.Sprintf("落地 %s 还绑定着槽位 %s，它们的出口地址相同；同一个落地最多同时给 %d 个槽位接线",
+		warnings = append(warnings, fmt.Sprintf("落地 %s 已绑定槽位 %s，这些槽位的出口地址相同；同一落地最多同时为 %d 个槽位接线",
 			sl.Landing, strings.Join(sharing, "、"), model.MaxSlotsPerLanding))
 	}
 	pool, err := netip.ParsePrefix(gw.Pool)
@@ -407,7 +407,7 @@ func (e *Engine) AddSlot(ctx context.Context, sl model.Slot, opt SlotOptions) (o
 		return sl, nil, err
 	}
 	if has && (opt.Hostname != "" || opt.User != "") {
-		return sl, nil, fmt.Errorf("槽位 %s 已有持久化的身份，不能再指定 hostname 或用户名", sl.ID)
+		return sl, nil, fmt.Errorf("槽位 %s 已有保留的身份，不能再指定 hostname 或用户名", sl.ID)
 	}
 	if !has {
 		if ident, err = identity.New(identity.Options{Hostname: opt.Hostname, User: opt.User}); err != nil {
@@ -426,10 +426,10 @@ func (e *Engine) AddSlot(ctx context.Context, sl model.Slot, opt SlotOptions) (o
 		}
 	}
 	if sl.FakeDMI && len(ident.DMI) == 0 {
-		return sl, nil, fmt.Errorf("槽位 %s 保留的身份里没有机型信息，不能开启 DMI 覆盖", sl.ID)
+		return sl, nil, fmt.Errorf("槽位 %s 保留的身份中没有机型信息，无法开启 DMI 覆盖", sl.ID)
 	}
 	if tz, _ := model.EffectiveLocale(sl, landing); tz == "" {
-		warnings = append(warnings, fmt.Sprintf("槽位和落地 %s 都没有设置时区：首次启动时会按探测到的出口所在时区设置；探测不到时槽内是 UTC", landing.ID))
+		warnings = append(warnings, fmt.Sprintf("槽位与落地 %s 均未设置时区：首次启动时按探测到的出口所在时区设置；探测失败时槽内使用 UTC", landing.ID))
 	}
 
 	if err := e.st.SaveSlot(sl, true); err != nil {
@@ -504,7 +504,7 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 	if h, held, err := e.st.Hold(id); err != nil {
 		return res, err
 	} else if held {
-		return res, fmt.Errorf("槽位 %s 处于手动断网（%s）；确认后先执行 slot release %s", id, orDash(h.Reason), id)
+		return res, fmt.Errorf("槽位 %s 已手动断网（%s）；确认后请先执行 slot release %s", id, orDash(h.Reason), id)
 	}
 	ident, ok, err := e.st.Identity(id)
 	if err != nil {
@@ -525,7 +525,7 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 
 	e.logf("经网关回环入口探测槽位 %s 的链路", id)
 	if err := e.checkChain(ctx, rt, p, landing); err != nil {
-		return res, fmt.Errorf("槽位 %s 的链路不通，未接线：%w", id, err)
+		return res, fmt.Errorf("槽位 %s 的链路不可用，未接线：%w", id, err)
 	}
 	if len(p.gw.Backups) > 0 && !opt.skipBackupCheck {
 		e.warnBackupChains(ctx, p.gw, landing)
@@ -536,11 +536,11 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 	needTZ := wantTZ && slot.TZ == ""
 	exit, err := e.probeChain(ctx, rt, link, p.gw.EchoURLs, needTZ)
 	if err != nil {
-		return res, fmt.Errorf("槽位 %s 的链路能连通，但出口探测没有成功，未接线：%w", id, err)
+		return res, fmt.Errorf("槽位 %s 的链路可连通，但出口探测失败，未接线：%w", id, err)
 	}
 	chainIP, echoURL := exit.IP, exit.URL
 	if landing.ExpectExitIP != "" && chainIP != landing.ExpectExitIP {
-		return res, fmt.Errorf("槽位 %s 的链路出口是 %s，与落地 %s 绑定的 %s 不符，未接线", id, chainIP, landing.ID, landing.ExpectExitIP)
+		return res, fmt.Errorf("槽位 %s 的链路出口为 %s，与落地 %s 指定的 %s 不符，未接线", id, chainIP, landing.ID, landing.ExpectExitIP)
 	}
 	switch {
 	case wantTZ && exit.TZ != "":
@@ -557,9 +557,9 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 			return res, err
 		}
 		p.landings[id] = landing
-		e.logf("提醒：没有探测到出口所在的时区，落地 %s 暂用兜底值 %s；下次启动会再探测，也可以用 --tz 给落地指定", landing.ID, model.FallbackTZ)
+		e.logf("提醒：未探测到出口所在的时区，落地 %s 暂用默认值 %s；下次启动时重新探测，也可用 --tz 为落地指定", landing.ID, model.FallbackTZ)
 	case needTZ:
-		e.logf("提醒：仍然没有探测到出口所在的时区，落地 %s 继续用兜底值 %s", landing.ID, landing.TZ)
+		e.logf("提醒：仍未探测到出口所在的时区，落地 %s 继续使用默认值 %s", landing.ID, landing.TZ)
 	}
 	e.refreshExitReport(ctx, rt, link, &landing, chainIP, false)
 	p.landings[id] = landing
@@ -592,9 +592,9 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 		e.unplumb(ctx, rt, link)
 		_ = e.st.ClearApplied(id)
 		if err != nil {
-			return res, fmt.Errorf("从槽位 %s 的 worker 位置探测出口失败，已撤线：%w", id, err)
+			return res, fmt.Errorf("在槽位 %s 的 worker 侧探测出口失败，已撤线：%w", id, err)
 		}
-		return res, fmt.Errorf("槽位 %s 的 worker 实际出口是 %s，与链路出口 %s 不符，已撤线", id, workerIP, chainIP)
+		return res, fmt.Errorf("槽位 %s 的 worker 实际出口为 %s，与链路出口 %s 不符，已撤线", id, workerIP, chainIP)
 	}
 
 	res.ExitIP = workerIP
@@ -714,7 +714,7 @@ func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.
 	etc := e.st.EtcDir(slot.ID)
 	if slot.FakeDMI {
 		if len(ident.DMI) == 0 {
-			return none, fmt.Errorf("槽位 %s 的身份里没有机型信息，不能开启 DMI 覆盖", slot.ID)
+			return none, fmt.Errorf("槽位 %s 的身份中没有机型信息，无法开启 DMI 覆盖", slot.ID)
 		}
 		p.DMIDir = filepath.Join(etc, "dmi")
 	}
@@ -744,7 +744,7 @@ func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.
 	}
 	if ok && c.Config.Labels[labelSpec] != digest {
 		if !recreate {
-			return none, fmt.Errorf("槽位 %s 的 worker 容器与期望配置不一致；重建会结束容器内的进程，确认后执行 slot up %s --recreate", slot.ID, slot.ID)
+			return none, fmt.Errorf("槽位 %s 的 worker 容器与当前配置不一致；重建将结束容器内的进程，确认后请执行 slot up %s --recreate", slot.ID, slot.ID)
 		}
 		e.logf("重建 worker 容器 %s", name)
 		if err := e.dk.ContainerRemove(ctx, name); err != nil {
@@ -756,7 +756,7 @@ func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.
 		if has, err := e.dk.ImageExists(ctx, image); err != nil {
 			return none, err
 		} else if !has {
-			return none, fmt.Errorf("本地没有 worker 镜像 %s", image)
+			return none, fmt.Errorf("本机未找到 worker 镜像 %s", image)
 		}
 		if err := e.writeHardwareFiles(ctx, image, slot, ident, p); err != nil {
 			return none, err
@@ -774,7 +774,7 @@ func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.
 	if !ok || !c.State.Running {
 		if err := e.dk.ContainerStart(ctx, name); err != nil {
 			if slot.FakeDMI {
-				return none, fmt.Errorf("%w（该槽开启了 DMI 覆盖；宿主没有 %s 时无法使用）", err, dmiPath)
+				return none, fmt.Errorf("%w（该槽位已开启 DMI 覆盖；宿主不存在 %s 时无法使用）", err, dmiPath)
 			}
 			return none, err
 		}
@@ -900,7 +900,7 @@ func (e *Engine) plumb(ctx context.Context, image string, rt *gatewayRuntime, wo
 			"ip rule add pref %[1]d iif %[3]s from %[4]s lookup %[5]d && ip rule add pref %[2]d iif %[3]s unreachable",
 		pref, pref+1, ifn, link.Subnet, netplan.RouteTable)
 	if _, err := e.sh(ctx, rt.name, prep); err != nil {
-		return fmt.Errorf("登记策略路由：%w", err)
+		return fmt.Errorf("添加策略路由：%w", err)
 	}
 
 	wif := netplan.WorkerIfName
@@ -1056,7 +1056,7 @@ func (e *Engine) checkLandingLoad(ctx context.Context, slot model.Slot) error {
 		}
 	}
 	if len(using) >= e.landingLimit() {
-		return fmt.Errorf("落地 %s 已经有 %d 个槽位接着线（%s），同一个落地最多同时给 %d 个槽位用；先停掉其中一个（slot stop），或者给槽位 %s 换一个落地",
+		return fmt.Errorf("落地 %s 已有 %d 个槽位接线（%s），同一落地最多同时为 %d 个槽位接线；请先停止其中一个（slot stop），或为槽位 %s 更换落地",
 			slot.Landing, len(using), strings.Join(using, "、"), e.landingLimit(), slot.ID)
 	}
 	return nil
@@ -1081,7 +1081,7 @@ func (e *Engine) proxyDelay(ctx context.Context, rt *gatewayRuntime, proxy strin
 		if json.Unmarshal([]byte(strings.TrimSpace(out)), &res) == nil && res.Delay > 0 {
 			return res.Delay, nil
 		}
-		last = fmt.Errorf("访问 %s 没有成功", u)
+		last = fmt.Errorf("访问 %s 失败", u)
 	}
 	return 0, last
 }
@@ -1102,19 +1102,19 @@ func (e *Engine) checkChain(ctx context.Context, rt *gatewayRuntime, p *gatewayP
 		}
 	}
 	if p.transit == nil {
-		return fmt.Errorf("经落地 %s 访问不了 %s：落地连不上，或者它的协议、账号写得不对", landing.ID, strings.Join(urls, "、"))
+		return fmt.Errorf("经落地 %s 无法访问 %s：落地无法连接，或其协议、账号配置有误", landing.ID, strings.Join(urls, "、"))
 	}
 	if _, terr := e.proxyDelay(ctx, rt, mihomo.TransitName, urls); terr != nil {
 		if len(p.gw.Backups) > 0 {
-			return fmt.Errorf("中转这一跳就不通：主用的 %s 和候选的 %s 都访问不了 %s；换一批中转（gateway set-transit）", p.transit.ID, strings.Join(p.gw.Backups, "、"), strings.Join(urls, "、"))
+			return fmt.Errorf("中转不可用：经主用 %s 和备用 %s 均无法访问 %s；请更换中转（gateway set-transit）", p.transit.ID, strings.Join(p.gw.Backups, "、"), strings.Join(urls, "、"))
 		}
-		return fmt.Errorf("中转 %s 这一跳就不通（经它访问不了 %s）；换一个中转，取自订阅的可以用 sub test 找能用的节点", p.transit.ID, strings.Join(urls, "、"))
+		return fmt.Errorf("中转 %s 不可用（经其无法访问 %s）；请更换中转，取自订阅的可用 sub test 查找可用节点", p.transit.ID, strings.Join(urls, "、"))
 	}
-	hint := "换一个中转"
+	hint := "请更换中转"
 	if p.transit.Source != nil {
-		hint = fmt.Sprintf("用 sub test %s --landing %s 按整条链路测速，换一个能接通的中转", p.transit.Source.Sub, landing.ID)
+		hint = fmt.Sprintf("请用 sub test %s --landing %s 测试整条链路，更换为可连通落地的中转", p.transit.Source.Sub, landing.ID)
 	}
-	return fmt.Errorf("中转 %s 本身可用，但经它连不上落地 %s：这个中转可能不放行到落地的连接，或者落地不接受来自它的连接。%s；也可以让落地单跳直连（不带 --transit 的网关）",
+	return fmt.Errorf("中转 %s 自身可用，但经其无法连接落地 %s：该中转可能不允许到落地的连接，或落地不接受来自该中转的连接。%s；也可改为直连落地（使用不带 --transit 的网关）",
 		p.transit.ID, landing.ID, hint)
 }
 
@@ -1135,7 +1135,7 @@ func (e *Engine) probeChain(ctx context.Context, rt *gatewayRuntime, link netpla
 			}
 			info, ok := parseExit(out)
 			if !ok {
-				last = fmt.Errorf("%s 的应答里没有 IPv4 地址", u)
+				last = fmt.Errorf("%s 的响应中没有 IPv4 地址", u)
 				continue
 			}
 			info.URL = u
@@ -1181,7 +1181,7 @@ func (e *Engine) probeFromWorker(ctx context.Context, image, worker string, urls
 		if info, ok := parseExit(out); ok {
 			return info.IP, nil
 		}
-		last = fmt.Errorf("%s 的应答里没有 IPv4 地址", u)
+		last = fmt.Errorf("%s 的响应中没有 IPv4 地址", u)
 	}
 	return "", last
 }
@@ -1267,7 +1267,7 @@ func (e *Engine) disconnect(ctx context.Context, slot model.Slot, dropRules bool
 	}
 	script += fmt.Sprintf("! ip link show %s >/dev/null 2>&1", link.GatewayIf())
 	if _, err := e.sh(ctx, c.Name, script); err != nil {
-		return fmt.Errorf("撤线失败，槽位 %s 的网卡 %s 仍在网关里：%w", slot.ID, link.GatewayIf(), err)
+		return fmt.Errorf("撤线失败，槽位 %s 的网卡 %s 仍在网关中：%w", slot.ID, link.GatewayIf(), err)
 	}
 	return nil
 }
@@ -1289,9 +1289,9 @@ func (e *Engine) SlotRemove(ctx context.Context, id string, purge bool) (err err
 	// 只删登记时不动它（停止槽位与结束宿主上的进程是两件事），给出提示。
 	if e.TmuxAlive(ctx, id) {
 		if purge {
-			return fmt.Errorf("槽位 %s 的宿主 tmux 还在运行，里面可能有正在执行的程序；先用 cc-cluster tmux %s --kill 结束它，再删除", id, id)
+			return fmt.Errorf("槽位 %s 的宿主 tmux 仍在运行，其中可能有正在执行的程序；请先执行 cc-cluster tmux %s --kill 结束，再删除槽位", id, id)
 		}
-		e.logf("注意：槽位 %s 的宿主 tmux 仍在运行，没有随槽位删除；socket 在 %s", id, e.TmuxSocket(id))
+		e.logf("注意：槽位 %s 的宿主 tmux 仍在运行，未随槽位删除；socket 位于 %s", id, e.TmuxSocket(id))
 	}
 	if err := e.disconnect(ctx, slot, true); err != nil {
 		return err
@@ -1305,7 +1305,7 @@ func (e *Engine) SlotRemove(ctx context.Context, id string, purge bool) (err err
 	// 直出槽位专用的出口节点随槽位一起删掉（它只为这个槽登记，见 PrepareDirect）。
 	if n, nerr := e.st.Node(slot.Landing); nerr == nil && n.Direct && n.ID == id+"-exit" {
 		if err := e.st.DeleteNode(n.ID); err != nil {
-			e.logf("提醒：没有删掉槽位 %s 的出口节点 %s：%v", id, n.ID, err)
+			e.logf("提醒：未能删除槽位 %s 的出口节点 %s：%v", id, n.ID, err)
 		}
 	}
 	// 网关在运行就立刻把这条来源规则去掉；不在运行时，下次启动自然按新配置生成。

@@ -60,7 +60,7 @@ func (e *Engine) tmuxBin() (string, error) {
 	}
 	p, err := exec.LookPath("tmux")
 	if err != nil {
-		return "", errors.New("宿主的 PATH 里没有 tmux")
+		return "", errors.New("宿主的 PATH 中未找到 tmux")
 	}
 	return p, nil
 }
@@ -120,7 +120,7 @@ func (e *Engine) tmuxRunEnv(ctx context.Context, id string, extra []string, args
 func (e *Engine) prepareTmuxDir(id string) (string, error) {
 	sock := e.TmuxSocket(id)
 	if len(sock) > maxSocketPath {
-		return "", fmt.Errorf("槽位 %s 的 tmux socket 路径有 %d 字节，超过了 Unix socket 的上限 %d：把数据目录放到更短的路径下才能开启桥接（%s）",
+		return "", fmt.Errorf("槽位 %s 的 tmux socket 路径长 %d 字节，超过 Unix socket 的上限 %d；请将数据目录移到更短的路径下再开启桥接（%s）",
 			id, len(sock), maxSocketPath, sock)
 	}
 	dir := e.st.TmuxDir(id)
@@ -166,10 +166,10 @@ func (e *Engine) TmuxEnsure(ctx context.Context, id, dir string) (started bool, 
 		return false, err
 	}
 	if !sl.TmuxBridge {
-		return false, fmt.Errorf("槽位 %s 没有开启宿主 tmux 桥接；用 cc-cluster tmux %s --on 开启", id, id)
+		return false, fmt.Errorf("槽位 %s 未开启宿主 tmux 桥接；可执行 cc-cluster tmux %s --on 开启", id, id)
 	}
 	if sl.UID != os.Getuid() {
-		return false, fmt.Errorf("槽位 %s 在 worker 里的 UID 是 %d，当前用户是 %d：tmux 只接受同一个用户的连接，桥接要由登记该槽位的用户来启动", id, sl.UID, os.Getuid())
+		return false, fmt.Errorf("槽位 %s 在 worker 中的 UID 为 %d，当前用户为 %d：tmux 只接受同一用户的连接，桥接须由创建该槽位的用户启动", id, sl.UID, os.Getuid())
 	}
 	if _, err := e.prepareTmuxDir(id); err != nil {
 		return false, err
@@ -280,7 +280,7 @@ func bridgeFiles(sl model.Slot, sock string) (map[string][]byte, error) {
 		return nil, nil
 	}
 	if strings.ContainsAny(sock, "\"\\\n") {
-		return nil, fmt.Errorf("tmux socket 的路径 %q 里有引号、反斜杠或换行，不能开启桥接", sock)
+		return nil, fmt.Errorf("tmux socket 的路径 %q 包含引号、反斜杠或换行，无法开启桥接", sock)
 	}
 	mode, items, err := model.ParseTmuxTools(sl.EffectiveTmuxTools())
 	if err != nil {
@@ -340,7 +340,7 @@ func (e *Engine) bridgeUp(ctx context.Context, sl model.Slot, worker string) boo
 		return false
 	}
 	if started {
-		e.logf("已启动槽位 %s 的宿主 tmux（cc-cluster tmux %s 可以接入观察）", sl.ID, sl.ID)
+		e.logf("已启动槽位 %s 的宿主 tmux（可执行 cc-cluster tmux %s 接入查看）", sl.ID, sl.ID)
 	}
 	inWorker := func(cmd ...string) (string, bool) {
 		res, err := e.dk.Exec(ctx, worker, cmd, dockerapi.ExecOptions{})
@@ -351,11 +351,11 @@ func (e *Engine) bridgeUp(ctx context.Context, sl model.Slot, worker string) boo
 	}
 	client, ok := inWorker("tmux", "-V")
 	if !ok {
-		e.logf("宿主 tmux 桥接不可用：该槽的 worker 镜像里没有 tmux")
+		e.logf("宿主 tmux 桥接不可用：该槽位的 worker 镜像中没有 tmux")
 		return false
 	}
 	if _, ok := inWorker("tmux-mcp-rs", "--version"); !ok {
-		e.logf("宿主 tmux 桥接不可用：该槽的 worker 镜像里没有 tmux-mcp-rs")
+		e.logf("宿主 tmux 桥接不可用：该槽位的 worker 镜像中没有 tmux-mcp-rs")
 		return false
 	}
 	if out, ok := inWorker("tmux", "-S", e.TmuxSocket(sl.ID), "list-sessions", "-F", "#{session_name}"); !ok {
@@ -363,11 +363,11 @@ func (e *Engine) bridgeUp(ctx context.Context, sl model.Slot, worker string) boo
 		host, _ := e.TmuxVersion(ctx)
 		hint := ""
 		if host != "" && host != client {
-			hint = "；两端版本不同：用 make image-worker 在本机构建 worker 镜像（它会按宿主的版本编译 tmux），让该槽使用构建出的镜像，再 slot up --recreate"
+			hint = "；两端版本不一致：请用 make image-worker 在本机构建 worker 镜像（按宿主的 tmux 版本编译），将该槽位改用此镜像后执行 slot up --recreate"
 		}
-		e.logf("宿主 tmux 桥接不可用：槽内连不上宿主的 tmux（%s）。宿主是 %s，worker 镜像里是 %s%s", truncate(out, 200), orUnknown(host), client, hint)
+		e.logf("宿主 tmux 桥接不可用：槽内无法连接宿主的 tmux（%s）。宿主为 %s，worker 镜像中为 %s%s", truncate(out, 200), orUnknown(host), client, hint)
 		return false
 	}
-	e.logf("宿主 tmux 桥接已接通：槽内经它执行的命令使用宿主的权限和宿主网络，不受该槽的网络约束")
+	e.logf("宿主 tmux 桥接已连接：槽内经其执行的命令使用宿主的权限与网络，不受该槽位的网络限制")
 	return true
 }

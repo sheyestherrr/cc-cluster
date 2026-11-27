@@ -85,7 +85,7 @@ func Open(dir string) (*Store, error) {
 	s := &Store{dir: abs}
 	if _, err := os.Stat(s.path("cluster.json")); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("数据目录 %s 尚未初始化，先运行 init", abs)
+			return nil, fmt.Errorf("数据目录 %s 尚未初始化，请先执行 init", abs)
 		}
 		return nil, err
 	}
@@ -424,7 +424,7 @@ func (s *Store) ClearHold(id string) error {
 // 文件会以只读方式挂进 worker，容器内的用户与宿主用户同 UID，因此权限用 0644 即可读。
 func (s *Store) WriteSlotFile(id, name string, data []byte) (string, error) {
 	if strings.ContainsAny(name, "/\\") {
-		return "", fmt.Errorf("文件名 %q 不合法", name)
+		return "", fmt.Errorf("文件名 %q 无效", name)
 	}
 	if err := os.MkdirAll(s.EtcDir(id), 0o700); err != nil {
 		return "", err
@@ -436,7 +436,7 @@ func (s *Store) WriteSlotFile(id, name string, data []byte) (string, error) {
 // WriteSlotDir 在槽位的 etc 目录下重建一个子目录并写入给定的文件，返回它的绝对路径。
 func (s *Store) WriteSlotDir(id, name string, files map[string][]byte) (string, error) {
 	if strings.ContainsAny(name, "/\\") || name == "" || name == "." || name == ".." {
-		return "", fmt.Errorf("目录名 %q 不合法", name)
+		return "", fmt.Errorf("目录名 %q 无效", name)
 	}
 	dir := filepath.Join(s.EtcDir(id), name)
 	if err := os.RemoveAll(dir); err != nil {
@@ -447,7 +447,7 @@ func (s *Store) WriteSlotDir(id, name string, files map[string][]byte) (string, 
 	}
 	for f, data := range files {
 		if strings.ContainsAny(f, "/\\") {
-			return "", fmt.Errorf("文件名 %q 不合法", f)
+			return "", fmt.Errorf("文件名 %q 无效", f)
 		}
 		if err := writeFile(filepath.Join(dir, f), data, 0o444); err != nil {
 			return "", err

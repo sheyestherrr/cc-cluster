@@ -56,7 +56,7 @@ func TestSubDelaysOrderAndFastest(t *testing.T) {
 	if _, ok := Fastest(SubDelays(model.Subscription{Proxies: []model.SubProxy{{Name: "不通", DelayMS: model.DelayFailed}}})); ok {
 		t.Error("没有测通的节点时不应选出任何一个")
 	}
-	if got := []string{delays[1].DelayText(), delays[3].DelayText(), delays[4].DelayText()}; got[0] != "80 ms" || got[1] != "未测" || got[2] != "不通" {
+	if got := []string{delays[1].DelayText(), delays[3].DelayText(), delays[4].DelayText()}; got[0] != "80 ms" || got[1] != "未测试" || got[2] != "不可用" {
 		t.Errorf("延迟的显示文本: %v", got)
 	}
 }

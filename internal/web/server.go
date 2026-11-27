@@ -117,7 +117,7 @@ func (s *Server) Token() string { return s.token }
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	addr, ok := ln.Addr().(*net.TCPAddr)
 	if !ok || !addr.IP.IsLoopback() {
-		return errors.New("网页界面只能监听本机回环地址")
+		return errors.New("网页界面仅可监听本机回环地址")
 	}
 	srv := &http.Server{Handler: s.Handler(addr.Port), ReadHeaderTimeout: 10 * time.Second}
 	open := func(ctx context.Context) (*engine.Engine, error) {
@@ -227,7 +227,7 @@ func (s *Server) Handler(port int) http.Handler {
 			return nil, err
 		}
 		if in.Minutes < 0 {
-			return nil, errors.New("间隔不能是负数")
+			return nil, errors.New("间隔不能为负数")
 		}
 		return nil, c.eng.SubSetEvery(c.id, time.Duration(in.Minutes)*time.Minute)
 	})
@@ -300,7 +300,7 @@ func (s *Server) Handler(port int) http.Handler {
 		return c.eng.ConnLog(c.id, time.Now(), hoursParam(c.r), limit)
 	})
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "没有这个接口"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "接口不存在"})
 	})
 
 	files := http.FileServerFS(s.assets)
@@ -319,7 +319,7 @@ func (s *Server) Handler(port int) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		// 只认本机的名字：别的域名即使被解析到 127.0.0.1（DNS 重绑定），请求也到不了接口。
 		if !hosts[r.Host] {
-			http.Error(w, "只接受对本机地址的访问", http.StatusForbidden)
+			http.Error(w, "仅接受对本机地址的访问", http.StatusForbidden)
 			return
 		}
 		mux.ServeHTTP(w, r)
@@ -346,7 +346,7 @@ func (c *call) body(v any) error {
 		return nil
 	}
 	if err := json.Unmarshal(data, v); err != nil {
-		return errors.New("请求内容不是合法的 JSON")
+		return errors.New("请求内容不是有效的 JSON")
 	}
 	return nil
 }
@@ -354,7 +354,7 @@ func (c *call) body(v any) error {
 func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request, withDocker bool, fn func(*call) (any, error)) {
 	w.Header().Set("Cache-Control", "no-store")
 	if subtle.ConstantTimeCompare([]byte(r.Header.Get(TokenHeader)), []byte(s.token)) != 1 {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "访问令牌不对：在终端里执行 cc-cluster web，用它打印出来的地址打开"})
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "访问令牌无效。请在终端执行 cc-cluster web，并打开输出的地址"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), opTimeout)
@@ -614,7 +614,7 @@ func (s *Server) state(c *call) (any, error) {
 				if i == 0 {
 					v.UsedBy = append(v.UsedBy, "网关 "+g.ID)
 				} else {
-					v.UsedBy = append(v.UsedBy, "网关 "+g.ID+"（候选）")
+					v.UsedBy = append(v.UsedBy, "网关 "+g.ID+"（备用）")
 				}
 			}
 		}
@@ -833,7 +833,7 @@ func (s *Server) nodeAdd(c *call) (any, error) {
 	n := model.Node{ID: in.ID, Note: strings.TrimSpace(in.Note), Role: in.Role, TZ: in.TZ, ExpectExitIP: in.ExpectExitIP}
 	if in.Sub != "" {
 		if in.Name == "" {
-			return nil, errors.New("需要选定订阅里的一个节点")
+			return nil, errors.New("请选择订阅中的一个节点")
 		}
 		return nil, c.eng.NodeFromSub(c.ctx, n, in.Sub, in.Name)
 	}
@@ -896,7 +896,7 @@ func (s *Server) slotAdd(c *call) (any, error) {
 		}
 		// 网页上只填宿主目录：worker 内使用相同的路径，和 enter 自动挂载的做法一致。
 		if !filepath.IsAbs(m) {
-			return nil, fmt.Errorf("挂载目录 %q 需要是绝对路径", m)
+			return nil, fmt.Errorf("挂载目录 %q 须为绝对路径", m)
 		}
 		dir := filepath.Clean(m)
 		sl.Mounts = append(sl.Mounts, model.Mount{Source: dir, Target: dir})

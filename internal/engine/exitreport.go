@@ -92,7 +92,7 @@ func (e *Engine) refreshExitReport(ctx context.Context, rt *gatewayRuntime, link
 		} else {
 			// 这次取到的来源比已有的还少（另一个接口暂时没应答）时，留着原来那份更完整的。
 			if old != nil && len(rep.Sources) < len(old.Sources) && time.Since(old.CheckedAt) < exitReportTTL {
-				e.logf("出口评估：这次只有 %s 应答，沿用 %s 的那份", strings.Join(rep.Sources, "、"), old.CheckedAt.Local().Format("01-02 15:04"))
+				e.logf("出口评估：本次仅 %s 有响应，沿用 %s 的结果", strings.Join(rep.Sources, "、"), old.CheckedAt.Local().Format("01-02 15:04"))
 				return nil
 			}
 			rep.CheckedAt = time.Now().UTC().Truncate(time.Second)
@@ -100,13 +100,13 @@ func (e *Engine) refreshExitReport(ctx context.Context, rt *gatewayRuntime, link
 			if err = e.st.SaveNode(*landing, false); err == nil {
 				e.logf("出口评估（%s）：%s", strings.Join(rep.Sources, "、"), ExitReportSummary(rep))
 				if force && len(rep.Sources) < 2 {
-					e.logf("提醒：有一个接口这次没有给出应答（%s）", strings.TrimSpace(codes))
+					e.logf("提醒：有一个接口本次未响应（%s）", strings.TrimSpace(codes))
 				}
 				return nil
 			}
 		}
 	}
-	e.logf("提醒：没有取到出口 %s 的评估（%v）；不影响使用", ip, err)
+	e.logf("提醒：未获取到出口 %s 的评估（%v）；不影响使用", ip, err)
 	return err
 }
 
@@ -125,7 +125,7 @@ func (e *Engine) RefreshExitReport(ctx context.Context, nodeID string) (rep *mod
 		return nil, err
 	}
 	if landing.Role != model.RoleLanding {
-		return nil, fmt.Errorf("节点 %s 不是落地：出口评估只针对落地", nodeID)
+		return nil, fmt.Errorf("节点 %s 不是落地，出口评估仅适用于落地", nodeID)
 	}
 	slots, err := e.st.Slots()
 	if err != nil {
@@ -149,7 +149,7 @@ func (e *Engine) RefreshExitReport(ctx context.Context, nodeID string) (rep *mod
 		link := p.links[sl.ID]
 		exit, err := e.probeChain(ctx, rt, link, p.gw.EchoURLs, false)
 		if err != nil {
-			last = fmt.Errorf("经槽位 %s 的链路探测出口没有成功：%w", sl.ID, err)
+			last = fmt.Errorf("经槽位 %s 的链路探测出口失败：%w", sl.ID, err)
 			continue
 		}
 		if err := e.refreshExitReport(ctx, rt, link, &landing, exit.IP, true); err != nil {
@@ -160,7 +160,7 @@ func (e *Engine) RefreshExitReport(ctx context.Context, nodeID string) (rep *mod
 	if last != nil {
 		return nil, last
 	}
-	return nil, fmt.Errorf("没有槽位在使用落地 %s：出口评估要经链路查询，先登记并启动一个使用它的槽位", nodeID)
+	return nil, fmt.Errorf("没有槽位使用落地 %s：出口评估需经链路查询，请先创建并启动使用该落地的槽位", nodeID)
 }
 
 // jsonObj 是解析后的 JSON 对象，带几个取值的办法：取不到或类型不对时返回零值。
@@ -334,7 +334,7 @@ func buildExitReport(ip, coffeeBody, meowBody string) (model.ExitReport, error) 
 	}
 
 	if len(rep.Sources) == 0 {
-		return rep, errors.New("两个接口都没有给出针对这个地址的应答")
+		return rep, errors.New("两个接口均未返回该地址的评估")
 	}
 	if !countryCodeRe.MatchString(rep.CountryCode) {
 		rep.CountryCode = ""
@@ -367,11 +367,11 @@ func ExitReportSummary(r model.ExitReport) string {
 		parts = append(parts, fmt.Sprintf("欺诈分 %d", *r.FraudScore))
 	}
 	if len(r.Flags) == 0 {
-		return strings.Join(append(parts, "没有不利标记"), "，")
+		return strings.Join(append(parts, "无不利标记"), "，")
 	}
 	var fs []string
 	for _, f := range r.Flags {
 		fs = append(fs, fmt.Sprintf("%s %d/%d", f.Name, len(f.By), f.Of))
 	}
-	return strings.Join(append(parts, "标记（命中的家数/给出判断的家数）："+strings.Join(fs, "、")), "，")
+	return strings.Join(append(parts, "标记（标记的数据源数/给出判断的数据源数）："+strings.Join(fs, "、")), "，")
 }

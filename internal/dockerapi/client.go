@@ -70,7 +70,7 @@ func New(ctx context.Context, host string) (*Client, error) {
 	if host != "" {
 		p, ok := strings.CutPrefix(host, "unix://")
 		if !ok {
-			return nil, fmt.Errorf("只支持 unix:// 形式的 Docker 地址，得到 %q", host)
+			return nil, fmt.Errorf("仅支持 unix:// 形式的 Docker 地址，当前为 %q", host)
 		}
 		sock = p
 	}
@@ -88,7 +88,7 @@ func New(ctx context.Context, host string) (*Client, error) {
 		c.version = maxAPIVersion
 	}
 	if versionLess(c.version, minAPIVersion) {
-		return nil, fmt.Errorf("Docker API %s 太旧，至少需要 %s", c.server.APIVersion, minAPIVersion)
+		return nil, fmt.Errorf("Docker API 版本 %s 过低，至少需要 %s", c.server.APIVersion, minAPIVersion)
 	}
 	return c, nil
 }

@@ -81,7 +81,7 @@ const FakeIPRange = "100.64.0.1/10"
 func Render(in Input) (Output, error) {
 	gw := in.Gateway
 	if in.Transit == nil && len(in.Backups) > 0 {
-		return Output{}, fmt.Errorf("网关 %s 没有主用的中转，不能有候选中转", gw.ID)
+		return Output{}, fmt.Errorf("网关 %s 未设置主用中转，不能设置备用中转", gw.ID)
 	}
 
 	bindings := append([]Binding(nil), in.Bindings...)
@@ -133,7 +133,7 @@ func Render(in Input) (Output, error) {
 	var srcRules []string
 	for _, b := range bindings {
 		if other, dup := seenIndex[b.Link.Index]; dup {
-			return Output{}, fmt.Errorf("槽位 %s 与 %s 占用了同一个网段 %s", b.SlotID, other, b.Link.Subnet)
+			return Output{}, fmt.Errorf("槽位 %s 与 %s 使用了同一网段 %s", b.SlotID, other, b.Link.Subnet)
 		}
 		seenIndex[b.Link.Index] = b.SlotID
 		if b.Landing.Role != model.RoleLanding {
@@ -298,7 +298,7 @@ func Redact(config []byte) ([]byte, error) {
 	}
 	proxies, ok := cfg["proxies"].([]any)
 	if !ok {
-		return nil, errors.New("配置里没有 proxies 列表")
+		return nil, errors.New("配置中没有 proxies 列表")
 	}
 	for _, p := range proxies {
 		m, ok := p.(map[string]any)

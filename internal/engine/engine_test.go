@@ -367,7 +367,7 @@ func TestBuildExitReport(t *testing.T) {
 	if err != nil || r.Timezone != "" || r.TrustScore != nil || len(r.Flags) != 0 || r.Flags == nil {
 		t.Errorf("最小应答: %+v %v", r, err)
 	}
-	if s := ExitReportSummary(r); !strings.Contains(s, "没有不利标记") {
+	if s := ExitReportSummary(r); !strings.Contains(s, "无不利标记") {
 		t.Errorf("没有标记时的描述: %q", s)
 	}
 }
