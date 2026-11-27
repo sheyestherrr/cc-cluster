@@ -504,7 +504,11 @@ func (e *Engine) slotUp(ctx context.Context, id string, opt UpOptions) (res UpRe
 	if h, held, err := e.st.Hold(id); err != nil {
 		return res, err
 	} else if held {
-		return res, fmt.Errorf("槽位 %s 已手动断网（%s）；确认后请先执行 slot release %s", id, orDash(h.Reason), id)
+		return res, &Guided{
+			Msg: fmt.Sprintf("槽位 %s 已手动断网（%s）", id, orDash(h.Reason)),
+			CLI: fmt.Sprintf("；确认后请先执行 slot release %s", id),
+			Web: "；确认后请先点击“解除断网”，再启动",
+		}
 	}
 	ident, ok, err := e.st.Identity(id)
 	if err != nil {
@@ -744,7 +748,11 @@ func (e *Engine) ensureWorker(ctx context.Context, slot model.Slot, ident model.
 	}
 	if ok && c.Config.Labels[labelSpec] != digest {
 		if !recreate {
-			return none, fmt.Errorf("槽位 %s 的 worker 容器与当前配置不一致；重建将结束容器内的进程，确认后请执行 slot up %s --recreate", slot.ID, slot.ID)
+			return none, &Guided{
+				Msg: fmt.Sprintf("槽位 %s 的 worker 容器与当前配置不一致；重建将结束容器内的进程", slot.ID),
+				CLI: fmt.Sprintf("，确认后请执行 slot up %s --recreate", slot.ID),
+				Web: "，确认后请在该槽位的菜单中选择“重建 worker 并接线”",
+			}
 		}
 		e.logf("重建 worker 容器 %s", name)
 		if err := e.dk.ContainerRemove(ctx, name); err != nil {
@@ -1289,7 +1297,11 @@ func (e *Engine) SlotRemove(ctx context.Context, id string, purge bool) (err err
 	// 只删登记时不动它（停止槽位与结束宿主上的进程是两件事），给出提示。
 	if e.TmuxAlive(ctx, id) {
 		if purge {
-			return fmt.Errorf("槽位 %s 的宿主 tmux 仍在运行，其中可能有正在执行的程序；请先执行 cc-cluster tmux %s --kill 结束，再删除槽位", id, id)
+			return &Guided{
+				Msg: fmt.Sprintf("槽位 %s 的宿主 tmux 仍在运行，其中可能有正在执行的程序", id),
+				CLI: fmt.Sprintf("；请先执行 cc-cluster tmux %s --kill 结束，再删除槽位", id),
+				Web: fmt.Sprintf("；请先在终端执行 cc-cluster tmux %s --kill 结束，再删除槽位", id),
+			}
 		}
 		e.logf("注意：槽位 %s 的宿主 tmux 仍在运行，未随槽位删除；socket 位于 %s", id, e.TmuxSocket(id))
 	}

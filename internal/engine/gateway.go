@@ -206,7 +206,11 @@ func (e *Engine) ensureGateway(ctx context.Context, p *gatewayPlan) (*gatewayRun
 		return nil, err
 	}
 	if ok && c.Config.Labels[labelSpec] != digest {
-		return nil, fmt.Errorf("网关容器 %s 与当前配置不一致；请先执行 gateway down %s 再 up（该网关上所有槽位将断开接线，之后需逐个执行 slot up）", name, p.gw.ID)
+		return nil, &Guided{
+			Msg: fmt.Sprintf("网关容器 %s 与当前配置不一致", name),
+			CLI: fmt.Sprintf("；请先执行 gateway down %s 再 up（该网关上所有槽位将断开接线，之后需逐个执行 slot up）", p.gw.ID),
+			Web: fmt.Sprintf("；请先在“节点与网关”页将网关 %s 停止后重新启动（该网关上所有槽位将断开接线，之后需逐个启动）", p.gw.ID),
+		}
 	}
 	if !ok {
 		if has, err := e.dk.ImageExists(ctx, p.image); err != nil {
@@ -489,7 +493,11 @@ func (e *Engine) GatewayDown(ctx context.Context, id string, force bool) (err er
 		}
 	}
 	if len(running) > 0 && !force {
-		return fmt.Errorf("网关 %s 上仍有运行中的槽位 %s；停止网关将使这些槽位全部断网，确认后请加 --force", id, strings.Join(running, "、"))
+		return &Guided{
+			Msg: fmt.Sprintf("网关 %s 上仍有运行中的槽位 %s；停止网关将使这些槽位全部断网", id, strings.Join(running, "、")),
+			CLI: "，确认后请加 --force",
+			Web: "，请重新点击“停止”并确认",
+		}
 	}
 	name := e.GatewayContainer(id)
 	if err := e.dk.ContainerStop(ctx, name, 10*time.Second); err != nil {
@@ -519,7 +527,11 @@ func (e *Engine) RemoveGateway(ctx context.Context, id string) (err error) {
 	if _, ok, err := e.inspect(ctx, e.GatewayContainer(id)); err != nil {
 		return err
 	} else if ok {
-		return fmt.Errorf("网关 %s 的容器仍存在，请先执行 gateway down %s", id, id)
+		return &Guided{
+			Msg: fmt.Sprintf("网关 %s 的容器仍存在", id),
+			CLI: fmt.Sprintf("，请先执行 gateway down %s", id),
+			Web: "，请先停止该网关",
+		}
 	}
 	return e.st.DeleteGateway(id)
 }

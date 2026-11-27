@@ -376,7 +376,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request, withDocker boo
 	}
 	lines := splitLines(c.log.String())
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error(), "log": lines})
+		// 引擎的报错由命令行与网页共用；带处理办法的，这里换成界面上的入口。
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": engine.WebErrorText(err), "log": lines})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": out, "log": lines})
