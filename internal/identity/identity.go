@@ -143,7 +143,7 @@ func generate(r io.Reader, opt Options, now time.Time) (model.Identity, error) {
 // ValidateHostname 检查 hostname 是否为合法的单段主机名。
 func ValidateHostname(h string) error {
 	if !hostnameRe.MatchString(h) {
-		return fmt.Errorf("hostname %q 不合法：只能用字母、数字和连字符，最长 63 个字符", h)
+		return fmt.Errorf("主机名 %q 无效：只能包含字母、数字和连字符，最长 63 个字符", h)
 	}
 	return nil
 }
@@ -151,10 +151,10 @@ func ValidateHostname(h string) error {
 // ValidateUser 检查 worker 内的用户名。
 func ValidateUser(u string) error {
 	if !userRe.MatchString(u) {
-		return fmt.Errorf("用户名 %q 不合法：小写字母开头，只能用小写字母、数字、下划线和连字符，最长 31 个字符", u)
+		return fmt.Errorf("用户名 %q 无效：须以小写字母开头，只能包含小写字母、数字、下划线和连字符，最长 31 个字符", u)
 	}
 	if reservedUsers[u] {
-		return fmt.Errorf("用户名 %q 是系统账号", u)
+		return fmt.Errorf("用户名 %q 已被系统账号占用", u)
 	}
 	return nil
 }

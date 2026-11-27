@@ -49,7 +49,7 @@ func Capacity(pool netip.Prefix) int {
 // At 返回地址池里第 idx 个 /30 的编址。
 func At(pool netip.Prefix, idx int) (Link, error) {
 	if !pool.Addr().Is4() || pool.Bits() > 30 {
-		return Link{}, fmt.Errorf("地址池 %s 不是不小于 /30 的 IPv4 网段", pool)
+		return Link{}, fmt.Errorf("地址池 %s 无效：应为前缀长度不超过 /30 的 IPv4 网段", pool)
 	}
 	if idx < 0 || idx >= Capacity(pool) {
 		return Link{}, fmt.Errorf("序号 %d 超出地址池 %s 的范围", idx, pool)
@@ -66,7 +66,7 @@ func At(pool netip.Prefix, idx int) (Link, error) {
 // Locate 由槽位的 /30 反推它在地址池里的编址。
 func Locate(pool, subnet netip.Prefix) (Link, error) {
 	if subnet.Bits() != 30 || subnet != subnet.Masked() || !pool.Contains(subnet.Addr()) {
-		return Link{}, fmt.Errorf("网段 %s 不是地址池 %s 里的一个 /30", subnet, pool)
+		return Link{}, fmt.Errorf("网段 %s 不是地址池 %s 中的 /30 网段", subnet, pool)
 	}
 	base := binary.BigEndian.Uint32(pool.Masked().Addr().AsSlice())
 	off := binary.BigEndian.Uint32(subnet.Addr().AsSlice()) - base
