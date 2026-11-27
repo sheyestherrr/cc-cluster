@@ -7,7 +7,7 @@ import { ActionNotice, useActions } from "@/components/Actions";
 import { CopyButton } from "@/components/CopyButton";
 import { ExitCard } from "@/components/ExitCard";
 import { RegionIcon } from "@/components/Flag";
-import { FORMAT, Field, FormGrid, FormSection, NameInput, SwitchItem } from "@/components/Form";
+import { ERRORS, FORMAT, Field, FormGrid, FormSection, NameInput, SwitchItem } from "@/components/Form";
 import { Menu, type MenuEntry } from "@/components/Menu";
 import { NOTE_PLACEHOLDER, NoteDialog, type NoteTarget } from "@/components/NoteDialog";
 import { ErrorBox, Fact, Page, PageHeader, Tabs, Tag, TileTitle, tabPanelProps, tileProps } from "@/components/PageHeader";
@@ -661,7 +661,7 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
       <div className="flex flex-col gap-5">
         <FormSection title="基础">
           <FormGrid>
-            <Field label="名称" hint={ID_HINT} required>
+            <Field label="名称" hint={ID_HINT} error={ERRORS.id} required>
               <NameInput aria-label="槽位名称" value={slot.id} placeholder="例如 work-a" onChange={(e) => setSlot({ ...slot, id: e.target.value })} />
             </Field>
             <Field label="备注">
@@ -725,7 +725,7 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
             <Field label="CPU 核数">
               <Input aria-label="CPU 核数" type="number" min={0} step={0.5} placeholder="不限" value={slot.cpus || ""} onChange={(e) => setSlot({ ...slot, cpus: Number(e.target.value) || 0 })} />
             </Field>
-            <Field label="内存上限">
+            <Field label="内存上限" error={ERRORS.memory}>
               <Input aria-label="内存上限" {...FORMAT.memory} placeholder="例如 8g，留空不限" value={slot.memory} onChange={(e) => setSlot({ ...slot, memory: e.target.value })} />
             </Field>
             <Field label="用户名">
@@ -734,7 +734,7 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
             <Field label="主机名">
               <Input aria-label="主机名" placeholder="留空则按“用户名-机型”生成" value={slot.hostname} onChange={(e) => setSlot({ ...slot, hostname: e.target.value })} />
             </Field>
-            <Field label="时区" wide hint="留空则沿用落地的时区（首次启动时按出口所在地设置）。">
+            <Field label="时区" wide error={ERRORS.tz} hint="留空则沿用落地的时区（首次启动时按出口所在地设置）。">
               <Input aria-label="时区" {...FORMAT.tz} placeholder="例如 America/Los_Angeles" value={slot.tz} onChange={(e) => setSlot({ ...slot, tz: e.target.value })} />
             </Field>
             <SwitchItem label="覆盖机型信息" hint={slot.fake_dmi ? "使用该槽位自己的机型信息覆盖 DMI" : "默认屏蔽 DMI 信息"} checked={slot.fake_dmi} onChange={(fake_dmi) => setSlot({ ...slot, fake_dmi })} />

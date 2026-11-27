@@ -5,7 +5,7 @@ import type React from "react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ActionNotice, useActions, type Notice } from "@/components/Actions";
 import { Flag, RegionIcon, regionName } from "@/components/Flag";
-import { FORMAT, Field, FormGrid, NameInput } from "@/components/Form";
+import { ERRORS, FORMAT, Field, FormGrid, NameInput } from "@/components/Form";
 import { Menu, type MenuEntry } from "@/components/Menu";
 import { NOTE_PLACEHOLDER, NoteDialog, type NoteTarget } from "@/components/NoteDialog";
 import { ErrorBox, Page, PageHeader, Tabs, Tag, TileTitle, tabPanelProps, tileProps } from "@/components/PageHeader";
@@ -553,7 +553,7 @@ function RegisterDialog({ sub, node, onClose, onDone }: { sub: string; node: Del
       <div className="flex flex-col gap-4">
         {!!node?.nodes?.length && <div className="callout callout-warning"><span>该节点已添加（{node.nodes.join("、")}）。再次添加将得到另一个配置相同的节点。</span></div>}
         <FormGrid>
-          <Field label="名称" hint={ID_HINT} required>
+          <Field label="名称" hint={ID_HINT} error={ERRORS.id} required>
             <NameInput aria-label="节点名称" value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} />
           </Field>
           <Field label="备注">
@@ -566,7 +566,7 @@ function RegisterDialog({ sub, node, onClose, onDone }: { sub: string; node: Del
             </Select>
           </Field>
           {form.role === "landing" && (
-            <Field label="时区" wide hint="留空则首次启动槽位时按出口所在地设置。">
+            <Field label="时区" wide error={ERRORS.tz} hint="留空则首次启动槽位时按出口所在地设置。">
               <Input aria-label="时区" {...FORMAT.tz} placeholder="例如 America/Los_Angeles" value={form.tz} onChange={(e) => setForm({ ...form, tz: e.target.value })} />
             </Field>
           )}
@@ -653,7 +653,7 @@ function SourceDialog({ editing, onClose, onDone }: { editing: Editing; onClose:
       <div className="flex flex-col gap-4">
         {!sub && (
           <FormGrid>
-            <Field label="名称" hint={ID_HINT} required>
+            <Field label="名称" hint={ID_HINT} error={ERRORS.id} required>
               <NameInput aria-label="订阅名称" value={id} placeholder="例如 air" onChange={(e) => setId(e.target.value)} />
             </Field>
             <Field label="备注">

@@ -5,6 +5,9 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ToastProvider } from "./components/ui/toast";
 import "./index.css";
+import { watchFormValidity } from "./lib/form-validity";
+
+watchFormValidity();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

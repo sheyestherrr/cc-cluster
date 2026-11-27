@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { ActionNotice, useActions } from "@/components/Actions";
 import { ExitCard } from "@/components/ExitCard";
 import { RegionIcon } from "@/components/Flag";
-import { FORMAT, Field, FormGrid, FormSection, NameInput, SwitchItem } from "@/components/Form";
+import { ERRORS, FORMAT, Field, FormGrid, FormSection, NameInput, SwitchItem } from "@/components/Form";
 import { Menu, type MenuEntry } from "@/components/Menu";
 import { NOTE_PLACEHOLDER, NoteDialog, type NoteTarget } from "@/components/NoteDialog";
 import { ErrorBox, Fact, Page, PageHeader, Tag, TileTitle, tileProps } from "@/components/PageHeader";
@@ -637,7 +637,7 @@ function AddGatewayDialog({ open, state, onClose, onCreated }: { open: boolean; 
     >
       <div className="flex flex-col gap-4">
         <FormGrid>
-          <Field label="名称" hint={ID_HINT} required>
+          <Field label="名称" hint={ID_HINT} error={ERRORS.id} required>
             <NameInput aria-label="网关名称" value={gw.id} placeholder="例如 main" onChange={(e) => setGw({ ...gw, id: e.target.value })} />
           </Field>
           <Field label="备注">
@@ -649,7 +649,7 @@ function AddGatewayDialog({ open, state, onClose, onCreated }: { open: boolean; 
               {transits.map((n) => <option key={n.id} value={n.id}>{n.id}（{n.type}，{n.server}:{n.port}）</option>)}
             </Select>
           </Field>
-          <Field label="地址池" wide hint="网关分配给各槽位的私有网段，仅在网关与槽位之间使用，通常无需修改。">
+          <Field label="地址池" wide error={ERRORS.cidr} hint="网关分配给各槽位的私有网段，仅在网关与槽位之间使用，通常无需修改。">
             <Input aria-label="地址池" className="mono" {...FORMAT.cidr} value={gw.pool} onChange={(e) => setGw({ ...gw, pool: e.target.value })} />
           </Field>
         </FormGrid>
@@ -703,7 +703,7 @@ function AddNodeDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
       <div className="flex flex-col gap-5">
         <FormSection title="基础">
           <FormGrid>
-            <Field label="名称" hint={ID_HINT} required>
+            <Field label="名称" hint={ID_HINT} error={ERRORS.id} required>
               <NameInput aria-label="节点名称" value={node.id} placeholder="例如 home-la" onChange={(e) => setNode({ ...node, id: e.target.value })} />
             </Field>
             <Field label="备注">
@@ -726,10 +726,10 @@ function AddNodeDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
                 <option value="http">HTTP</option>
               </Select>
             </Field>
-            <Field label="服务器" required>
+            <Field label="服务器" error={ERRORS.server} required>
               <Input aria-label="服务器地址" required className="mono" placeholder="地址" value={node.server} onChange={(e) => setNode({ ...node, server: e.target.value })} />
             </Field>
-            <Field label="端口" required>
+            <Field label="端口" error={ERRORS.port} required>
               <Input aria-label="端口" required className="mono" type="number" min={1} max={65535} placeholder="1–65535" value={node.port || ""} onChange={(e) => setNode({ ...node, port: Number(e.target.value) || 0 })} />
             </Field>
             <Field label="用户名">
@@ -744,10 +744,10 @@ function AddNodeDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
         {node.role === "landing" && (
           <FormSection title="出口" hint="均为选填。">
             <FormGrid>
-              <Field label="时区" hint="留空则首次启动槽位时按出口所在地设置。">
+              <Field label="时区" error={ERRORS.tz} hint="留空则首次启动槽位时按出口所在地设置。">
                 <Input aria-label="时区" {...FORMAT.tz} placeholder="例如 America/Los_Angeles" value={node.tz} onChange={(e) => setNode({ ...node, tz: e.target.value })} />
               </Field>
-              <Field label="预期出口" hint="填写后必须与实测出口一致，否则不为槽位接线。">
+              <Field label="预期出口" error={ERRORS.ipv4} hint="填写后必须与实测出口一致，否则不为槽位接线。">
                 <Input aria-label="预期出口" className="mono" {...FORMAT.ipv4} placeholder="出口 IPv4" value={node.expect_exit_ip} onChange={(e) => setNode({ ...node, expect_exit_ip: e.target.value })} />
               </Field>
             </FormGrid>
