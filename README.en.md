@@ -37,7 +37,7 @@ The web UI and the CLI output are in Chinese.
 curl -fsSL https://raw.githubusercontent.com/sheyestherrr/cc-cluster/master/scripts/install.sh | sh
 ```
 
-The script downloads `cc-cluster` for your platform into `~/.local/bin` (verifying its checksum), pulls the gateway and worker images, and initialises the data directory `~/.cc-cluster`. It needs no root and changes no system settings. Running it again updates the binary and images and leaves an existing data directory in place. You can [read the script](scripts/install.sh) first.
+The script downloads `cc-cluster` for your platform into `~/.local/bin` (verifying its checksum), pulls the gateway and worker images, and initialises the data directory `~/.cc-cluster`. It needs no root and changes no system settings. If the data directory already exists, it only updates the binary and leaves the data directory unchanged. You can [read the script](scripts/install.sh) first.
 
 Then check that this machine can run it (no external addresses are contacted):
 
@@ -84,7 +84,7 @@ cc-cluster init \
 
 Images are not updated by default; the current ones keep working. To update them, run `cc-cluster update --images`: it pulls the new images first and changes the image setting only if the pulls succeed. Running slots then show "配置待应用" (pending) and their continuous exit checks pause; in the web UI, stop and start each gateway and use "重建 worker" (recreate worker) on each slot to apply the change. HOME and identity are kept. Do this when the slots are idle.
 
-v0.0.2 and earlier have no `update` command: run the install command once more to upgrade (the install script also updates the image setting), and use `cc-cluster update` from then on.
+v0.0.2 and earlier have no `update` command: run the install command once more to upgrade (it only updates the binary and does not change the image setting), and use `cc-cluster update` from then on.
 
 ## Getting started
 

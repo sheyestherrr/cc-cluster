@@ -35,7 +35,7 @@
 curl -fsSL https://raw.githubusercontent.com/sheyestherrr/cc-cluster/master/scripts/install.sh | sh
 ```
 
-脚本做四件事：下载对应平台的 `cc-cluster` 到 `~/.local/bin`（核对校验和），拉取网关与 worker 两个镜像，初始化数据目录 `~/.cc-cluster`。不需要 root，不改系统设置；重复运行会更新二进制和镜像，已有的数据目录不动。想先看它做什么，[脚本在这里](scripts/install.sh)。
+脚本下载对应平台的 `cc-cluster` 到 `~/.local/bin`（验证校验和），拉取网关与 worker 两个镜像，并初始化数据目录 `~/.cc-cluster`。不需要 root，不修改系统设置；数据目录已存在时只更新二进制，不修改数据目录。可先[查看脚本内容](scripts/install.sh)。
 
 装好后检查一下这台机器能否运行（不访问外部地址）：
 
@@ -84,7 +84,7 @@ cc-cluster init \
 
 镜像默认不随 `cc-cluster` 更新，现有镜像可继续使用。需要更新镜像时执行 `cc-cluster update --images`：先拉取新版本的镜像，成功后再修改镜像设置。此后运行中的槽位显示“配置待应用”，其持续检测暂停；在网页中将网关停止后重新启动，并对槽位执行“重建 worker”后生效（HOME 与身份保留）。建议在槽位空闲时进行。
 
-v0.0.2 及更早的版本没有 `update` 命令，请重新运行安装命令完成升级（安装脚本会同时更新镜像设置），之后使用 `cc-cluster update`。
+v0.0.2 及更早的版本没有 `update` 命令，请重新运行安装命令完成升级（只更新二进制，不修改镜像设置），之后使用 `cc-cluster update`。
 
 ## 开始使用
 

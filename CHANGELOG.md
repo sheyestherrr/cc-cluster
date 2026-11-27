@@ -11,6 +11,7 @@ One section per release, newest first. Versions follow `vMAJOR.MINOR.PATCH`; pre
 - **新增 `cc-cluster update`**：下载新版本并验证校验和，只替换 `cc-cluster` 二进制文件。槽位、节点、订阅与设置不变，运行中的容器不受影响；后台运行的网页界面自动重启为新版本。任一步骤失败，原文件保持不变。`--check` 仅检查更新，`--version` 安装指定版本。
 - **网页侧栏显示版本号**：有新版本时版本号旁出现提示点；点击可查看当前版本、最新版本、发布日期、更新说明与更新命令。网页界面每 6 小时自动检查一次，设置 `CC_CLUSTER_NO_UPDATE_CHECK=1` 可关闭。
 - **镜像默认不随 `cc-cluster` 更新**：修改镜像设置会使运行中的槽位变为“配置待应用”，因此改为按需更新。`cc-cluster update --images` 先拉取新版本的镜像，成功后再修改镜像设置；将网关停止后重新启动，并对槽位执行“重建 worker”后生效。
+- **安装脚本用于升级时不再修改镜像设置**：数据目录已存在时只更新二进制，不拉取镜像。
 - 源码构建的 `cc-cluster` 默认使用本机构建的镜像；版本号带提交信息的构建不再视为正式版。
 
 升级：v0.0.2 及更早的版本没有 `update` 命令，请重新运行安装命令；之后使用 `cc-cluster update`。
@@ -22,6 +23,7 @@ One section per release, newest first. Versions follow `vMAJOR.MINOR.PATCH`; pre
 - **New `cc-cluster update`**: downloads the new release, verifies its checksum and replaces only the `cc-cluster` binary. Slots, nodes, subscriptions and settings are unchanged, and running containers are not affected; a web UI running in the background is restarted on the new version. If any step fails, the existing binary is left untouched. `--check` only checks for updates; `--version` installs a specific version.
 - **Version number in the web UI sidebar**: an indicator dot appears next to it when a newer version is available. Click it to see the current version, the latest version, its release date, the release notes and the update command. The web UI checks every 6 hours; set `CC_CLUSTER_NO_UPDATE_CHECK=1` to disable the automatic check.
 - **Images are not updated with `cc-cluster` by default**: changing the image setting puts running slots into "配置待应用" (pending), so it is now opt-in. `cc-cluster update --images` pulls the new images first and changes the setting only if the pulls succeed; then stop and start each gateway and use "重建 worker" (recreate worker) on each slot to apply the change.
+- **The install script no longer changes the image setting on upgrade**: if the data directory already exists, it only updates the binary and does not pull images.
 - A `cc-cluster` built from source defaults to locally built images; builds whose version carries commit information are no longer treated as releases.
 
 To upgrade: v0.0.2 and earlier have no `update` command, so run the install command once more. After that, use `cc-cluster update`.
