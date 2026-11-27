@@ -15,22 +15,22 @@ import (
 // cmdTmux 管理槽位的宿主 tmux 桥接：开关、接入观察、结束。
 func (a *app) cmdTmux(ctx context.Context, args []string) error {
 	fs := a.newFlags("tmux", "tmux <槽位> [--on|--off|--kill|--socket] [参数]")
-	on := fs.Bool("on", false, "开启该槽的宿主 tmux 桥接（下次 slot up --recreate 时生效）")
+	on := fs.Bool("on", false, "开启该槽位的宿主 tmux 桥接（下次 slot up --recreate 时生效）")
 	off := fs.Bool("off", false, "关闭桥接（下次 slot up --recreate 时生效；不结束宿主上的 tmux）")
-	kill := fs.Bool("kill", false, "结束该槽的宿主 tmux，连同其中所有 pane 里的程序")
-	sock := fs.Bool("socket", false, "只打印该槽的 tmux socket 在宿主上的路径")
-	tools := fs.String("tools", "", "与 --on 一起用：开放给 Claude 的工具范围，deny:项,项 或 allow:项,项；不填为 "+model.DefaultTmuxTools)
-	shell := fs.String("shell", "", "与 --on 一起用：宿主 pane 里的 shell 类型 bash|zsh|fish；不填按当前的 SHELL")
-	yes := fs.Bool("yes", false, "与 --kill 一起用：不询问")
+	kill := fs.Bool("kill", false, "结束该槽位的宿主 tmux，并终止其中所有 pane 内的程序")
+	sock := fs.Bool("socket", false, "仅输出该槽位的 tmux socket 在宿主上的路径")
+	tools := fs.String("tools", "", "与 --on 配合：对 Claude 开放的工具范围，格式为 deny:项,项 或 allow:项,项；默认为 "+model.DefaultTmuxTools)
+	shell := fs.String("shell", "", "与 --on 配合：宿主 pane 中的 shell 类型 bash|zsh|fish；默认取自当前的 SHELL")
+	yes := fs.Bool("yes", false, "与 --kill 配合：不询问")
 	usage := fs.Usage
 	fs.Usage = func() {
 		usage()
 		fmt.Fprint(a.errw, `
-不带参数时接入该槽的宿主 tmux（没有在运行就先启动），用来观察或接管；按 tmux 的方式分离（默认 Ctrl-b d）。
+不带参数时接入该槽位的宿主 tmux（未运行时先启动），用于观察或接管；分离方式与 tmux 相同（默认 Ctrl-b d）。
 
-桥接让槽内的 Claude 经 tmux-mcp 操作宿主上这一个专用的 tmux：在其中执行的命令是宿主上的命令，
-用的是你的权限和宿主网络，不受该槽的网络约束，手动断网（hold）也拦不住它。默认关闭，按槽位开启。
-工具范围只约束 tmux-mcp 提供的工具；槽内的程序仍然可以直接用 tmux 命令连这个 socket。
+开启桥接后，槽内的 Claude 可经 tmux-mcp 操作宿主上专用的 tmux：其中的命令在宿主上执行，
+使用当前用户的权限与宿主网络，不受该槽位的网络限制，手动断网（hold）对其无效。默认关闭，按槽位开启。
+工具范围仅限制 tmux-mcp 提供的工具；槽内的程序仍可直接用 tmux 命令连接该 socket。
 `)
 	}
 	id, err := parseWithID(fs, args)
@@ -72,20 +72,20 @@ func (a *app) cmdTmux(ctx context.Context, args []string) error {
 		} else {
 			fmt.Fprintf(a.out, "槽位 %s 已关闭宿主 tmux 桥接；执行 slot up %s --recreate 后生效\n", id, id)
 			if eng.TmuxAlive(ctx, id) {
-				fmt.Fprintf(a.errw, "提醒：该槽的宿主 tmux 仍在运行；不再需要时执行 cc-cluster tmux %s --kill\n", id)
+				fmt.Fprintf(a.errw, "提醒：该槽位的宿主 tmux 仍在运行；不再需要时请执行 cc-cluster tmux %s --kill\n", id)
 			}
 		}
 		return nil
 	case *kill:
 		if !eng.TmuxAlive(ctx, id) {
-			fmt.Fprintf(a.out, "槽位 %s 的宿主 tmux 没有在运行\n", id)
+			fmt.Fprintf(a.out, "槽位 %s 的宿主 tmux 未运行\n", id)
 			return nil
 		}
 		if !*yes {
 			if !a.interactive {
-				return errors.New("结束宿主 tmux 会终止其中所有 pane 里的程序；确认后加上 --yes")
+				return errors.New("结束宿主 tmux 将终止其中所有 pane 内的程序；确认后请加 --yes")
 			}
-			ok, err := a.confirm(fmt.Sprintf("结束槽位 %s 的宿主 tmux？其中所有 pane 里正在运行的程序都会被终止。", id), false)
+			ok, err := a.confirm(fmt.Sprintf("是否结束槽位 %s 的宿主 tmux？其中所有 pane 内正在运行的程序将被终止。", id), false)
 			if err != nil {
 				return err
 			}
@@ -101,7 +101,7 @@ func (a *app) cmdTmux(ctx context.Context, args []string) error {
 	}
 
 	if !sl.TmuxBridge {
-		return fmt.Errorf("槽位 %s 没有开启宿主 tmux 桥接；用 cc-cluster tmux %s --on 开启", id, id)
+		return fmt.Errorf("槽位 %s 未开启宿主 tmux 桥接；可执行 cc-cluster tmux %s --on 开启", id, id)
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -115,7 +115,7 @@ func (a *app) cmdTmux(ctx context.Context, args []string) error {
 		return err
 	}
 	if !a.interactive {
-		fmt.Fprintf(a.out, "宿主 tmux 在运行。在终端里接入：%s %s\n", bin, strings.Join(argv[1:], " "))
+		fmt.Fprintf(a.out, "宿主 tmux 正在运行。请在终端中执行以下命令接入：%s %s\n", bin, strings.Join(argv[1:], " "))
 		return nil
 	}
 	// 终端交给 tmux：本进程被它替换。

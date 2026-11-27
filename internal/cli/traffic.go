@@ -13,8 +13,8 @@ import (
 // 只能看到连接这一层：目标域名与端口、流量、时长，看不到 HTTPS 的路径和内容。
 func (a *app) cmdTraffic(ctx context.Context, args []string) error {
 	fs := a.newFlags("traffic", "traffic [槽位] [--hours 24]")
-	hours := fs.Int("hours", 24, "历史往回看多少小时（最多 720）")
-	top := fs.Int("top", 15, "给了槽位时，列出流量最多的前几个目标")
+	hours := fs.Int("hours", 24, "统计最近多少小时的历史（最多 720）")
+	top := fs.Int("top", 15, "指定槽位时，列出流量最多的目标个数")
 	slot := ""
 	if len(args) > 0 && len(args[0]) > 0 && args[0][0] != '-' {
 		slot, args = args[0], args[1:]
@@ -67,14 +67,14 @@ func (a *app) cmdTraffic(ctx context.Context, args []string) error {
 		s, wired := live[slot]
 		switch {
 		case !wired:
-			fmt.Fprintf(a.out, "槽位 %s 现在没有接线，没有连接。\n", slot)
+			fmt.Fprintf(a.out, "槽位 %s 未接线，无连接。\n", slot)
 		case !s.HasConns:
-			fmt.Fprintf(a.out, "槽位 %s 所在网关的核心没有应答，读不到当前的连接。\n", slot)
+			fmt.Fprintf(a.out, "槽位 %s 所在网关的核心无响应，无法读取当前连接。\n", slot)
 		case len(s.Conns) == 0:
-			fmt.Fprintf(a.out, "槽位 %s 现在没有连接。\n", slot)
+			fmt.Fprintf(a.out, "槽位 %s 当前无连接。\n", slot)
 		default:
 			up, down := rate(s)
-			fmt.Fprintf(a.out, "槽位 %s 现在有 %d 条连接，上行 %s/s，下行 %s/s：\n", slot, len(s.Conns), bytesText(int64(up)), bytesText(int64(down)))
+			fmt.Fprintf(a.out, "槽位 %s 当前有 %d 条连接，上行 %s/s，下行 %s/s：\n", slot, len(s.Conns), bytesText(int64(up)), bytesText(int64(down)))
 			w := a.table()
 			fmt.Fprintln(w, "目标\t上行\t下行\t已持续\t链路")
 			for _, c := range s.Conns {
@@ -84,12 +84,12 @@ func (a *app) cmdTraffic(ctx context.Context, args []string) error {
 				return err
 			}
 		}
-		fmt.Fprintf(a.out, "\n最近 %d 小时里结束的连接共 %d 条", *hours, log.Total)
+		fmt.Fprintf(a.out, "\n最近 %d 小时内结束的连接共 %d 条", *hours, log.Total)
 		if log.Total == 0 {
-			fmt.Fprintln(a.out, "。连接历史在 cc-cluster web 或 cc-cluster watch 运行期间记录。")
+			fmt.Fprintln(a.out, "。连接历史仅在 cc-cluster web 或 cc-cluster watch 运行期间记录。")
 			return nil
 		}
-		fmt.Fprintln(a.out, "，按流量排：")
+		fmt.Fprintln(a.out, "，按流量排序：")
 		w := a.table()
 		fmt.Fprintln(w, "目标\t连接数\t上行\t下行\t最近一次")
 		for _, h := range log.Hosts {
@@ -110,7 +110,7 @@ func (a *app) cmdTraffic(ctx context.Context, args []string) error {
 		ids[id] = true
 	}
 	if len(ids) == 0 {
-		fmt.Fprintln(a.out, "没有已接线的槽位，也没有流量的历史记录。历史在 cc-cluster web 或 cc-cluster watch 运行期间记录。")
+		fmt.Fprintln(a.out, "没有已接线的槽位，也没有流量历史。流量历史仅在 cc-cluster web 或 cc-cluster watch 运行期间记录。")
 		return nil
 	}
 	names := make([]string, 0, len(ids))
@@ -119,7 +119,7 @@ func (a *app) cmdTraffic(ctx context.Context, args []string) error {
 	}
 	sort.Strings(names)
 	w := a.table()
-	fmt.Fprintf(w, "槽位\t现在上行\t现在下行\t连接\t近 %d 小时上行\t近 %d 小时下行\n", *hours, *hours)
+	fmt.Fprintf(w, "槽位\t当前上行\t当前下行\t连接\t近 %d 小时上行\t近 %d 小时下行\n", *hours, *hours)
 	for _, id := range names {
 		up, down, conns := "-", "-", "-"
 		if s, ok := live[id]; ok {
@@ -157,7 +157,7 @@ func spanText(d time.Duration) string {
 	case d < time.Minute:
 		return fmt.Sprintf("%d 秒", int(d.Seconds()))
 	case d < time.Hour:
-		return fmt.Sprintf("%d 分", int(d.Minutes()))
+		return fmt.Sprintf("%d 分钟", int(d.Minutes()))
 	default:
 		return fmt.Sprintf("%.1f 小时", d.Hours())
 	}

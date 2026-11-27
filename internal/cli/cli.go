@@ -32,30 +32,30 @@ var Version = "dev"
 const usage = `cc-cluster：为 Claude Code 管理相互独立的工作槽位。
 每个槽位的 worker 容器默认没有网络，全部流量由网关容器透明转发到绑定的落地。
 
-平时只需要两个：
-  cc-cluster                在项目目录里运行：选一个槽位，进去启动 Claude Code 或打开终端
-  cc-cluster web            打开网页界面（在后台运行）：增删槽位、节点、订阅都在这里；web stop 停止
+常用命令：
+  cc-cluster                在项目目录中执行：选择槽位，启动 Claude Code 或打开终端
+  cc-cluster web            启动网页界面（后台运行），用于管理槽位、节点与订阅；web stop 停止
 
-下面是完整的命令，给脚本、排查和没有浏览器的机器用：
+完整命令（用于脚本、排查问题和无浏览器的环境）：
   cc-cluster [--data-dir 目录] <命令> [参数]
 
-数据目录默认是 ~/.cc-cluster；用 --data-dir 或环境变量 CC_CLUSTER_DATA 可以换成别的。
+数据目录默认为 ~/.cc-cluster，可用 --data-dir 或环境变量 CC_CLUSTER_DATA 指定。
 
 日常使用：
-  enter  [槽位] [目录]      进入槽位的 shell。目录默认是当前目录，不在挂载范围内时自动挂载
-  claude [槽位] [目录]      同上，但直接启动 Claude Code（首次会提示在槽内安装）
-  tmux   <槽位>             接入该槽的宿主 tmux；--on / --off 开关宿主桥接，--kill 结束它
-  status                    显示网关与槽位的现状
-  traffic [槽位]            各槽位的流量；给了槽位时列出它当前的连接和连过的目标
-  web [stop]                网页界面，默认放在后台；运行期间做持续检测，并记录流量与连接的历史（--foreground 在前台运行）
-  watch                     持续检测各槽的连通性与出口，出口变了就断网保持（--once 只测一遍）；同样记录历史
-  panel                     文字菜单的交互面板
+  enter  [槽位] [目录]      进入槽位的 shell。目录默认为当前目录，不在挂载范围内时提示挂载
+  claude [槽位] [目录]      同上，并直接启动 Claude Code（首次使用时提示在槽内安装）
+  tmux   <槽位>             接入该槽位的宿主 tmux；--on、--off 开启或关闭宿主桥接，--kill 结束宿主 tmux
+  status                    显示网关与槽位的状态
+  traffic [槽位]            各槽位的流量；指定槽位时列出其当前连接与访问过的目标
+  web [stop]                网页界面，默认在后台运行；运行期间执行持续检测，并记录流量与连接历史（--foreground 在前台运行）
+  watch                     持续检测各槽位的连通性与出口，出口变更时断网并保持（--once 仅检测一次）；同时记录流量与连接历史
+  panel                     交互式菜单
 
 配置：
   init                      初始化数据目录
-  doctor                    检查这台机器能否运行（不访问外部地址）
+  doctor                    检查本机的运行环境（不访问外部地址）
   sub add|list|nodes|note|set|test|refresh|rm
-                            订阅：远程的订阅地址，或贴进来的订阅内容与分享链接
+                            订阅：远程订阅地址，或本地的订阅内容与分享链接
   node add|list|note|resolve|rm
                             代理节点（中转 / 落地），可取自订阅
   gateway add|list|note|set-transit|up|down|rm
@@ -63,12 +63,12 @@ const usage = `cc-cluster：为 Claude Code 管理相互独立的工作槽位。
   slot add|list|note|up|stop|hold|release|rm|exec|enter|mounts|unmount
                             工作槽位
   render <网关>             预览网关的核心配置（默认隐藏凭据）
-  exit-report [on|off]      启动槽位时是否顺带查询第三方对出口 IP 的评估
+  exit-report [on|off]      启动槽位时是否查询第三方对出口 IP 的评估
   images                    查看或更换网关镜像与默认的 worker 镜像
   update                    更新 cc-cluster 至最新版本（--check 仅检查；--images 同时更新镜像设置）
   version                   显示版本
 
-每个命令和子命令都可以加 -h 查看参数，例如 cc-cluster slot add -h。
+各命令与子命令均可加 -h 查看参数，例如 cc-cluster slot add -h。
 `
 
 type app struct {
@@ -235,7 +235,7 @@ func (m *multi) Set(v string) error { *m = append(*m, v); return nil }
 
 func (a *app) requireDataDir() error {
 	if a.dataDir == "" {
-		return fmt.Errorf("找不到用户的 HOME，没法用默认的数据目录：用 --data-dir，或设置环境变量 %s", EnvDataDir)
+		return fmt.Errorf("无法确定用户的 HOME，不能使用默认数据目录：请用 --data-dir 指定，或设置环境变量 %s", EnvDataDir)
 	}
 	return nil
 }
@@ -300,9 +300,9 @@ func defaultImages() (gateway, worker string) {
 
 // cmdImages 查看或更换网关镜像与默认的 worker 镜像。
 func (a *app) cmdImages(ctx context.Context, args []string) error {
-	fs := a.newFlags("images", "images [--gateway-image 镜像] [--worker-image 镜像]    不带参数显示现状")
-	gateway := fs.String("gateway-image", "", "换成这个网关镜像")
-	worker := fs.String("worker-image", "", "换成这个默认的 worker 镜像")
+	fs := a.newFlags("images", "images [--gateway-image 镜像] [--worker-image 镜像]    不带参数时显示当前设置")
+	gateway := fs.String("gateway-image", "", "新的网关镜像")
+	worker := fs.String("worker-image", "", "新的默认 worker 镜像")
 	if err := parse(fs, args); err != nil {
 		return err
 	}
@@ -323,7 +323,7 @@ func (a *app) cmdImages(ctx context.Context, args []string) error {
 	c := eng.Cluster()
 	fmt.Fprintf(a.out, "网关镜像：%s\nworker 镜像：%s\n", c.GatewayImage, c.WorkerImage)
 	if c != before {
-		fmt.Fprintln(a.out, "已经在运行的容器仍在用原来的镜像：网关停止后再启动、槽位重建 worker 之后换成新的（网页里各自的页面上有这两个操作）。")
+		fmt.Fprintln(a.out, "运行中的容器仍使用原镜像：网关停止后重新启动、槽位重建 worker 后生效（网页界面的网络页与槽位页提供这两项操作）。")
 	}
 	return nil
 }
@@ -332,10 +332,10 @@ func (a *app) cmdInit(args []string) error {
 	fs := a.newFlags("init", "init [参数]")
 	var c model.Cluster
 	gwImage, wImage := defaultImages()
-	fs.StringVar(&c.Name, "name", defaultClusterName(), "容器名前缀，用来区分同一台机器上的多个用户和数据目录")
+	fs.StringVar(&c.Name, "name", defaultClusterName(), "容器名前缀，用于区分同一台机器上的多个用户和数据目录")
 	fs.StringVar(&c.GatewayImage, "gateway-image", gwImage, "网关镜像")
 	fs.StringVar(&c.WorkerImage, "worker-image", wImage, "默认的 worker 镜像")
-	fs.BoolVar(&c.NoExitReport, "no-exit-report", false, "启动槽位时不顺带查询第三方对出口 IP 的评估（之后可用 exit-report on|off 更改）")
+	fs.BoolVar(&c.NoExitReport, "no-exit-report", false, "启动槽位时不查询第三方对出口 IP 的评估（之后可用 exit-report on|off 更改）")
 	if err := parse(fs, args); err != nil {
 		return err
 	}
@@ -356,7 +356,7 @@ func (a *app) cmdInit(args []string) error {
 
 // cmdExitReport 查看或更改“启动槽位时顺带查询出口评估”这个设置。
 func (a *app) cmdExitReport(ctx context.Context, args []string) error {
-	fs := a.newFlags("exit-report", "exit-report [on|off]    启动槽位时是否顺带查询第三方对出口 IP 的评估；不带参数显示现状")
+	fs := a.newFlags("exit-report", "exit-report [on|off]    启动槽位时是否查询第三方对出口 IP 的评估；不带参数时显示当前设置")
 	if err := parse(fs, args); err != nil {
 		return err
 	}
@@ -375,9 +375,9 @@ func (a *app) cmdExitReport(ctx context.Context, args []string) error {
 		return errUsage
 	}
 	if eng.ExitReportAuto() {
-		fmt.Fprintln(a.out, "出口评估：开。启动槽位时经该槽的链路查询一次，只用于展示，取不到不影响使用")
+		fmt.Fprintln(a.out, "出口评估：已开启。启动槽位时经该槽位的链路查询一次，仅用于展示，查询失败不影响使用")
 	} else {
-		fmt.Fprintln(a.out, "出口评估：关。启动槽位时不查询；node report <落地> 和网页里的“重新查询”仍可手动查")
+		fmt.Fprintln(a.out, "出口评估：已关闭。启动槽位时不查询；仍可通过 node report <落地> 或网页界面的“重新查询”手动查询")
 	}
 	return nil
 }
@@ -422,7 +422,7 @@ func (a *app) cmdStatus(ctx context.Context, args []string) error {
 
 func (a *app) cmdRender(args []string) error {
 	fs := a.newFlags("render", "render <网关> [参数]")
-	show := fs.Bool("show-secrets", false, "原样输出，包括节点凭据")
+	show := fs.Bool("show-secrets", false, "原样输出，包含节点凭据")
 	id, err := parseWithID(fs, args)
 	if err != nil {
 		return err

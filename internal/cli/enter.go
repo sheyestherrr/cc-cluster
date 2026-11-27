@@ -46,7 +46,7 @@ func splitEnterArgs(args []string) (slot, dir string, rest []string, err error) 
 		case !isPath && slot == "" && dir == "":
 			slot = v
 		default:
-			return "", "", nil, fmt.Errorf("无法理解参数 %q：用法是 [槽位] [目录]", v)
+			return "", "", nil, fmt.Errorf("无法识别参数 %q，用法为 [槽位] [目录]", v)
 		}
 	}
 	return slot, dir, args[i:], nil
@@ -59,8 +59,8 @@ func (a *app) cmdEnter(ctx context.Context, name string, args []string) error {
 	}
 	fs := a.newFlags(name, synopsis)
 	req := enterRequest{Claude: name == "claude"}
-	fs.StringVar(&req.MountRoot, "mount", "", "目录不在该槽的挂载范围内时，挂载这一级目录（该目录本身或它的上级）；不填则询问")
-	fs.BoolVar(&req.Yes, "yes", false, "不询问：需要时直接挂载并重建 worker")
+	fs.StringVar(&req.MountRoot, "mount", "", "目录不在该槽位的挂载范围内时，挂载指定的目录（该目录本身或其上级目录）；未指定时询问")
+	fs.BoolVar(&req.Yes, "yes", false, "不询问，需要时直接挂载并重建 worker")
 	usage := fs.Usage
 	fs.Usage = func() {
 		usage()
@@ -104,11 +104,11 @@ func (a *app) pickSlot(ctx context.Context, eng *engine.Engine, title string) (s
 	}
 	switch {
 	case len(sts) == 0:
-		return "", errors.New("还没有槽位；先用 slot add 登记一个（或运行不带参数的 cc-cluster 按提示操作）")
+		return "", errors.New("暂无槽位；请先用 slot add 创建（或执行不带参数的 cc-cluster 并按提示操作）")
 	case len(sts) == 1:
 		return sts[0].Slot.ID, nil
 	case !a.interactive:
-		return "", errors.New("有多个槽位，需要指定用哪一个")
+		return "", errors.New("存在多个槽位，请指定槽位")
 	}
 	items := make([]string, len(sts))
 	for i, s := range sts {
@@ -128,7 +128,7 @@ func (a *app) enter(ctx context.Context, req enterRequest) error {
 		return err
 	}
 	if req.Slot == "" {
-		if req.Slot, err = a.pickSlot(ctx, eng, "进入哪个槽位？"); err != nil {
+		if req.Slot, err = a.pickSlot(ctx, eng, "选择要进入的槽位："); err != nil {
 			return err
 		}
 	}
@@ -165,9 +165,9 @@ func (a *app) enter(ctx context.Context, req enterRequest) error {
 		exists := status.State != engine.StateAbsent
 		if exists && !req.Yes {
 			if !a.interactive {
-				return fmt.Errorf("目录 %s 不在槽位 %s 的挂载范围内；加上 --yes 以挂载并重建 worker（容器内正在运行的进程会结束）", req.Dir, req.Slot)
+				return fmt.Errorf("目录 %s 不在槽位 %s 的挂载范围内；加 --yes 可直接挂载并重建 worker（容器内正在运行的进程将结束）", req.Dir, req.Slot)
 			}
-			ok, err := a.confirm(fmt.Sprintf("把 %s 挂进槽位 %s 需要重建它的 worker：HOME 保留，容器内正在运行的进程会结束。继续吗？", root, req.Slot), false)
+			ok, err := a.confirm(fmt.Sprintf("将 %s 挂载到槽位 %s 需要重建 worker：HOME 保留，容器内正在运行的进程将结束。是否继续？", root, req.Slot), false)
 			if err != nil {
 				return err
 			}
@@ -178,14 +178,14 @@ func (a *app) enter(ctx context.Context, req enterRequest) error {
 		if err := eng.SlotAddWorkspace(req.Slot, root); err != nil {
 			return err
 		}
-		fmt.Fprintf(a.errw, "已把 %s 加进槽位 %s 的挂载\n", root, req.Slot)
+		fmt.Fprintf(a.errw, "已将 %s 添加到槽位 %s 的挂载\n", root, req.Slot)
 		remounted = true
 		inside, _ = model.ContainerPath(model.AddWorkspace(sl.Mounts, root), req.Dir)
 	}
 
 	if remounted || status.State != engine.StateReady {
 		if status.State == engine.StateHold {
-			return fmt.Errorf("槽位 %s 处于手动断网（%s）；确认后先执行 slot release %s", req.Slot, orDash(status.HoldReason), req.Slot)
+			return fmt.Errorf("槽位 %s 已手动断网（%s）；确认后请先执行 slot release %s", req.Slot, orDash(status.HoldReason), req.Slot)
 		}
 		res, err := eng.SlotUp(ctx, req.Slot, engine.UpOptions{Recreate: remounted})
 		if err != nil {
@@ -199,7 +199,7 @@ func (a *app) enter(ctx context.Context, req enterRequest) error {
 
 	docker, err := exec.LookPath("docker")
 	if err != nil {
-		return errors.New("进入槽位需要 docker 命令行，PATH 里没有找到")
+		return errors.New("进入槽位需要 docker 命令行工具，PATH 中未找到")
 	}
 	worker := eng.WorkerContainer(req.Slot)
 	if err := a.offerClaudeInstall(docker, worker, st, req); err != nil {
@@ -214,7 +214,7 @@ func (a *app) enter(ctx context.Context, req enterRequest) error {
 			fmt.Fprintf(a.errw, "宿主 tmux 桥接不可用：%v\n", err)
 		} else {
 			bridged = true
-			fmt.Fprintf(a.errw, "宿主 tmux 桥接已开启：槽内经它执行的命令使用宿主的权限和宿主网络（cc-cluster tmux %s 可以接入观察）\n", req.Slot)
+			fmt.Fprintf(a.errw, "宿主 tmux 桥接已开启：槽内经其执行的命令使用宿主的权限与网络（可执行 cc-cluster tmux %s 接入查看）\n", req.Slot)
 		}
 	}
 
@@ -258,7 +258,7 @@ func (a *app) enter(ctx context.Context, req enterRequest) error {
 func (a *app) pickMountRoot(req enterRequest, home string, protected []string) (string, error) {
 	candidates := model.WorkspaceCandidates(req.Dir, home, protected...)
 	if len(candidates) == 0 {
-		return "", fmt.Errorf("目录 %s 不能挂进槽位：它在系统目录里、是你的主目录或数据目录的上级，或会盖住槽内的 HOME（%s）", req.Dir, home)
+		return "", fmt.Errorf("目录 %s 不能挂载到槽位：该目录位于系统目录下、是主目录或数据目录的上级目录，或将覆盖槽内的 HOME（%s）", req.Dir, home)
 	}
 	if req.MountRoot != "" {
 		for _, c := range candidates {
@@ -266,7 +266,7 @@ func (a *app) pickMountRoot(req enterRequest, home string, protected []string) (
 				return c, nil
 			}
 		}
-		return "", fmt.Errorf("--mount 给出的 %s 不是 %s 本身或它的上级目录，或者不允许挂载", req.MountRoot, req.Dir)
+		return "", fmt.Errorf("--mount 指定的 %s 不是 %s 本身或其上级目录，或不允许挂载", req.MountRoot, req.Dir)
 	}
 	if req.Yes || !a.interactive || len(candidates) == 1 {
 		return candidates[0], nil
@@ -278,8 +278,8 @@ func (a *app) pickMountRoot(req enterRequest, home string, protected []string) (
 			items[i] += "（当前目录）"
 		}
 	}
-	fmt.Fprintf(a.out, "目录 %s 还不在槽位 %s 的挂载范围内。\n", req.Dir, req.Slot)
-	i, err := a.choose("挂载哪一级？挂上级目录的话，以后在它下面的其他项目里进入就不用再重建。", items, 0)
+	fmt.Fprintf(a.out, "目录 %s 不在槽位 %s 的挂载范围内。\n", req.Dir, req.Slot)
+	i, err := a.choose("选择要挂载的目录（挂载上级目录后，进入其下的其他项目时无需再次重建）：", items, 0)
 	if err != nil {
 		return "", err
 	}
@@ -294,11 +294,11 @@ func (a *app) offerClaudeInstall(docker, worker string, st *store.Store, req ent
 	}
 	if !a.interactive {
 		if req.Claude {
-			return fmt.Errorf("槽位 %s 里还没有安装 Claude Code；在终端里运行 cc-cluster claude %s 会提示安装", req.Slot, req.Slot)
+			return fmt.Errorf("槽位 %s 尚未安装 Claude Code；在终端中执行 cc-cluster claude %s 时将提示安装", req.Slot, req.Slot)
 		}
 		return nil
 	}
-	ok, err := a.confirm(fmt.Sprintf("槽位 %s 里还没有安装 Claude Code。现在安装吗？（在槽内执行官方安装脚本，下载经该槽的出口）", req.Slot), req.Claude)
+	ok, err := a.confirm(fmt.Sprintf("槽位 %s 尚未安装 Claude Code。是否现在安装？（在槽内执行官方安装脚本，经该槽位的出口下载）", req.Slot), req.Claude)
 	if err != nil {
 		return err
 	}

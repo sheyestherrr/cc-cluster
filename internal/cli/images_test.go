@@ -39,11 +39,11 @@ func TestImagesCommand(t *testing.T) {
 	if out, code := run("init", "--name", "t", "--gateway-image", "gw:1", "--worker-image", "w:1"); code != 0 {
 		t.Fatalf("init 失败: %s", out)
 	}
-	if out, code := run("images"); code != 0 || !strings.Contains(out, "gw:1") || strings.Contains(out, "仍在用原来的镜像") {
+	if out, code := run("images"); code != 0 || !strings.Contains(out, "gw:1") || strings.Contains(out, "仍使用原镜像") {
 		t.Fatalf("不带参数应只显示现状: %d %s", code, out)
 	}
 	// 只给一个：另一个不变。
-	if out, code := run("images", "--worker-image", "w:2"); code != 0 || !strings.Contains(out, "仍在用原来的镜像") {
+	if out, code := run("images", "--worker-image", "w:2"); code != 0 || !strings.Contains(out, "仍使用原镜像") {
 		t.Fatalf("更换后应提示要重建: %d %s", code, out)
 	}
 	var c model.Cluster

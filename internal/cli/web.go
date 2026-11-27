@@ -101,16 +101,16 @@ func listenWeb(port int, fixed bool) (net.Listener, error) {
 		}
 	}
 	if fixed {
-		return nil, fmt.Errorf("监听 127.0.0.1:%d 失败：%w；可以用 --port 换一个端口", port, err)
+		return nil, fmt.Errorf("监听 127.0.0.1:%d 失败：%w；可用 --port 指定其他端口", port, err)
 	}
-	return nil, fmt.Errorf("127.0.0.1 的 %d 到 %d 端口都无法监听：%w；可以用 --port 指定一个", port, port+tries-1, err)
+	return nil, fmt.Errorf("127.0.0.1 的 %d 至 %d 端口均无法监听：%w；可用 --port 指定其他端口", port, port+tries-1, err)
 }
 
 func (a *app) printWebAddr(port int, token string) {
 	// 令牌放在 # 之后：浏览器不会把它发给服务器，也不会出现在访问记录里。
 	fmt.Fprintf(a.out, "  http://127.0.0.1:%d/#token=%s\n\n", port, token)
-	fmt.Fprintf(a.out, "只监听本机。在别的机器上使用时先做端口转发：ssh -L %d:127.0.0.1:%d <这台机器>\n", port, port)
-	fmt.Fprintln(a.out, "用这个链接打开一次之后，同一个浏览器直接输地址就能进。")
+	fmt.Fprintf(a.out, "仅监听本机地址。从其他机器访问时请先建立端口转发：ssh -L %d:127.0.0.1:%d <本机地址>\n", port, port)
+	fmt.Fprintln(a.out, "使用该链接打开一次后，同一浏览器可直接访问，无需再带令牌。")
 }
 
 // webOptions 是启动网页界面时可以调的几项。
@@ -128,10 +128,10 @@ func (a *app) cmdWeb(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "stop" {
 		return a.cmdWebStop(args[1:])
 	}
-	fs := a.newFlags("web", "web [--port 端口] [--foreground]    启动（或找到已在运行的）网页界面并打印地址\n  cc-cluster web stop                         停止它")
-	port := fs.Int("port", DefaultWebPort, "监听的本机端口；不指定时被占用会自动往后找空闲的；0 表示让系统挑一个")
-	interval := fs.Duration("watch", engine.DefaultWatchInterval, "运行期间每隔这么久检测一遍各槽的连通性与出口，出口变了就给该槽断网并保持；0 表示不检测")
-	foreground := fs.Bool("foreground", false, "在前台运行，按 Ctrl-C 停止（交给 systemd 之类的管理时用）")
+	fs := a.newFlags("web", "web [--port 端口] [--foreground]    启动网页界面（已在运行时直接使用）并输出访问地址\n  cc-cluster web stop                         停止网页界面")
+	port := fs.Int("port", DefaultWebPort, "监听的本机端口；未指定且默认端口被占用时，自动改用后续的空闲端口；0 表示由系统分配")
+	interval := fs.Duration("watch", engine.DefaultWatchInterval, "持续检测的间隔：定期检测各槽位的连通性与出口，出口变更时为该槽位断网并保持；0 表示不检测")
+	foreground := fs.Bool("foreground", false, "在前台运行，按 Ctrl-C 停止（适用于由 systemd 等管理的场景）")
 	if err := parse(fs, args); err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func (a *app) cmdWeb(ctx context.Context, args []string) error {
 		watchSet = watchSet || f.Name == "watch"
 	})
 	if !web.HasUI() {
-		return errors.New("这个二进制不带网页界面：发布版自带；从源码构建时先执行 make web（需要 Node.js 与 pnpm），再 make build")
+		return errors.New("当前程序不含网页界面。发布版已内置；从源码构建时请先执行 make web（需要 Node.js 与 pnpm），再执行 make build")
 	}
 	if err := a.requireDataDir(); err != nil {
 		return err
@@ -156,7 +156,7 @@ func (a *app) cmdWeb(ctx context.Context, args []string) error {
 	}
 	if r, ok := runningWeb(a.dataDir); ok {
 		if r.Version == Version {
-			fmt.Fprintf(a.out, "网页界面已在后台运行（进程 %d），在这台机器的浏览器里打开：\n\n", r.PID)
+			fmt.Fprintf(a.out, "网页界面已在后台运行（进程 %d），请在本机浏览器中打开：\n\n", r.PID)
 			a.printWebAddr(r.Port, r.Token)
 			fmt.Fprintln(a.out, "停止：cc-cluster web stop")
 			return nil
@@ -180,7 +180,7 @@ func (a *app) cmdWeb(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "网页界面已在后台运行（进程 %d），在这台机器的浏览器里打开：\n\n", r.PID)
+	fmt.Fprintf(a.out, "网页界面已在后台运行（进程 %d），请在本机浏览器中打开：\n\n", r.PID)
 	a.printWebAddr(r.Port, r.Token)
 	fmt.Fprintln(a.out, "停止：cc-cluster web stop")
 	return nil
@@ -232,7 +232,7 @@ func (a *app) webServe(ctx context.Context, opt webOptions) error {
 	if !opt.Fixed && opt.Port != 0 && addr.Port != opt.Port {
 		fmt.Fprintf(a.out, "端口 %d 已被占用，改用 %d。\n", opt.Port, addr.Port)
 	}
-	fmt.Fprint(a.out, "网页界面已启动，在这台机器的浏览器里打开：\n\n")
+	fmt.Fprint(a.out, "网页界面已启动，请在本机浏览器中打开：\n\n")
 	a.printWebAddr(addr.Port, token)
 	fmt.Fprintln(a.out, "按 Ctrl-C 停止。")
 	return srv.Serve(ctx, ln)
@@ -278,10 +278,10 @@ func (a *app) webSpawn(opt webOptions) (webRun, error) {
 		}
 		select {
 		case <-exited:
-			return none, fmt.Errorf("网页界面没有启动起来：%s", lastLogLines(webLogPath(dir)))
+			return none, fmt.Errorf("网页界面启动失败：%s", lastLogLines(webLogPath(dir)))
 		case <-deadline:
 			_ = cmd.Process.Kill()
-			return none, fmt.Errorf("网页界面 20 秒内没有就绪：%s", lastLogLines(webLogPath(dir)))
+			return none, fmt.Errorf("网页界面在 20 秒内未就绪：%s", lastLogLines(webLogPath(dir)))
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
@@ -292,7 +292,7 @@ func lastLogLines(path string) string {
 	b, err := os.ReadFile(path)
 	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
 	if err != nil || lines[0] == "" {
-		return "没有留下输出，日志在 " + path
+		return "无输出，日志位于 " + path
 	}
 	if len(lines) > 4 {
 		lines = lines[len(lines)-4:]
@@ -303,7 +303,7 @@ func lastLogLines(path string) string {
 // stopWeb 让记录里的那个进程退出，并等它把端口放掉。
 func stopWeb(dataDir string, r webRun) error {
 	if err := syscall.Kill(r.PID, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
-		return fmt.Errorf("停不掉进程 %d：%w", r.PID, err)
+		return fmt.Errorf("无法停止进程 %d：%w", r.PID, err)
 	}
 	for i := 0; i < 100; i++ {
 		if _, ok := runningWeb(dataDir); !ok {
@@ -311,7 +311,7 @@ func stopWeb(dataDir string, r webRun) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return fmt.Errorf("进程 %d 在 10 秒内没有退出", r.PID)
+	return fmt.Errorf("进程 %d 在 10 秒内未退出", r.PID)
 }
 
 // cmdWebStop 停止在后台运行的网页界面。
@@ -325,13 +325,13 @@ func (a *app) cmdWebStop(args []string) error {
 	}
 	r, ok := runningWeb(a.dataDir)
 	if !ok {
-		fmt.Fprintln(a.out, "网页界面没有在运行。")
+		fmt.Fprintln(a.out, "网页界面未运行。")
 		return nil
 	}
 	if err := stopWeb(a.dataDir, r); err != nil {
 		return err
 	}
-	fmt.Fprintln(a.out, "网页界面已停止。持续检测、流量记录和订阅的自动刷新也随之停止；槽位和网关不受影响。")
+	fmt.Fprintln(a.out, "网页界面已停止。持续检测、流量记录与订阅的自动刷新同时停止；槽位与网关不受影响。")
 	return nil
 }
 
@@ -346,17 +346,17 @@ func (a *app) ensureWeb() {
 	}
 	r, err := a.webSpawn(webOptions{Port: DefaultWebPort, Interval: engine.DefaultWatchInterval})
 	if err != nil {
-		fmt.Fprintf(a.errw, "后台的持续检测没有启动起来（不影响进入槽位）：%v\n", err)
+		fmt.Fprintf(a.errw, "后台的持续检测启动失败（不影响进入槽位）：%v\n", err)
 		return
 	}
-	fmt.Fprintf(a.errw, "已在后台启动持续检测与网页界面（端口 %d；要打开网页执行 cc-cluster web）\n", r.Port)
+	fmt.Fprintf(a.errw, "已在后台启动持续检测与网页界面（端口 %d；执行 cc-cluster web 可获取访问地址）\n", r.Port)
 }
 
 // cmdWatch 在前台做持续检测：给不开网页界面的人用，逻辑与网页运行期间的相同。
 func (a *app) cmdWatch(ctx context.Context, args []string) error {
 	fs := a.newFlags("watch", "watch [--interval 间隔] [--once]")
 	interval := fs.Duration("interval", engine.DefaultWatchInterval, "两次检测之间的间隔")
-	once := fs.Bool("once", false, "只检测一遍并列出结果")
+	once := fs.Bool("once", false, "仅检测一次并列出结果")
 	if err := parse(fs, args); err != nil {
 		return err
 	}
@@ -370,7 +370,7 @@ func (a *app) cmdWatch(ctx context.Context, args []string) error {
 			return err
 		}
 		if len(res) == 0 {
-			fmt.Fprintln(a.out, "没有已就绪的槽位可检测")
+			fmt.Fprintln(a.out, "没有已就绪的槽位")
 			return nil
 		}
 		w := a.table()
@@ -381,11 +381,11 @@ func (a *app) cmdWatch(ctx context.Context, args []string) error {
 		return w.Flush()
 	}
 	if *interval < 30*time.Second {
-		return errors.New("间隔最短 30 秒")
+		return errors.New("间隔不能短于 30 秒")
 	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	fmt.Fprintf(a.out, "每 %s 检测一遍已就绪槽位的连通性与出口；出口变了会给该槽断网并保持。运行期间同时记录各槽位的流量与连接。按 Ctrl-C 停止。\n", *interval)
+	fmt.Fprintf(a.out, "每 %s 检测一次已就绪槽位的连通性与出口；出口变更时为该槽位断网并保持。运行期间同时记录各槽位的流量与连接。按 Ctrl-C 停止。\n", *interval)
 	open := func(ctx context.Context) (*engine.Engine, error) {
 		eng, _, err := a.open(ctx, true)
 		return eng, err
@@ -401,5 +401,5 @@ func (a *app) cmdWatch(ctx context.Context, args []string) error {
 }
 
 var watchText = map[string]string{
-	engine.WatchOK: "正常", engine.WatchUnreachable: "连不上", engine.WatchChanged: "出口变了，已断网",
+	engine.WatchOK: "正常", engine.WatchUnreachable: "无法连接", engine.WatchChanged: "出口已变更，已断网",
 }

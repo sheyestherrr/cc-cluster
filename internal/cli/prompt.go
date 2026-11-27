@@ -114,7 +114,7 @@ func (a *app) confirm(question string, def bool) (bool, error) {
 // 输入 0 或 q 表示取消。
 func (a *app) choose(title string, items []string, def int) (int, error) {
 	if len(items) == 0 {
-		return 0, errors.New("没有可选的项目")
+		return 0, errors.New("没有可选项")
 	}
 	fmt.Fprintln(a.out, title)
 	for i, it := range items {

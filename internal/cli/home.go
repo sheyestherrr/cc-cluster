@@ -97,7 +97,7 @@ func (a *app) home(ctx context.Context) error {
 		return err
 	}
 	if len(sts) == 0 {
-		fmt.Fprintln(a.out, "还没有槽位。槽位、节点和订阅都在网页界面里管理：")
+		fmt.Fprintln(a.out, "暂无槽位。槽位、节点与订阅在网页界面中管理：")
 		fmt.Fprintln(a.out)
 		return a.cmdWeb(ctx, nil)
 	}
@@ -127,13 +127,13 @@ func (a *app) home(ctx context.Context) error {
 		}
 		switch {
 		case s.State == engine.StateHold:
-			notes = append(notes, "要先在网页里解除断网")
+			notes = append(notes, "需先在网页界面中解除断网")
 		case s.State != engine.StateReady:
-			notes = append(notes, "选它会先启动")
+			notes = append(notes, "选择后先启动")
 		}
 		if s.Slot.ID == last.Slot {
 			def = i
-			notes = append(notes, "上次用的")
+			notes = append(notes, "上次使用")
 		}
 		fmt.Fprintf(w, "  %d)\t%s\t%s\t%s\t%s\n", i+1, s.Slot.ID, slotStateText[s.State], where, strings.Join(notes, "，"))
 	}
@@ -144,7 +144,7 @@ func (a *app) home(ctx context.Context) error {
 
 	slot := ""
 	for slot == "" {
-		ans, err := a.ask("选哪个？", strconv.Itoa(def+1))
+		ans, err := a.ask("请选择", strconv.Itoa(def+1))
 		if err != nil {
 			return err
 		}
@@ -157,7 +157,7 @@ func (a *app) home(ctx context.Context) error {
 		if i, ok := pickIndex(ans, names); ok {
 			slot = names[i]
 		} else {
-			fmt.Fprintf(a.out, "没有 %q 这一项：输入编号、槽位名、w 或 q\n", ans)
+			fmt.Fprintf(a.out, "无效的选项 %q，请输入编号、槽位名、w 或 q\n", ans)
 		}
 	}
 
@@ -166,7 +166,7 @@ func (a *app) home(ctx context.Context) error {
 		defMode = "2"
 	}
 	for mode == "" {
-		ans, err := a.ask("进去做什么？ 1) Claude  2) 终端", defMode)
+		ans, err := a.ask("进入方式：1) Claude  2) 终端", defMode)
 		if err != nil {
 			return err
 		}
@@ -178,7 +178,7 @@ func (a *app) home(ctx context.Context) error {
 		case "q":
 			return nil
 		default:
-			fmt.Fprintln(a.out, "输入 1 或 2")
+			fmt.Fprintln(a.out, "请输入 1 或 2")
 		}
 	}
 	saveLast(a.dataDir, cwd, lastChoice{Slot: slot, Mode: mode})

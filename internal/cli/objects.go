@@ -28,11 +28,11 @@ func (a *app) subcommand(group, list string, args []string) (string, []string, e
 }
 
 // noteHelp 是各个 add 命令里 --note 的说明。
-const noteHelp = "备注：给人看的名字或说明，中文、下划线、空格都可以，只用于显示（ID 要用在容器名和文件名里，所以字符受限）"
+const noteHelp = "备注：用于显示的名称或说明，可使用中文、下划线与空格（ID 用于容器名和文件名，字符受限）"
 
 // setNote 实现各对象的 note 子命令：<对象> note <ID> [备注…]；不给备注就清掉。
 func (a *app) setNote(kind, group, what string, args []string) error {
-	fs := a.newFlags(group+" note", group+" note <"+what+"> [备注]    设置备注（中文、下划线、空格都可以，只用于显示）；不给备注就清掉")
+	fs := a.newFlags(group+" note", group+" note <"+what+"> [备注]    设置备注（可使用中文、下划线与空格，仅用于显示）；省略备注则清除")
 	id, err := parseWithID(fs, args)
 	if err != nil {
 		return err
@@ -46,7 +46,7 @@ func (a *app) setNote(kind, group, what string, args []string) error {
 		return err
 	}
 	if note == "" {
-		fmt.Fprintf(a.out, "已清掉%s %s 的备注\n", what, id)
+		fmt.Fprintf(a.out, "已清除%s %s 的备注\n", what, id)
 	} else {
 		fmt.Fprintf(a.out, "%s %s 的备注：%s\n", what, id, note)
 	}
@@ -91,10 +91,10 @@ func (a *app) cmdNode(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(a.out, "节点 %s 的首跳地址：%s；用到它的网关在下次 gateway up / slot up 时应用\n", id, ip)
+		fmt.Fprintf(a.out, "节点 %s 的首跳地址：%s；使用该节点的网关将在下次 gateway up 或 slot up 时应用\n", id, ip)
 		return nil
 	case "report":
-		id, err := parseWithID(a.newFlags("node report", "node report <落地>    重新查询出口 IP 的评估（经链路查询，需要用到它的网关在运行）"), rest)
+		id, err := parseWithID(a.newFlags("node report", "node report <落地>    重新查询出口 IP 的评估（经链路查询，使用该落地的网关须在运行）"), rest)
 		if err != nil {
 			return err
 		}
@@ -117,19 +117,19 @@ func (a *app) nodeAdd(args []string) error {
 	fs := a.newFlags("node add", "node add <节点> --role transit|landing (--sub 订阅 [--name 名称] | --file 片段.json | --type … --server … --port …)")
 	n := model.Node{}
 	fs.StringVar(&n.Role, "role", "", "角色：transit（中转）或 landing（落地）")
-	file := fs.String("file", "", "Mihomo 原生 proxy 片段（JSON 对象）；- 表示从标准输入读")
-	typ := fs.String("type", "", "不用 --file 时：代理类型，例如 socks5、http")
-	server := fs.String("server", "", "不用 --file 时：服务器地址")
-	port := fs.Int("port", 0, "不用 --file 时：端口")
-	username := fs.String("username", "", "不用 --file 时：用户名")
-	passwordFile := fs.String("password-file", "", "不用 --file 时：存放口令的文件（口令不从命令行传，避免留在进程列表和 shell 历史里）")
-	fs.StringVar(&n.ConnectIPv4, "connect-ipv4", "", "该节点作首跳时网关直连的 IPv4 地址；server 是域名而不填时，在本机解析一次并记下")
-	fs.StringVar(&n.ExpectExitIP, "expect-exit-ip", "", "落地的预期出口 IPv4；填了就必须与实测一致")
-	fs.StringVar(&n.TZ, "tz", "", "落地所在地区的时区，例如 Asia/Tokyo；绑定它的槽位默认沿用")
-	fs.StringVar(&n.Lang, "lang", "", "落地所在地区的语言，例如 en_US.UTF-8；绑定它的槽位默认沿用")
-	sub := fs.String("sub", "", "从这个订阅里取节点（先用 sub add 登记订阅）")
-	subName := fs.String("name", "", "配合 --sub：订阅里的节点名称；不填时先测延迟，中转默认用延迟最低的，落地列出来让你选")
-	forLanding := fs.String("landing", "", "配合 --sub 选中转：接上这个落地节点按整条链路测速，只在能接通它的节点里挑")
+	file := fs.String("file", "", "Mihomo 原生 proxy 片段（JSON 对象）；- 表示从标准输入读取")
+	typ := fs.String("type", "", "未使用 --file 时：代理类型，例如 socks5、http")
+	server := fs.String("server", "", "未使用 --file 时：服务器地址")
+	port := fs.Int("port", 0, "未使用 --file 时：端口")
+	username := fs.String("username", "", "未使用 --file 时：用户名")
+	passwordFile := fs.String("password-file", "", "未使用 --file 时：保存密码的文件（密码不通过命令行参数传递，以免出现在进程列表和 shell 历史中）")
+	fs.StringVar(&n.ConnectIPv4, "connect-ipv4", "", "该节点用作首跳时网关直连的 IPv4 地址；server 为域名且未指定时，在本机解析并保存")
+	fs.StringVar(&n.ExpectExitIP, "expect-exit-ip", "", "落地的预期出口 IPv4；指定后必须与实测出口一致")
+	fs.StringVar(&n.TZ, "tz", "", "落地所在地区的时区，例如 Asia/Tokyo；绑定该落地的槽位默认沿用")
+	fs.StringVar(&n.Lang, "lang", "", "落地所在地区的语言，例如 en_US.UTF-8；绑定该落地的槽位默认沿用")
+	sub := fs.String("sub", "", "从该订阅中选取节点（须先用 sub add 添加订阅）")
+	subName := fs.String("name", "", "与 --sub 配合：订阅中的节点名称；未指定时先测试延迟，中转默认选用延迟最低的节点，落地则列出节点供选择")
+	forLanding := fs.String("landing", "", "与 --sub 配合选择中转：经该落地测试整条链路，仅从可连通该落地的节点中选择")
 	fs.StringVar(&n.Note, "note", "", noteHelp)
 	id, err := parseWithID(fs, args)
 	if err != nil {
@@ -140,7 +140,7 @@ func (a *app) nodeAdd(args []string) error {
 	ctx := context.Background()
 	if *sub != "" {
 		if *file != "" || *typ != "" || *server != "" || *port != 0 {
-			return errors.New("--sub 与 --file、--type/--server/--port 只能选一种")
+			return errors.New("--sub、--file、--type/--server/--port 三种方式只能使用一种")
 		}
 		eng, st, err := a.open(ctx, false)
 		if err != nil {
@@ -148,7 +148,7 @@ func (a *app) nodeAdd(args []string) error {
 		}
 		name := *subName
 		if *forLanding != "" && (name != "" || n.Role != model.RoleTransit) {
-			return errors.New("--landing 只在从订阅里挑中转（--role transit、不带 --name）时使用")
+			return errors.New("--landing 仅用于从订阅中选择中转（--role transit 且未指定 --name）")
 		}
 		if name == "" {
 			if name, err = a.pickSubNode(ctx, *sub, n.Role, *forLanding); err != nil {
@@ -163,7 +163,7 @@ func (a *app) nodeAdd(args []string) error {
 
 	switch {
 	case *file != "" && (*typ != "" || *server != "" || *port != 0):
-		return errors.New("--file 与 --type/--server/--port 只能二选一")
+		return errors.New("--file 与 --type/--server/--port 不能同时使用")
 	case *file != "":
 		var r io.Reader = os.Stdin
 		if *file != "-" {
@@ -175,7 +175,7 @@ func (a *app) nodeAdd(args []string) error {
 			r = f
 		}
 		if err := json.NewDecoder(r).Decode(&n.Proxy); err != nil {
-			return fmt.Errorf("片段不是合法的 JSON 对象：%w", err)
+			return fmt.Errorf("片段不是有效的 JSON 对象：%w", err)
 		}
 	default:
 		n.Proxy = map[string]any{"type": *typ, "server": *server, "port": *port}
@@ -210,9 +210,9 @@ func (a *app) reportNode(st *store.Store, id string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "已登记节点 %s（%s，%s:%d）\n", n.ID, n.Role, n.Server(), n.Port())
+	fmt.Fprintf(a.out, "已添加节点 %s（%s，%s:%d）\n", n.ID, n.Role, n.Server(), n.Port())
 	if n.ConnectAuto {
-		fmt.Fprintf(a.out, "服务器地址是域名，已在本机解析为 %s 并记下；地址变了以后执行 node resolve %s\n", n.ConnectIPv4, n.ID)
+		fmt.Fprintf(a.out, "服务器地址为域名，已在本机解析为 %s 并保存；地址变更后请执行 node resolve %s\n", n.ConnectIPv4, n.ID)
 	}
 	return nil
 }
@@ -231,24 +231,24 @@ func (a *app) pickSubNode(ctx context.Context, subID, role, landing string) (str
 	}
 	auto := role == model.RoleTransit
 	if !a.interactive && !auto {
-		return "", fmt.Errorf("需要用 --name 指定订阅里的节点名称；用 sub nodes %s 查看", subID)
+		return "", fmt.Errorf("请用 --name 指定订阅中的节点名称；可用 sub nodes %s 查看", subID)
 	}
 	delays, terr := a.testSub(ctx, subID, engine.DelayOptions{Landing: landing})
 	if terr != nil {
 		if !a.interactive {
-			return "", fmt.Errorf("测延迟没有成功，无法自动挑选：%w；可以用 --name 直接指定节点", terr)
+			return "", fmt.Errorf("延迟测试失败，无法自动选择：%w；可用 --name 直接指定节点", terr)
 		}
-		fmt.Fprintf(a.errw, "测延迟没有成功（%v），按已有的记录列出\n", terr)
+		fmt.Fprintf(a.errw, "延迟测试失败（%v），按已有记录列出\n", terr)
 		delays = engine.SubDelays(sub)
 	}
 	what := "延迟"
 	if landing != "" {
-		what = "接落地 " + landing + " 的整条链路"
+		what = "经落地 " + landing + " 的链路延迟"
 	}
 	best, hasBest := engine.Fastest(delays)
 	if !a.interactive {
 		if !hasBest {
-			return "", fmt.Errorf("订阅 %s 里没有测通的节点（%s）；用 sub refresh %s 刷新后再试，或用 --name 直接指定", subID, what, subID)
+			return "", fmt.Errorf("订阅 %s 中没有可用的节点（按%s测试）；请用 sub refresh %s 刷新后重试，或用 --name 直接指定", subID, what, subID)
 		}
 		fmt.Fprintf(a.out, "按%s选用订阅 %s 的节点 %s（%s）\n", what, subID, best.Name, best.DelayText())
 		return best.Name, nil
@@ -262,7 +262,7 @@ func (a *app) pickSubNode(ctx context.Context, subID, role, landing string) (str
 	}
 	title := fmt.Sprintf("订阅 %s 的节点（按%s排序）：", subID, what)
 	if def >= 0 {
-		title = fmt.Sprintf("订阅 %s 的节点（按%s排序，直接回车用最快的）：", subID, what)
+		title = fmt.Sprintf("订阅 %s 的节点（按%s排序，直接回车选用延迟最低的节点）：", subID, what)
 	}
 	i, err := a.choose(title, items, def)
 	if err != nil {
@@ -319,9 +319,9 @@ func (a *app) cmdGateway(ctx context.Context, args []string) error {
 	case "note":
 		return a.setNote(engine.KindGateway, "gateway", "网关", rest)
 	case "set-transit":
-		fs := a.newFlags("gateway set-transit", "gateway set-transit <网关> <主用中转> [候选中转…]")
+		fs := a.newFlags("gateway set-transit", "gateway set-transit <网关> <主用中转> [备用中转…]")
 		var topt engine.TransitOptions
-		fs.BoolVar(&topt.SkipChainCheck, "skip-check", false, "不验证这些中转能否接通网关上各槽位的落地（默认会验证，接不通就不更换）")
+		fs.BoolVar(&topt.SkipChainCheck, "skip-check", false, "跳过中转到各槽位落地的连通性验证（默认验证，任一无法连通则不更换）")
 		id, err := parseWithID(fs, rest)
 		if err != nil {
 			return err
@@ -338,17 +338,17 @@ func (a *app) cmdGateway(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(a.out, "网关 %s 的中转已改为 %s", id, fs.Arg(0))
+		fmt.Fprintf(a.out, "网关 %s 的中转已更换为 %s", id, fs.Arg(0))
 		if fs.NArg() > 1 {
-			fmt.Fprintf(a.out, "（候选：%s；主用的不通时自动改用，出口不变）", strings.Join(fs.Args()[1:], "、"))
+			fmt.Fprintf(a.out, "（备用：%s；主用不可用时自动切换，出口不变）", strings.Join(fs.Args()[1:], "、"))
 		}
 		switch {
 		case !res.Reloaded:
-			fmt.Fprintln(a.out, "；网关没有在运行，下次启动时生效")
+			fmt.Fprintln(a.out, "；网关未运行，下次启动时生效")
 		case len(res.Failed) > 0:
-			fmt.Fprintf(a.out, "；已生效，但 %d 个槽位换完后没有通过核对（见上面的提醒），排查后重新 slot up\n", len(res.Failed))
+			fmt.Fprintf(a.out, "；已生效，但 %d 个槽位更换后未通过出口核对（见上方提醒），请排查后重新执行 slot up\n", len(res.Failed))
 		default:
-			fmt.Fprintf(a.out, "；已生效，重新核对了 %d 个槽位的出口\n", len(res.Rechecked))
+			fmt.Fprintf(a.out, "；已生效，已重新核对 %d 个槽位的出口\n", len(res.Rechecked))
 		}
 		return nil
 	case "list", "ls":
@@ -376,7 +376,7 @@ func (a *app) cmdGateway(ctx context.Context, args []string) error {
 		return nil
 	case "down":
 		fs := a.newFlags("gateway down", "gateway down <网关> [--force]")
-		force := fs.Bool("force", false, "即使它上面还有运行中的槽位也停止（这些槽会断网）")
+		force := fs.Bool("force", false, "即使仍有运行中的槽位也停止（这些槽位将断网）")
 		id, err := parseWithID(fs, rest)
 		if err != nil {
 			return err
@@ -405,14 +405,14 @@ func (a *app) gatewayAdd(args []string) error {
 	fs := a.newFlags("gateway add", "gateway add <网关> [--transit 节点] [参数]")
 	g := model.Gateway{}
 	var dns, echo, connect, backups multi
-	fs.Var(&backups, "backup", "候选中转，可重复、按顺序：主用的不通时核心自动改用，恢复后切回；出口由落地决定，不随之改变")
-	fs.Var(&connect, "connect-url", "连通性检查访问的地址，可重复（默认是 Google 和 Cloudflare 的 204 地址）；出口探测之前先用它分段检查链路")
-	fs.StringVar(&g.Transit, "transit", "", "中转节点；不填表示不经中转，各槽位直连自己的落地（或直出的节点）")
+	fs.Var(&backups, "backup", "备用中转，可重复指定，按顺序使用：主用不可用时核心自动切换，恢复后切回；出口由落地决定，不随之改变")
+	fs.Var(&connect, "connect-url", "连通性检查使用的地址，可重复指定（默认为 Google 与 Cloudflare 的 204 地址）；出口探测前用于分段检查链路")
+	fs.StringVar(&g.Transit, "transit", "", "中转节点；未指定时不经中转，各槽位直连自己的落地（或直出节点）")
 	fs.StringVar(&g.EgressNetwork, "egress-network", "", "出口所在的 Docker 网络（默认 <容器名前缀>-egress）；不存在时创建为普通 bridge 网络")
-	fs.StringVar(&g.Pool, "pool", model.DefaultPool, "分给各槽 /30 的私网地址池")
+	fs.StringVar(&g.Pool, "pool", model.DefaultPool, "为各槽位分配 /30 网段的私有地址池")
 	fs.Var(&dns, "dns", "核心使用的 DNS 服务器，可重复；主机部分必须是 IP（默认 "+model.DefaultDNS+"）")
 	fs.Var(&echo, "echo-url", "出口 IP 探测地址，可重复（默认使用内置的几个公共地址）")
-	fs.StringVar(&g.Image, "image", "", "网关镜像；不填用 init 时设定的")
+	fs.StringVar(&g.Image, "image", "", "网关镜像；默认使用集群的镜像设置")
 	fs.StringVar(&g.LogLevel, "log-level", model.DefaultLogLevel, "核心日志级别：silent|error|warning|info|debug")
 	fs.StringVar(&g.Note, "note", "", noteHelp)
 	id, err := parseWithID(fs, args)
@@ -428,7 +428,7 @@ func (a *app) gatewayAdd(args []string) error {
 	if err := eng.AddGateway(g); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "已登记网关 %s\n", g.ID)
+	fmt.Fprintf(a.out, "已创建网关 %s\n", g.ID)
 	return nil
 }
 
@@ -442,9 +442,9 @@ func (a *app) printGateways(ctx context.Context, eng *engine.Engine) error {
 	for _, s := range sts {
 		transit := orDash(s.Gateway.Transit)
 		if n := len(s.Gateway.Backups); n > 0 {
-			transit += fmt.Sprintf(" +%d 候选", n)
+			transit += fmt.Sprintf(" +%d 备用", n)
 			if s.ActiveTransit != "" && s.ActiveTransit != s.Gateway.Transit {
-				transit += "（在用 " + s.ActiveTransit + "）"
+				transit += "（当前 " + s.ActiveTransit + "）"
 			}
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Gateway.ID, transit, s.Gateway.EgressNetwork,
@@ -476,7 +476,7 @@ func (a *app) cmdSlot(ctx context.Context, args []string) error {
 		return a.printSlots(ctx, eng)
 	case "up":
 		fs := a.newFlags("slot up", "slot up <槽位> [--recreate]")
-		recreate := fs.Bool("recreate", false, "worker 容器与期望配置不一致时删掉重建（容器内的进程会结束）")
+		recreate := fs.Bool("recreate", false, "worker 容器与当前配置不一致时删除并重建（容器内的进程将结束）")
 		id, err := parseWithID(fs, rest)
 		if err != nil {
 			return err
@@ -489,7 +489,7 @@ func (a *app) cmdSlot(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(a.out, "槽位 %s 已就绪：出口 %s（已从 worker 的位置复测）\n", id, res.ExitSummary())
+		fmt.Fprintf(a.out, "槽位 %s 已就绪：出口 %s（已在 worker 侧复测）\n", id, res.ExitSummary())
 		return nil
 	case "stop":
 		id, err := parseWithID(a.newFlags("slot stop", "slot stop <槽位>"), rest)
@@ -515,7 +515,7 @@ func (a *app) cmdSlot(ctx context.Context, args []string) error {
 		if err := eng.SlotHold(ctx, id, *reason); err != nil {
 			return err
 		}
-		fmt.Fprintf(a.out, "槽位 %s 已断网；恢复前需要先 slot release 再 slot up\n", id)
+		fmt.Fprintf(a.out, "槽位 %s 已断网；恢复时请先执行 slot release，再执行 slot up\n", id)
 		return nil
 	case "release":
 		id, err := parseWithID(a.newFlags("slot release", "slot release <槽位>"), rest)
@@ -529,11 +529,11 @@ func (a *app) cmdSlot(ctx context.Context, args []string) error {
 		if err := eng.SlotRelease(id); err != nil {
 			return err
 		}
-		fmt.Fprintf(a.out, "已解除槽位 %s 的手动断网标记；执行 slot up %s 重新接线\n", id, id)
+		fmt.Fprintf(a.out, "已解除槽位 %s 的手动断网；请执行 slot up %s 重新接线\n", id, id)
 		return nil
 	case "rm":
 		fs := a.newFlags("slot rm", "slot rm <槽位> [--purge]")
-		purge := fs.Bool("purge", false, "连同该槽的 HOME 与身份一起删除（不可恢复）")
+		purge := fs.Bool("purge", false, "同时删除该槽位的 HOME 与身份（不可恢复）")
 		id, err := parseWithID(fs, rest)
 		if err != nil {
 			return err
@@ -596,7 +596,7 @@ func (a *app) slotUnmount(args []string) error {
 	if err := eng.SlotRemoveMount(id, fs.Arg(0)); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "已从槽位 %s 的挂载里去掉 %s；运行中的 worker 要 slot up %s --recreate 之后才生效\n", id, fs.Arg(0), id)
+	fmt.Fprintf(a.out, "已移除槽位 %s 的挂载 %s；运行中的 worker 需执行 slot up %s --recreate 后生效\n", id, fs.Arg(0), id)
 	return nil
 }
 
@@ -604,25 +604,25 @@ func (a *app) slotAdd(args []string) error {
 	fs := a.newFlags("slot add", "slot add <槽位> (--gateway 网关 --landing 节点 | --direct 订阅:节点名) [参数]")
 	s := model.Slot{UID: os.Getuid(), GID: os.Getgid()}
 	var mounts, envs multi
-	direct := fs.String("direct", "", "直出：不用落地，直接用订阅里的这个节点当出口（形如 订阅:节点名）。出口是多人共用的地址；节点固定，不自动更换")
+	direct := fs.String("direct", "", "直出：不使用落地，直接以订阅中的该节点作为出口（格式为 订阅:节点名）。出口地址为多人共用；节点固定，不自动更换")
 	fs.StringVar(&s.Gateway, "gateway", "", "所属网关")
 	fs.StringVar(&s.Landing, "landing", "", "绑定的落地节点")
-	fs.StringVar(&s.Image, "image", "", "worker 镜像；不填用 init 时设定的")
+	fs.StringVar(&s.Image, "image", "", "worker 镜像；默认使用集群的镜像设置")
 	fs.StringVar(&s.Shell, "shell", model.DefaultShell, "worker 内的登录 shell")
-	fs.Var(&mounts, "mount", "挂载，形如 宿主目录[:容器路径[:ro]]，可重复；只给宿主目录时 worker 内用相同的路径，相对路径按当前目录解析")
-	fs.Var(&envs, "env", "额外的环境变量 名=值，可重复；不允许代理变量")
-	fs.StringVar(&s.TZ, "tz", "", "时区，例如 Asia/Shanghai；不填沿用落地的设置")
-	fs.StringVar(&s.Lang, "lang", "", "LANG；不填沿用落地的设置，都没有则为 "+model.DefaultLang)
+	fs.Var(&mounts, "mount", "挂载，格式为 宿主目录[:容器路径[:ro]]，可重复指定；仅指定宿主目录时 worker 内使用相同路径，相对路径按当前目录解析")
+	fs.Var(&envs, "env", "额外的环境变量，格式为 名=值，可重复指定；不允许设置代理变量")
+	fs.StringVar(&s.TZ, "tz", "", "时区，例如 Asia/Shanghai；未指定时沿用落地的设置")
+	fs.StringVar(&s.Lang, "lang", "", "LANG；未指定时沿用落地的设置，均未设置时为 "+model.DefaultLang)
 	memory := fs.String("memory", "", "内存上限，例如 8g")
 	fs.Float64Var(&s.CPUs, "cpus", 0, "CPU 上限（核数）")
 	fs.Int64Var(&s.PidsLimit, "pids", model.DefaultPidsLimit, "进程数上限")
 	var opt engine.SlotOptions
-	fs.StringVar(&opt.Hostname, "hostname", "", "指定 hostname；不填则按“用户名-机型”生成并持久化")
-	fs.StringVar(&opt.User, "user", "", "指定 worker 内的用户名；不填是 user")
-	fs.BoolVar(&s.FakeDMI, "fake-dmi", false, "用该槽身份里的机型信息覆盖 DMI（默认是把 DMI 遮成空的）")
-	fs.BoolVar(&s.FakeProc, "fake-proc", false, "让 /proc/cpuinfo 与 /proc/meminfo 按 --cpus / --memory 的限额显示（静态内容，不随用量变化）；设了 --cpus 时还把容器绑到前 N 个核上")
-	fs.BoolVar(&s.TmuxBridge, "tmux-bridge", false, "开启宿主 tmux 桥接：槽内的 Claude 可以经 tmux-mcp 操作宿主上该槽专用的 tmux（宿主命令不受该槽的网络约束）")
-	fs.StringVar(&s.TmuxTools, "tmux-tools", "", "桥接开放的工具范围，deny:项,项 或 allow:项,项；不填为 "+model.DefaultTmuxTools)
+	fs.StringVar(&opt.Hostname, "hostname", "", "hostname；未指定时按“用户名-机型”生成并保存")
+	fs.StringVar(&opt.User, "user", "", "worker 内的用户名；默认为 user")
+	fs.BoolVar(&s.FakeDMI, "fake-dmi", false, "以该槽位身份中的机型信息覆盖 DMI（默认将 DMI 屏蔽为空）")
+	fs.BoolVar(&s.FakeProc, "fake-proc", false, "使 /proc/cpuinfo 与 /proc/meminfo 按 --cpus、--memory 的限额显示（静态内容，不随用量变化）；指定 --cpus 时同时将容器绑定到前 N 个核")
+	fs.BoolVar(&s.TmuxBridge, "tmux-bridge", false, "开启宿主 tmux 桥接：槽内的 Claude 可经 tmux-mcp 操作宿主上该槽位专用的 tmux（宿主上的命令不受该槽位的网络限制）")
+	fs.StringVar(&s.TmuxTools, "tmux-tools", "", "桥接开放的工具范围，格式为 deny:项,项 或 allow:项,项；默认为 "+model.DefaultTmuxTools)
 	fs.StringVar(&s.Note, "note", "", noteHelp)
 	id, err := parseWithID(fs, args)
 	if err != nil {
@@ -630,7 +630,7 @@ func (a *app) slotAdd(args []string) error {
 	}
 	s.ID, s.Note = id, strings.TrimSpace(s.Note)
 	if *direct != "" && (s.Gateway != "" || s.Landing != "") {
-		return errors.New("--direct 不与 --gateway、--landing 同用：直出的网关和出口节点由管理器准备")
+		return errors.New("--direct 不能与 --gateway、--landing 同时使用：直出的网关与出口节点由管理器创建")
 	}
 	if *direct == "" && (s.Gateway == "" || s.Landing == "") {
 		fs.Usage()
@@ -674,7 +674,7 @@ func (a *app) slotAdd(args []string) error {
 	if *direct != "" {
 		subID, name, ok := strings.Cut(*direct, ":")
 		if !ok || subID == "" || name == "" {
-			return errors.New("--direct 的格式应为 订阅:节点名；节点名用 sub test <订阅> 查看（已按延迟排序）")
+			return errors.New("--direct 的格式应为 订阅:节点名；节点名可用 sub test <订阅> 查看（按延迟排序）")
 		}
 		if s.Gateway, s.Landing, err = eng.PrepareDirect(ctx, s.ID, subID, name); err != nil {
 			return err
@@ -693,7 +693,7 @@ func (a *app) slotAdd(args []string) error {
 	for _, w := range warnings {
 		fmt.Fprintf(a.errw, "提醒：%s\n", w)
 	}
-	fmt.Fprintf(a.out, "已登记槽位 %s（网关 %s，落地 %s，网段 %s）；执行 slot up %s 启动\n", out.ID, out.Gateway, out.Landing, out.Subnet, out.ID)
+	fmt.Fprintf(a.out, "已创建槽位 %s（网关 %s，落地 %s，网段 %s）；请执行 slot up %s 启动\n", out.ID, out.Gateway, out.Landing, out.Subnet, out.ID)
 	if out.TmuxBridge {
 		fmt.Fprintln(a.errw, bridgeNotice)
 	}
@@ -701,7 +701,7 @@ func (a *app) slotAdd(args []string) error {
 }
 
 // bridgeNotice 在开启桥接时给出：这是一条信任边界，要让用户每次都看到。
-const bridgeNotice = "提醒：已开启宿主 tmux 桥接。槽内经它执行的命令在宿主上运行，用的是你的权限和宿主网络，不受该槽的网络约束；断网（hold）也拦不住它。"
+const bridgeNotice = "提醒：已开启宿主 tmux 桥接。槽内经其执行的命令在宿主上运行，使用当前用户的权限与宿主网络，不受该槽位的网络限制，手动断网（hold）对其无效。"
 
 func (a *app) printSlots(ctx context.Context, eng *engine.Engine) error {
 	sts, err := eng.SlotStatuses(ctx)
