@@ -1,10 +1,10 @@
 // 版本与更新：当前版本、最新版本、发布日期，下面是发布页上写的更新说明。
 // 页面只负责告诉使用者有新版本、该执行哪条命令；更新本身在终端里做。
-import { ArrowUpCircle, CheckCircle2, Copy, ExternalLink, Info, RefreshCw, TriangleAlert } from "lucide-react";
+import { ArrowUpCircle, CheckCircle2, ExternalLink, Info, RefreshCw, TriangleAlert } from "lucide-react";
+import { CopyButton } from "@/components/CopyButton";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { useToast } from "@/components/ui/toast";
 import type { Release, UpdateInfo } from "@/lib/api";
 import { dateText, relativeTime } from "@/lib/utils";
 
@@ -39,15 +39,10 @@ function Fact({ k, v, strong }: { k: string; v?: string; strong?: boolean }) {
 }
 
 function Command({ text }: { text: string }) {
-  const toast = useToast();
-  const copy = () => navigator.clipboard.writeText(text).then(() => toast("已复制"), () => toast("复制失败，请手动复制", "error"));
   return (
     <div className="flex items-stretch gap-2">
       <code className="code-line min-w-0 flex-1">{text}</code>
-      <Button variant="outline" size="sm" onClick={copy} aria-label={`复制命令 ${text}`}>
-        <Copy />
-        复制
-      </Button>
+      <CopyButton text={text} variant="outline" size="sm" aria-label={`复制命令 ${text}`} />
     </div>
   );
 }

@@ -40,6 +40,8 @@ export function NoteDialog({ target, onClose, onSaved }: { target: NoteTarget | 
       open={!!target}
       onClose={onClose}
       title={`${target?.what ?? ""} ${target?.id ?? ""} 的备注`}
+      busy={saving}
+      form
       description="名称用于容器名和文件名，只能包含小写字母、数字和连字符，创建后不可修改。备注仅用于显示，可使用中文、下划线或较长的说明，可随时修改，不影响运行中的槽位。"
       footer={
         <>

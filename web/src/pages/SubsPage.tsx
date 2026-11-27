@@ -1,6 +1,6 @@
 // 订阅：一格一张卡片，点开是这个订阅的详情页——状态，和它的节点表（筛选、测延迟、登记为节点）。
 // 版面与样式取自 Resin（MIT）webui 的订阅页与节点池页（卡片、筛选栏、数据表），内容是本项目的。
-import { FileText, Gauge, Loader2, MoreHorizontal, Pencil, Plus, RefreshCw, Rss, Trash2 } from "lucide-react";
+import { FileText, Gauge, Loader2, Pencil, Plus, RefreshCw, Rss, Trash2 } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Flag, RegionIcon, regionName } from "@/components/Flag";
@@ -66,19 +66,6 @@ function subMenu(s: Sub, a: SubActions): (MenuEntry | "sep")[] {
     "sep",
     { label: "删除…", icon: Trash2, danger: true, onSelect: a.remove },
   ];
-}
-
-function MoreMenu({ items, disabled }: { items: (MenuEntry | "sep")[]; disabled?: boolean }) {
-  return (
-    <Menu
-      trigger={(toggle) => (
-        <Button variant="ghost" size="icon" aria-label="更多" onClick={toggle} disabled={disabled}>
-          <MoreHorizontal />
-        </Button>
-      )}
-      items={items}
-    />
-  );
 }
 
 function SubBadges({ s }: { s: Sub }) {
@@ -231,7 +218,7 @@ function SubTile({ s, busy, a, onOpen }: { s: Sub; busy?: string; a: SubActions;
       role="button"
       tabIndex={0}
       aria-label={`订阅 ${s.id}，打开详情`}
-      onClick={(e) => !(e.target as HTMLElement).closest("button, [role=menu]") && onOpen()}
+      onClick={(e) => !(e.target as HTMLElement).closest("button, [data-menu]") && onOpen()}
       onKeyDown={(e) => e.target === e.currentTarget && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
     >
       <div className="tile-head">
@@ -240,7 +227,7 @@ function SubTile({ s, busy, a, onOpen }: { s: Sub; busy?: string; a: SubActions;
           <p title={s.note}>{s.id}{s.note && <span className="ml-2 font-sans text-[12px] font-normal text-muted">{s.note}</span>}</p>
           <p>{relativeTime(s.fetched_at)}更新</p>
         </div>
-        <MoreMenu items={subMenu(s, a)} disabled={!!busy} />
+        <Menu items={subMenu(s, a)} disabled={!!busy} />
       </div>
 
       <div className="tile-figures">
@@ -355,7 +342,7 @@ function SubDetail({ s, state, busy, a, alerts, refresh, onBack }: { s: Sub; sta
                 <Button variant="outline" onClick={a.edit}><FileText />{s.local ? "添加或替换节点" : "更换地址"}</Button>
               </>
             )}
-            <MoreMenu items={subMenu(s, a)} disabled={!!busy} />
+            <Menu items={subMenu(s, a)} disabled={!!busy} />
           </>
         }
       />
@@ -557,6 +544,8 @@ function RegisterDialog({ sub, node, onClose, onDone }: { sub: string; node: Del
       open={!!node}
       onClose={onClose}
       title="添加为节点"
+      busy={saving}
+      form
       description={<>将 <span className="font-semibold text-fg">{node?.name}</span> 添加为槽位可使用的节点。该节点随订阅 {sub} 更新。</>}
       className="mid"
       footer={
@@ -651,6 +640,8 @@ function SourceDialog({ editing, onClose, onDone }: { editing: Editing; onClose:
       open={open}
       onClose={onClose}
       title={sub ? `修改订阅 ${sub.id} 的来源` : "添加订阅"}
+      busy={saving}
+      form
       description="订阅地址通常包含令牌，分享链接包含节点密码。两者仅保存在本机的数据目录中，保存后不再显示。"
       className="mid"
       footer={

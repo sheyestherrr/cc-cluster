@@ -1,8 +1,9 @@
 // 槽位：一格一张卡片，点开是带页签的详情页（概况、流量与连接、环境与挂载、运维）。
 // “卡片网格 + 详情页”的版面和样式取自 Resin（MIT）webui 的 features/platforms/PlatformPage.tsx 与 PlatformDetailPage.tsx，内容是本项目的。
-import { ArrowRight, Ban, Box, Copy, Loader2, MoreHorizontal, Pencil, Play, Plus, Power, RefreshCw, RotateCw, ShieldCheck, Sparkles, Terminal, Trash2 } from "lucide-react";
+import { ArrowRight, Ban, Box, Loader2, Pencil, Play, Plus, Power, RefreshCw, RotateCw, ShieldCheck, Sparkles, Terminal, Trash2 } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
+import { CopyButton } from "@/components/CopyButton";
 import { ExitCard } from "@/components/ExitCard";
 import { RegionIcon } from "@/components/Flag";
 import { Field, FormGrid, FormSection, SwitchItem } from "@/components/Form";
@@ -174,10 +175,7 @@ export function SlotsPage({ state, loadError, refresh, goNetwork, open, setOpen 
         footer={
           <>
             <Button variant="outline" onClick={() => setEntering(null)}>关闭</Button>
-            <Button onClick={() => entering && navigator.clipboard.writeText(entering.enter_command).then(() => toast("已复制"), () => toast("复制失败，请手动复制", "error"))}>
-              <Copy />
-              复制命令
-            </Button>
+            {entering && <CopyButton text={entering.enter_command} label="复制命令" />}
           </>
         }
       >
@@ -298,7 +296,7 @@ function SlotTile({ s, state, live, busy, a, onOpen }: { s: Slot; state: State; 
       role="button"
       tabIndex={0}
       aria-label={`槽位 ${s.id}，打开详情`}
-      onClick={(e) => !(e.target as HTMLElement).closest("button, [role=menu]") && onOpen()}
+      onClick={(e) => !(e.target as HTMLElement).closest("button, [data-menu]") && onOpen()}
       onKeyDown={(e) => e.target === e.currentTarget && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
     >
       <div className="tile-head">
@@ -307,14 +305,7 @@ function SlotTile({ s, state, live, busy, a, onOpen }: { s: Slot; state: State; 
           <p title={s.note}>{s.id}{s.note && <span className="ml-2 font-sans text-[12px] font-normal text-muted">{s.note}</span>}</p>
           <p><span className={`status-dot mr-1.5 inline-block align-middle ${dotTone(s)}`} />{stateText[s.state]}</p>
         </div>
-        <Menu
-          trigger={(toggle) => (
-            <Button variant="ghost" size="icon" aria-label="更多" onClick={toggle} disabled={!!busy}>
-              <MoreHorizontal />
-            </Button>
-          )}
-          items={menuItems(s, a)}
-        />
+        <Menu items={menuItems(s, a)} disabled={!!busy} />
       </div>
 
       <div className="tile-figures">
@@ -663,8 +654,10 @@ function AddSlotDialog({ open, state, onClose, onCreated }: { open: boolean; sta
       open={open}
       onClose={onClose}
       title="新建槽位"
+      busy={saving}
+      form
       description="创建后点击“启动”：先探测链路与出口，通过后才为槽位接线。"
-      className="!w-[min(840px,100%)]"
+      className="!w-[min(840px,calc(100vw-36px))]"
       footer={
         <>
           <Button variant="outline" onClick={onClose}>取消</Button>

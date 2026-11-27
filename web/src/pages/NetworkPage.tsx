@@ -1,6 +1,6 @@
 // 节点与网关：一格一张卡片，点开是这个对象的详情页（落地带出口评估）。
 // “卡片网格 + 详情页”的版面和样式取自 Resin（MIT）webui 的 features/platforms/PlatformPage.tsx 与 PlatformDetailPage.tsx，内容是本项目的。
-import { Globe2, Loader2, LogOut, MoreHorizontal, Pencil, Play, Plus, Power, RefreshCw, Rss, Router, Trash2, Waypoints } from "lucide-react";
+import { Globe2, Loader2, LogOut, Pencil, Play, Plus, Power, RefreshCw, Rss, Router, Trash2, Waypoints } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { ExitCard } from "@/components/ExitCard";
@@ -41,7 +41,7 @@ function tileProps(label: string, onOpen: () => void) {
     role: "button",
     tabIndex: 0,
     "aria-label": label,
-    onClick: (e: React.MouseEvent) => !(e.target as HTMLElement).closest("button, [role=menu]") && onOpen(),
+    onClick: (e: React.MouseEvent) => !(e.target as HTMLElement).closest("button, [data-menu]") && onOpen(),
     onKeyDown: (e: React.KeyboardEvent) => {
       if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault();
@@ -66,19 +66,6 @@ function KV({ k, children, mono }: { k: string; children: React.ReactNode; mono?
       <span>{k}</span>
       <strong className={mono ? "mono" : "flex flex-wrap items-center gap-1.5"}>{children}</strong>
     </div>
-  );
-}
-
-function MoreMenu({ items, disabled }: { items: (MenuEntry | "sep")[]; disabled?: boolean }) {
-  return (
-    <Menu
-      trigger={(toggle) => (
-        <Button variant="ghost" size="icon" aria-label="更多" onClick={toggle} disabled={disabled}>
-          <MoreHorizontal />
-        </Button>
-      )}
-      items={items}
-    />
   );
 }
 
@@ -298,7 +285,7 @@ function GatewayTile({ g, busy, a, onOpen }: { g: Gateway; busy?: string; a: Gat
           <p title={g.note}>{g.id}{g.note && <span className="ml-2 font-sans text-[12px] font-normal text-muted">{g.note}</span>}</p>
           <p><span className={`status-dot mr-1.5 inline-block align-middle ${gatewayDot(g)}`} />{gatewayStatus(g)}</p>
         </div>
-        <MoreMenu items={gatewayMenu(g, a)} disabled={!!busy} />
+        <Menu items={gatewayMenu(g, a)} disabled={!!busy} />
       </div>
       <div className="platform-tile-facts">
         {g.transit ? <Fact k="中转">{g.transit}</Fact> : <Fact>不经中转</Fact>}
@@ -325,7 +312,7 @@ function NodeTile({ n, busy, a, onOpen }: { n: NodeInfo; busy?: string; a: NodeA
           <p title={n.note}>{n.id}{n.note && <span className="ml-2 font-sans text-[12px] font-normal text-muted">{n.note}</span>}</p>
           <p className="mono">{n.type} · {n.server}:{n.port}</p>
         </div>
-        <MoreMenu items={nodeMenu(n, a)} disabled={!!busy} />
+        <Menu items={nodeMenu(n, a)} disabled={!!busy} />
       </div>
       <div className="platform-tile-facts">
         <Badge variant={n.role === "landing" ? "info" : "neutral"}>{roleText[n.role]}</Badge>
@@ -371,7 +358,7 @@ function NodeDetail({ n, state, busy, a, alerts, back }: DetailCommon & { n: Nod
         actions={
           <>
             {busy && <Button variant="outline" disabled><Loader2 className="spin" />{busy}</Button>}
-            <MoreMenu items={nodeMenu(n, a)} disabled={!!busy} />
+            <Menu items={nodeMenu(n, a)} disabled={!!busy} />
           </>
         }
       />
@@ -475,7 +462,7 @@ function GatewayDetail({ g, state, busy, a, alerts, back, refresh }: DetailCommo
           <>
             {g.transit && <Button variant="outline" onClick={() => setChanging(true)}><Waypoints />更换中转</Button>}
             <GatewayToggle g={g} a={a} busy={busy} size="default" />
-            <MoreMenu items={gatewayMenu(g, a)} disabled={!!busy} />
+            <Menu items={gatewayMenu(g, a)} disabled={!!busy} />
           </>
         }
       />
@@ -589,6 +576,8 @@ function TransitDialog({ open, g, state, onClose, onChanged }: { open: boolean; 
       open={open}
       onClose={onClose}
       title={`更换 ${g.id} 的中转`}
+      busy={saving}
+      form
       description="排在首位的为主用，其余为备用：主用不可用时核心自动切换到下一个，恢复后切回。更换中转不改变出口，出口由各槽位的落地决定。网关运行时立即生效，并重新核对已接线槽位的出口。"
       className="mid"
       footer={
@@ -673,6 +662,8 @@ function AddGatewayDialog({ open, state, onClose, onCreated }: { open: boolean; 
       open={open}
       onClose={onClose}
       title="新建网关"
+      busy={saving}
+      form
       description="一个网关对应一个网关容器，可接入多个槽位，各槽位经自己的落地出站。使用中转时流量先经中转再到落地；不使用时各槽位直连自己的落地。"
       className="mid"
       footer={
@@ -735,6 +726,8 @@ function AddNodeDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
       open={open}
       onClose={onClose}
       title="添加节点"
+      busy={saving}
+      form
       description="此处手动填写 SOCKS5 或 HTTP 代理。其他协议的节点请从订阅中选择，或通过命令行 node add --file 提供 Mihomo 配置片段。"
       className="mid"
       footer={

@@ -156,9 +156,9 @@ h6 {
   text-align: left;
 }
 
-/* 卡片各自是一个层叠上下文（毛玻璃），菜单打开时把它所在的卡片抬到后面的卡片之上，否则会被遮住。 */
-.card:has(.menu-pop),
-.tile:has(.menu-pop) {
+/* 只在不支持 popover 的浏览器里需要：卡片各自是一个层叠上下文（毛玻璃），菜单打开时把它所在的卡片抬到后面的卡片之上。 */
+.card:has(.menu-pop.legacy),
+.tile:has(.menu-pop.legacy) {
   position: relative;
   z-index: 20;
 }
@@ -703,12 +703,9 @@ button.snapshot-row:hover {
 
 /* ── 菜单、弹窗、提示 ── */
 .menu-pop {
-  position: absolute;
-  right: 0;
-  top: 100%;
-  z-index: 15;
-  margin-top: 6px;
+  position: fixed;
   min-width: 190px;
+  color: var(--text);
   padding: 6px;
   border-radius: 14px;
   border: 1px solid var(--border);
@@ -734,16 +731,51 @@ button.snapshot-row:hover {
   white-space: nowrap;
 }
 
-.menu-item:hover:enabled {
+/* 弹出层在顶层：有锚点定位时由浏览器贴着触发按钮摆放，放不下时翻到另一侧；没有时由脚本写入 top 与 right。 */
+@supports (position-area: block-end) {
+  .menu-pop[popover] {
+    inset: auto;
+    margin: 6px 0;
+    position-area: block-end span-inline-start;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  }
+}
+
+@supports not (position-area: block-end) {
+  .menu-pop[popover] {
+    inset: auto;
+    margin: 0;
+  }
+}
+
+/* 不支持 popover 的浏览器：跟在按钮下面的普通浮层。 */
+.menu-pop.legacy {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 15;
+  margin-top: 6px;
+}
+
+/* 指针移到某一项时焦点跟过去，悬停与键盘选中的是同一项。 */
+.menu-item:hover:enabled,
+.menu-item:focus:enabled {
+  outline: none;
   background: rgba(20, 112, 255, 0.08);
   color: var(--primary-strong);
+}
+
+.menu-item:focus-visible:enabled {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
 }
 
 .menu-item.danger {
   color: var(--danger);
 }
 
-.menu-item.danger:hover:enabled {
+.menu-item.danger:hover:enabled,
+.menu-item.danger:focus:enabled {
   background: rgba(195, 58, 47, 0.1);
   color: var(--danger);
 }
@@ -756,18 +788,49 @@ button.snapshot-row:hover {
 .menu-sep {
   height: 1px;
   margin: 4px 8px;
+  border: 0;
   background: rgba(37, 72, 120, 0.12);
 }
 
-.modal-card.narrow {
-  width: min(520px, 100%);
+/* 弹窗是原生 <dialog>：居中与顶层由浏览器负责。display 只在打开时设置，否则会盖掉关闭状态。 */
+dialog.modal-card {
+  /* 全局的 margin 重置会去掉浏览器默认的居中，这里补回。 */
+  margin: auto;
+  width: min(840px, calc(100vw - 36px));
+  max-width: none;
+  max-height: calc(100dvh - 40px);
+  padding: 18px;
+  color: var(--text);
+  background: var(--pop);
+  overflow: hidden;
 }
 
-.modal-card.mid {
-  width: min(680px, 100%);
+dialog.modal-card[open] {
+  display: flex;
+  flex-direction: column;
 }
 
-.modal-header h3 {
+dialog.modal-card.narrow {
+  width: min(520px, calc(100vw - 36px));
+}
+
+dialog.modal-card.mid {
+  width: min(680px, calc(100vw - 36px));
+}
+
+/* 两条都需要：否则在遮罩上或弹窗内滚动到头时，背后的页面会跟着滚动。 */
+dialog.modal-card:modal {
+  overscroll-behavior: contain;
+}
+
+dialog.modal-card::backdrop {
+  background: rgba(15, 29, 53, 0.36);
+  backdrop-filter: blur(4px);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.modal-header h1 {
   font-size: 18px;
 }
 
@@ -777,11 +840,18 @@ button.snapshot-row:hover {
   color: var(--text-muted);
 }
 
+/* 内容过长时只滚动正文，标题与页脚的按钮保持可见。 */
 .modal-body {
-  margin-top: 14px;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 14px -18px 0;
+  padding: 0 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .modal-footer {
+  flex: 0 0 auto;
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;

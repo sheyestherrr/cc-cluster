@@ -47,20 +47,21 @@ export function SystemPage({ state, refresh }: Props) {
   const [error, setError] = useState("");
   const [images, setImages] = useState<{ gateway: string; worker: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [imagesError, setImagesError] = useState("");
   const toast = useToast();
 
   const saveImages = async () => {
     if (!images) return;
     setSaving(true);
-    setError("");
+    setImagesError("");
     try {
       await api.setImages(images.gateway.trim(), images.worker.trim());
       await Promise.all([refresh(), loadOps()]);
       setImages(null);
       toast("镜像设置已更新，重建容器后生效");
     } catch (e) {
-      setError(errorText(e));
-      setImages(null);
+      // 失败时弹窗保持打开，已输入的引用不丢失。
+      setImagesError(errorText(e));
     } finally {
       setSaving(false);
     }
@@ -109,7 +110,7 @@ export function SystemPage({ state, refresh }: Props) {
       <div className="grid items-stretch gap-3.5 min-[1400px]:grid-cols-2">
         <Card className="panel">
           <PanelHead title="数据" hint="数据目录与所用镜像">
-            <Button variant="outline" size="sm" disabled={!state} onClick={() => state && setImages({ gateway: state.cluster.gateway_image, worker: state.cluster.worker_image })}>
+            <Button variant="outline" size="sm" disabled={!state} onClick={() => state && (setImagesError(""), setImages({ gateway: state.cluster.gateway_image, worker: state.cluster.worker_image }))}>
               <Pencil />更换镜像
             </Button>
           </PanelHead>
@@ -196,6 +197,8 @@ export function SystemPage({ state, refresh }: Props) {
         open={!!images}
         onClose={() => setImages(null)}
         title="更换镜像"
+        busy={saving}
+        form
         description="仅修改镜像设置。运行中的容器仍使用原镜像，将网关停止后重新启动、槽位重建 worker 后生效。镜像需已拉取到本机。"
         className="mid"
         footer={
@@ -213,6 +216,7 @@ export function SystemPage({ state, refresh }: Props) {
             <Input aria-label="worker 镜像" spellCheck={false} value={images?.worker ?? ""} onChange={(e) => images && setImages({ ...images, worker: e.target.value })} />
           </Field>
         </FormGrid>
+        {imagesError && <div className="mt-3"><ErrorBox text={imagesError} /></div>}
       </Dialog>
 
       <Card className="panel">
