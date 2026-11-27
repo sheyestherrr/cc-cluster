@@ -1,0 +1,60 @@
+/*
+ * 两种字体（Sora 用于标题、Manrope 用于正文）与 Resin 的界面一致，字体文件随页面一起打包，不从外部加载。
+ * 只引入 latin 子集的 woff2：界面中的西文、数字与标点都在其中，中文使用系统字体；
+ * @fontsource 自带的样式文件会把西里尔、希腊、越南等子集和 woff 一并打包。
+ */
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("../../node_modules/@fontsource/manrope/files/manrope-latin-400-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("../../node_modules/@fontsource/manrope/files/manrope-latin-500-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("../../node_modules/@fontsource/manrope/files/manrope-latin-600-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url("../../node_modules/@fontsource/manrope/files/manrope-latin-700-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Sora";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("../../node_modules/@fontsource/sora/files/sora-latin-500-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Sora";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("../../node_modules/@fontsource/sora/files/sora-latin-600-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Sora";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url("../../node_modules/@fontsource/sora/files/sora-latin-700-normal.woff2") format("woff2");
+}
