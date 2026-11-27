@@ -81,6 +81,22 @@ func CheckMountSource(source string, protected ...string) error {
 	return nil
 }
 
+// CheckMountOutside 检查一个挂载源：它不能是 dirs 中某个目录本身或位于其下。
+// dirs 是管理器的数据目录：里面是节点的账号密码、其他槽位的 HOME 和宿主 tmux 的 socket，
+// 任何一部分都不该交给 worker（槽位自己的 HOME 由管理器挂载，不经过这里）。
+func CheckMountOutside(source string, dirs ...string) error {
+	source = filepath.Clean(source)
+	for _, d := range dirs {
+		if d == "" {
+			continue
+		}
+		if d = filepath.Clean(d); d != source && under(source, d) {
+			return fmt.Errorf("不能挂载 %s：该目录位于数据目录 %s 内", source, d)
+		}
+	}
+	return nil
+}
+
 // CheckMountSocket 检查一个挂载源：它不能是 sockets 中某个路径本身或其上级。
 // sockets 是宿主上 Docker 守护进程的 socket：能访问它就能在宿主上创建任意容器，等于离开了隔离。
 // Slot.Validate 只能按文件名拦住 socket 本身；挂载它所在的目录（如 /var/run）同样会把它带进 worker。

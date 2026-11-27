@@ -151,14 +151,14 @@ func (a *app) enter(ctx context.Context, req enterRequest) error {
 	}
 
 	inside, mounted := model.ContainerPath(sl.Mounts, req.Dir)
-	protected := eng.ProtectedPaths()
-	if !mounted && !req.DirGiven && len(model.WorkspaceCandidates(req.Dir, ident.Home(), protected...)) == 0 {
+	candidates := eng.WorkspaceCandidates(req.Dir, ident.Home())
+	if !mounted && !req.DirGiven && len(candidates) == 0 {
 		// 没有指定目录，当前目录又挂不进去（比如就在主目录里）：进到第一个挂载目录，没有挂载就是 HOME。
 		inside, mounted = model.DefaultDir(sl.Mounts, ident.Home()), true
 	}
 	remounted := false
 	if !mounted {
-		root, err := a.pickMountRoot(req, ident.Home(), protected)
+		root, err := a.pickMountRoot(req, ident.Home(), candidates)
 		if err != nil {
 			return err
 		}
@@ -254,11 +254,10 @@ func (a *app) enter(ctx context.Context, req enterRequest) error {
 	return nil
 }
 
-// pickMountRoot 决定把哪一级目录挂进槽位。
-func (a *app) pickMountRoot(req enterRequest, home string, protected []string) (string, error) {
-	candidates := model.WorkspaceCandidates(req.Dir, home, protected...)
+// pickMountRoot 从 candidates（可以作为挂载根的目录，由近到远）里决定把哪一级挂进槽位。
+func (a *app) pickMountRoot(req enterRequest, home string, candidates []string) (string, error) {
 	if len(candidates) == 0 {
-		return "", fmt.Errorf("目录 %s 不能挂载到槽位：该目录位于系统目录下、是主目录或数据目录的上级目录，或将覆盖槽内的 HOME（%s）", req.Dir, home)
+		return "", fmt.Errorf("目录 %s 不能挂载到槽位：该目录位于系统目录或数据目录内，是主目录、数据目录或 Docker socket 所在目录的上级目录，或将覆盖槽内的 HOME（%s）", req.Dir, home)
 	}
 	if req.MountRoot != "" {
 		for _, c := range candidates {

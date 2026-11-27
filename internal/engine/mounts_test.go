@@ -112,6 +112,29 @@ func TestCheckMountSourceResolvesProtectedPaths(t *testing.T) {
 	}
 }
 
+// 数据目录里的任何一部分都不能挂进槽位：节点的凭据、别的槽位的 HOME、宿主 tmux 的 socket。
+func TestCheckMountSourceRejectsInsideDataDir(t *testing.T) {
+	eng, _, _, project := mountFixture(t)
+	other := filepath.Join(eng.st.Dir(), "slots", "b", "home")
+	if err := os.MkdirAll(other, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := symlink(t, other, filepath.Join(filepath.Dir(project), "b-home"))
+	for what, p := range map[string]string{"数据目录内的目录": other, "指向数据目录内的链接": link, "节点目录": filepath.Join(eng.st.Dir(), "nodes.d")} {
+		err := eng.checkMountSource(p)
+		if err == nil || !strings.Contains(err.Error(), "数据目录") {
+			t.Errorf("%s 应被拒绝并说明原因: %v", what, err)
+		}
+	}
+	// 进入槽位时的候选目录同样不包含它们。
+	if got := eng.WorkspaceCandidates(other, "/home/user"); len(got) != 0 {
+		t.Errorf("数据目录内的目录不应成为挂载候选: %v", got)
+	}
+	if got := eng.WorkspaceCandidates(project, "/home/user"); len(got) == 0 || got[0] != project {
+		t.Errorf("普通的项目目录应是第一个候选: %v", got)
+	}
+}
+
 // 登记槽位与追加挂载都按实际指向的位置检查。
 func TestAddSlotAndWorkspaceRejectSymlinkedHome(t *testing.T) {
 	eng, home, _, project := mountFixture(t)

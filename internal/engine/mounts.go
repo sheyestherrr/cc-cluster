@@ -40,6 +40,7 @@ func withResolved(paths []string) []string {
 //
 // Docker 挂载时会跟随符号链接，所以除了路径本身，还要看它实际指向哪里：
 // 两者都不能是使用者的主目录、数据目录或它们的上级（见 model.CheckMountSource），
+// 不能位于数据目录之内（见 model.CheckMountOutside），
 // 也不能是 Docker socket 或包含它的目录（见 model.CheckMountSocket）。
 // 登记槽位、追加挂载和每次创建 worker 之前都检查：登记之后路径可能被换成符号链接。
 func (e *Engine) checkMountSource(source string) error {
@@ -48,9 +49,13 @@ func (e *Engine) checkMountSource(source string) error {
 		return fmt.Errorf("挂载源 %s 不可用：%w", source, err)
 	}
 	protected := withResolved(e.ProtectedPaths())
+	dataDirs := withResolved([]string{e.st.Dir()})
 	sockets := withResolved(dockerSockets())
 	check := func(p string) error {
 		if err := model.CheckMountSource(p, protected...); err != nil {
+			return err
+		}
+		if err := model.CheckMountOutside(p, dataDirs...); err != nil {
 			return err
 		}
 		return model.CheckMountSocket(p, sockets...)
@@ -65,4 +70,16 @@ func (e *Engine) checkMountSource(source string) error {
 		return fmt.Errorf("挂载源 %s 经符号链接指向 %s：%w", source, resolved, err)
 	}
 	return nil
+}
+
+// WorkspaceCandidates 列出进入槽位时可以作为挂载根的目录：dir 本身和它的各级上级，由近到远，
+// 只保留通过挂载源检查的。home 是该槽在 worker 内的 HOME。
+func (e *Engine) WorkspaceCandidates(dir, home string) []string {
+	var out []string
+	for _, d := range model.WorkspaceCandidates(dir, home, e.ProtectedPaths()...) {
+		if e.checkMountSource(d) == nil {
+			out = append(out, d)
+		}
+	}
+	return out
 }

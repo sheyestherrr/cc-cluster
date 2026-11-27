@@ -90,6 +90,21 @@ func TestCheckMountSource(t *testing.T) {
 	}
 }
 
+func TestCheckMountOutside(t *testing.T) {
+	dirs := []string{"/home/pi/.cc-cluster", ""}
+	for _, bad := range []string{"/home/pi/.cc-cluster/nodes.d", "/home/pi/.cc-cluster/slots/b/home", "/home/pi/.cc-cluster/slots/b/tmux/"} {
+		if CheckMountOutside(bad, dirs...) == nil {
+			t.Errorf("%s 应被拒绝", bad)
+		}
+	}
+	// 数据目录本身与它的上级由 CheckMountSource 拦住，这里只管位于其下的。
+	for _, ok := range []string{"/home/pi/.cc-cluster", "/home/pi", "/home/pi/.cc-cluster-old/x", "/data/repo"} {
+		if err := CheckMountOutside(ok, dirs...); err != nil {
+			t.Errorf("%s 应被接受: %v", ok, err)
+		}
+	}
+}
+
 func TestCheckMountSocket(t *testing.T) {
 	sockets := []string{"/var/run/docker.sock", "/run/user/1000/docker.sock", ""}
 	for _, bad := range []string{"/var/run/docker.sock", "/var/run", "/var/run/", "/var", "/run/user/1000", "/run", "/"} {
